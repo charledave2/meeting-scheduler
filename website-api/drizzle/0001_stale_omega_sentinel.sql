@@ -1,0 +1,1 @@
+ALTER TABLE `members` ADD `appointment` text DEFAULT 'publisher' NOT NULL;

@@ -1,0 +1,36 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "meeting-scheduler",
+  "main": "dist/server/index.js",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "no_bundle": true,
+"find_additional_modules": true,
+"rules": [
+  {
+    "type": "ESModule",
+    "globs": ["**/*.js", "**/*.mjs"],
+    "fallthrough": true
+  }
+],
+"assets": {
+    "directory": "dist/client",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "meeting-scheduler-db",
+      "database_id": "f006cb91-fc43-4e61-a531-6622068731df",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  "vars": {
+    "ADMIN_EMAIL": "yelyahwilliams2005@gmail.com",
+    "CF_ACCESS_TEAM_DOMAIN": "smartypants.cloudflareaccess.com",
+    "CF_ACCESS_AUD": "d82d01f4e6b2a0f19a70055f445eabe7bb406473325b8cf8074bd35e9021b3ea"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

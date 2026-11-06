@@ -1,0 +1,104 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1786512073353,
+      "tag": "0000_thin_black_panther",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786517671312,
+      "tag": "0001_stale_omega_sentinel",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786521190418,
+      "tag": "0002_steep_masked_marvel",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1786521689074,
+      "tag": "0003_jazzy_junta",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1786524626524,
+      "tag": "0004_freezing_fat_cobra",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1786610715493,
+      "tag": "0005_bored_chat",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1786636132873,
+      "tag": "0006_numerous_texas_twister",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1786636557891,
+      "tag": "0007_deep_chameleon",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1786679080378,
+      "tag": "0008_goofy_jack_power",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1786946703597,
+      "tag": "0009_serious_lester",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1787243695405,
+      "tag": "0010_smooth_dragon_lord",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1787388000000,
+      "tag": "0011_weekend_meeting_scheduler",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1789603200000,
+      "tag": "0012_soft_delete_published_schedules",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1794009600000,
+      "tag": "0013_member_unbaptized",
+      "breakpoints": true
+    }
+  ]
+}

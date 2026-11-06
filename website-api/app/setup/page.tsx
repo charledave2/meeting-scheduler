@@ -1,0 +1,3 @@
+import { count } from "drizzle-orm";import { redirect } from "next/navigation";import { getDb } from "../../db";import { authAccounts } from "../../db/schema";import { getBootstrapIdentity } from "../chatgpt-auth";import { SetupForm } from "../AuthForms";
+export const dynamic="force-dynamic";
+export default async function Setup(){const [{total}]=await getDb().select({total:count()}).from(authAccounts);if(total>0)redirect("/login");if(!await getBootstrapIdentity())return <main className="authPage"><section className="authCard"><small>ONE-TIME SETUP</small><h1>Admin verification required</h1><p>Keep Cloudflare Access restricted, sign in with the configured admin email, then reload this page.</p></section></main>;return <SetupForm/>;}

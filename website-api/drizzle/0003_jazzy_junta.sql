@@ -1,0 +1,1 @@
+ALTER TABLE `members` ADD `service_status` text DEFAULT 'none' NOT NULL;

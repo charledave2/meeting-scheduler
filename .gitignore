@@ -1,0 +1,21 @@
+# Android build outputs
+/android/.gradle/
+/android/build/
+/android/app/build/
+/local.properties
+
+# Cloudflare / Node build outputs
+/website-api/node_modules/
+/website-api/.next/
+/website-api/dist/
+/website-api/.wrangler/
+/website-api/.sites-runtime/
+/website-api/outputs/
+/website-api/work/
+
+# Local secrets and editor files
+.env
+.env.*
+!.env.example
+.DS_Store
+*.iml
