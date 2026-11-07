@@ -5,10 +5,13 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.BitmapFactory
+import android.net.Uri
+import android.util.Base64
 import android.print.PrintManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.core.content.FileProvider
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import android.os.Bundle
@@ -76,6 +79,7 @@ import androidx.compose.material.icons.twotone.ManageAccounts
 import androidx.compose.material.icons.twotone.Preview
 import androidx.compose.material.icons.twotone.Home
 import androidx.compose.material.icons.twotone.Close
+import androidx.compose.material.icons.twotone.Tune
 import androidx.compose.material.icons.twotone.ErrorOutline
 import androidx.compose.material.icons.twotone.Warning
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -365,6 +369,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var accountsBusy by remember { mutableStateOf(false) }
     var accountsError by remember { mutableStateOf<String?>(null) }
     var accountReloadTick by remember { mutableIntStateOf(0) }
+    var accountPhotoTarget by remember { mutableStateOf<RemoteAccount?>(null) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
     var restrictedTapCount by rememberSaveable { mutableIntStateOf(0) }
     var accessNotice by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
@@ -754,10 +759,11 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                         modifier=scroll, accounts=remoteAccounts, loading=accountsBusy, error=accountsError,
                         currentUsername=identityUsername,
                         onRefresh={accountsLoaded=false;accountReloadTick++},
+                        onUploadPhoto={ account -> accountPhotoTarget=account; accountPhotoPicker.launch("image/*") },
                         onAction={ account,action,role,password -> authScope.launch {
                             accountsBusy=true;accountsError=null
                             runCatching { api.accountAction(account.id,action,role,password) }
-                                .onSuccess { response -> toastMessage=response.optString("message","Account updated.");accountsLoaded=false }
+                                .onSuccess { response -> toastMessage=response.optString("message","Account updated.");accountsLoaded=false;accountReloadTick++ }
                                 .onFailure { accountsError=it.message ?: "Hindi na-update ang account." }
                             accountsBusy=false
                         } }
@@ -765,6 +771,38 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 }
             } }
         }
+    }
+    val accountPhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        val account = accountPhotoTarget
+        if (uri != null && account != null) authScope.launch {
+            accountsBusy = true
+            accountsError = null
+            runCatching {
+                val dataUrl = withContext(Dispatchers.IO) {
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+                    var sample = 1
+                    while (maxOf(bounds.outWidth, bounds.outHeight).coerceAtLeast(1) / sample > 720) sample *= 2
+                    val options = BitmapFactory.Options().apply { inSampleSize = sample }
+                    val decoded = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+                        ?: error("Hindi mabasa ang napiling larawan.")
+                    val scale = minOf(1f, 512f / maxOf(decoded.width, decoded.height).coerceAtLeast(1))
+                    val bitmap = if (scale < 1f) Bitmap.createScaledBitmap(decoded, (decoded.width * scale).toInt().coerceAtLeast(1), (decoded.height * scale).toInt().coerceAtLeast(1), true) else decoded
+                    val output = ByteArrayOutputStream()
+                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, 78, output)) { "Hindi ma-compress ang larawan." }
+                    val encoded = Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+                    check(encoded.length <= 600_000) { "Masyadong malaki ang larawan. Pumili ng mas maliit." }
+                    "data:image/jpeg;base64,$encoded"
+                }
+                api.uploadAccountPhoto(account.id, dataUrl)
+            }.onSuccess {
+                toastMessage = "Na-save sa cloud ang account photo."
+                accountsLoaded = false
+                accountReloadTick++
+            }.onFailure { accountsError = it.message ?: "Hindi na-upload ang account photo." }
+            accountsBusy = false
+        }
+        accountPhotoTarget = null
     }
     val profilePhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) authScope.launch {
@@ -1676,8 +1714,8 @@ private fun ParticipantsScreen(
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
             Column { Text("CLOUD DATA",color=Forest,fontSize=10.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.3.sp);Text("Participants",fontSize=25.sp,fontWeight=FontWeight.Bold) }
             Row(verticalAlignment=Alignment.CenterVertically) {
-                IconButton(onClick=onRefresh,enabled=isAdmin,modifier=Modifier.size(40.dp)){Icon(Icons.TwoTone.Refresh,contentDescription="Refresh participants",tint=if(isAdmin) Forest else Muted)}
-                FilledTonalButton(onClick={showAdd=true},contentPadding=PaddingValues(horizontal=14.dp,vertical=7.dp)){Text("＋ Add",fontSize=13.sp)}
+                IconButton(onClick=onRefresh,enabled=isAdmin,modifier=Modifier.size(40.dp)){Icon(Icons.TwoTone.Refresh,contentDescription="Refresh participants",tint=if(isAdmin) Forest else Muted,modifier=Modifier.size(20.dp))}
+                FilledTonalButton(onClick={showAdd=true},modifier=Modifier.height(40.dp),contentPadding=PaddingValues(horizontal=13.dp,vertical=7.dp)){Icon(Icons.TwoTone.Add,contentDescription=null,modifier=Modifier.size(20.dp));Spacer(Modifier.width(5.dp));Text("Add",fontSize=13.sp)}
             }
         }
         Text("${participants.size} participants · ${filtered.size} shown",color=Muted,fontSize=12.sp)
@@ -1685,7 +1723,7 @@ private fun ParticipantsScreen(
             Column(Modifier.fillMaxSize().padding(14.dp)) {
                 Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(query,{query=it},placeholder={Text("Search participant")},singleLine=true,shape=RoundedCornerShape(18.dp),modifier=Modifier.weight(1f),textStyle=MaterialTheme.typography.bodyMedium)
-                    FilledTonalButton(onClick={showFilters=true},contentPadding=PaddingValues(horizontal=12.dp,vertical=12.dp)){Text("Filter · Sort",fontSize=11.sp)}
+                    FilledTonalButton(onClick={showFilters=true},modifier=Modifier.height(40.dp),contentPadding=PaddingValues(horizontal=11.dp,vertical=7.dp)){Icon(Icons.TwoTone.Tune,contentDescription=null,modifier=Modifier.size(20.dp));Spacer(Modifier.width(5.dp));Text("Filter · Sort",fontSize=11.sp)}
                 }
                 LazyColumn(Modifier.weight(1f).fillMaxWidth(),contentPadding=PaddingValues(top=6.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
                     itemsIndexed(filtered,key={_,entry->if(entry.value.id>0)entry.value.id.toLong() else entry.index.toLong()}) { _,entry ->
@@ -1701,7 +1739,7 @@ private fun ParticipantsScreen(
                                     color=Muted,fontSize=10.sp,maxLines=1
                                 )
                             }
-                            TextButton(onClick={beginEdit(p)},contentPadding=PaddingValues(horizontal=6.dp)){Text("Edit",color=Forest,fontSize=12.sp)}
+                            IconButton(onClick={beginEdit(p)},modifier=Modifier.size(40.dp)){Icon(Icons.TwoTone.Edit,contentDescription="Edit participant",tint=Forest,modifier=Modifier.size(20.dp))}
                             if(isAdmin) {
                                 var menu by remember(p.id){mutableStateOf(false)}
                                 Box {
@@ -1873,21 +1911,19 @@ private fun scheduleStartDate(label:String, updatedAt:String=""): LocalDate? = r
 @Composable
 private fun AccountsScreen(
     modifier: Modifier, accounts: List<RemoteAccount>, loading: Boolean, error: String?, currentUsername: String,
-    onRefresh: () -> Unit, onAction: (RemoteAccount, String, String, String) -> Unit
+    onRefresh: () -> Unit, onUploadPhoto: (RemoteAccount) -> Unit,
+    onAction: (RemoteAccount, String, String, String) -> Unit
 ) {
     var statusFilter by rememberSaveable { mutableStateOf("all") }
+    var selectedAccount by remember { mutableStateOf<RemoteAccount?>(null) }
     var actionTarget by remember { mutableStateOf<RemoteAccount?>(null) }
     var selectedAction by remember { mutableStateOf("") }
     var temporaryPassword by remember { mutableStateOf("") }
     var selectedRole by remember { mutableStateOf("viewer") }
-    var requestMessage by remember { mutableStateOf<String?>(null) }
     val filtered = accounts.filter { statusFilter == "all" || it.status == statusFilter }
         .sortedWith(compareBy<RemoteAccount>({ if (it.role == "admin") 0 else 1 }, { when (it.status) { "requested" -> 0; "active" -> 1; else -> 2 } }, { it.displayName.lowercase() }))
     fun beginAction(account: RemoteAccount, action: String) {
-        if (action == "view_request") {
-            requestMessage = account.requestNote
-            return
-        }
+        selectedAccount = null
         actionTarget = account
         selectedAction = action
         temporaryPassword = ""
@@ -1898,55 +1934,99 @@ private fun AccountsScreen(
             Column { Text("ADMINISTRATION", color = Forest, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.3.sp); Text("Accounts & Access", fontSize = 25.sp, fontWeight = FontWeight.Bold) }
             IconButton(onClick = onRefresh, enabled = !loading, modifier = Modifier.size(40.dp)) {
                 if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest)
-                else Icon(Icons.TwoTone.Refresh, contentDescription = "Refresh accounts", tint = Forest)
+                else Icon(Icons.TwoTone.Refresh, contentDescription = "Refresh accounts", tint = Forest, modifier = Modifier.size(20.dp))
             }
         }
-        Text("Review requests and manage website access.", color = Muted, fontSize = 12.sp)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            MetricCard("REQUESTED", "${accounts.count { it.status == "requested" }}", Modifier.weight(1f))
-            MetricCard("ACTIVE", "${accounts.count { it.status == "active" }}", Modifier.weight(1f))
-            MetricCard("DISABLED", "${accounts.count { it.status == "disabled" }}", Modifier.weight(1f))
-        }
+        Text("Tap an account photo to view details and actions.", color = Muted, fontSize = 12.sp)
         M3Card {
             Text("STATUS", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 listOf("all" to "All", "requested" to "Requested", "active" to "Active", "disabled" to "Disabled").forEach { (key, label) ->
                     FilterChip(selected = statusFilter == key, onClick = { statusFilter = key }, label = { Text(label, fontSize = 10.sp, maxLines = 1) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp), colors = FilterChipDefaults.filterChipColors(selectedContainerColor = ForestContainer, selectedLabelColor = Forest))
                 }
             }
             if (loading && accounts.isEmpty()) Box(Modifier.fillMaxWidth().padding(22.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Forest, modifier = Modifier.size(24.dp), strokeWidth = 2.dp) }
             if (error != null) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
-            if (accounts.isEmpty() && !loading && error == null) Text("No accounts available. Sign in with the website admin account to manage access.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp))
-            filtered.forEachIndexed { index, account ->
-                if (index > 0) HorizontalDivider(Modifier.padding(vertical = 4.dp), color = SurfaceContainer)
-                Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(36.dp).background(ForestContainer, CircleShape), contentAlignment = Alignment.Center) {
-                        Text(account.displayName.split(" ").take(2).mapNotNull { it.firstOrNull() }.joinToString("").uppercase(), color = Forest, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+            if (accounts.isEmpty() && !loading && error == null) Text("No accounts available.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp))
+            filtered.chunked(3).forEach { rowAccounts ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    rowAccounts.forEach { account ->
+                        Column(
+                            Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).clickable { selectedAccount = account }.padding(vertical = 10.dp, horizontal = 3.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Box {
+                                AccountPhotoAvatar(account, 68.dp)
+                                if (account.status == "requested") Box(Modifier.align(Alignment.TopEnd).size(11.dp).background(MaterialTheme.colorScheme.error, CircleShape))
+                            }
+                            Text(account.displayName.ifBlank { account.username }, fontWeight = FontWeight.SemiBold, fontSize = 10.sp, maxLines = 1)
+                            Text("@" + account.username, color = Muted, fontSize = 9.sp, maxLines = 1)
+                        }
                     }
-                    Column(Modifier.weight(1f).padding(start = 9.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("Name : ${account.displayName.ifBlank { account.username }}", fontWeight = FontWeight.SemiBold, fontSize = 11.sp, maxLines = 1)
-                        Text("Username : @${account.username}", color = Muted, fontSize = 10.sp, maxLines = 1)
-                        val roleText = when (account.role.lowercase()) { "admin" -> "Administrator"; "scheduler" -> "Scheduler"; "viewer" -> "Viewer"; else -> account.role.replaceFirstChar { it.uppercase() } }
-                        Text("Roles : $roleText", color = Muted, fontSize = 10.sp, maxLines = 1)
-                        val statusText = when (account.status.lowercase()) { "requested" -> "Access requested"; "active" -> "Active"; "inactive" -> "In Active"; "disabled" -> "Disabled"; else -> account.status.replaceFirstChar { it.uppercase() } }
-                        Text("Status : $statusText", color = if (account.status == "requested") MaterialTheme.colorScheme.error else Muted, fontSize = 10.sp, maxLines = 1)
-                    }
-                    val isSelf = account.username.equals(currentUsername, true) || account.role == "admin"
-                    if (isSelf) {
-                        Text(if (account.role == "admin") "Admin" else "You", color = Muted, fontSize = 9.sp, modifier = Modifier.padding(horizontal = 7.dp))
-                    } else {
-                        AccountOverflowMenu(account, ::beginAction)
-                    }
+                    repeat(3 - rowAccounts.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
             if (filtered.isEmpty() && accounts.isNotEmpty()) Text("No accounts in this status.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(vertical = 10.dp))
         }
     }
-    requestMessage?.let { message ->
-        AlertDialog(onDismissRequest = { requestMessage = null }, containerColor = AppSurface, shape = RoundedCornerShape(28.dp),
-            title = { Text("Access request message", fontWeight = FontWeight.Bold) },
-            text = { Text(message.ifBlank { "No message was included with this request." }, color = Muted, fontSize = 13.sp) },
-            confirmButton = { TextButton(onClick = { requestMessage = null }) { Text("Close", color = Forest) } })
+    selectedAccount?.let { account ->
+        val roleName = when (account.role.lowercase()) { "admin" -> "Administrator"; "scheduler" -> "Scheduler"; "viewer" -> "Viewer"; else -> account.role.replaceFirstChar { it.uppercase() } }
+        val statusName = when (account.status.lowercase()) { "requested" -> "Requested"; "active" -> "Active"; "disabled" -> "Disabled"; else -> account.status.replaceFirstChar { it.uppercase() } }
+        val isSelf = account.username.equals(currentUsername, true) || account.role == "admin"
+        Dialog(onDismissRequest = { selectedAccount = null }) {
+            Surface(color = AppSurface, shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AccountPhotoAvatar(account, 64.dp)
+                        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                            Text(account.displayName.ifBlank { account.username }, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                            Text("@" + account.username, color = Muted, fontSize = 12.sp)
+                        }
+                        IconButton(onClick = { selectedAccount = null }, modifier = Modifier.size(40.dp)) { Icon(Icons.TwoTone.Close, contentDescription = "Close account details", tint = Forest, modifier = Modifier.size(20.dp)) }
+                    }
+                    HorizontalDivider(color = SurfaceContainer)
+                    AccountInfoLine("Name", account.displayName.ifBlank { account.username })
+                    AccountInfoLine("Username", "@" + account.username)
+                    AccountInfoLine("Role", roleName)
+                    AccountInfoLine("Status", statusName, if (account.status == "requested") MaterialTheme.colorScheme.error else Forest)
+                    if (account.status == "requested") {
+                        Text("Message for Administrator", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Surface(color = SurfaceContainer, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                            Text(account.requestNote.ifBlank { "No message was included with this request." }, color = Ink, fontSize = 12.sp, modifier = Modifier.padding(12.dp))
+                        }
+                    }
+                    OutlinedButton(onClick = { onUploadPhoto(account) }, modifier = Modifier.fillMaxWidth().height(42.dp), shape = RoundedCornerShape(16.dp)) {
+                        Icon(Icons.TwoTone.AddAPhoto, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (account.photoDataUrl.isBlank()) "Upload account photo" else "Change account photo", color = Forest, fontSize = 12.sp)
+                    }
+                    if (!isSelf) {
+                        HorizontalDivider(color = SurfaceContainer)
+                        when (account.status) {
+                            "requested" -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                AccountActionButton("Approve", Icons.TwoTone.CheckCircle, Forest, Modifier.weight(1f)) { beginAction(account, "approve") }
+                                AccountActionButton("Decline", Icons.TwoTone.Close, MaterialTheme.colorScheme.error, Modifier.weight(1f)) { beginAction(account, "decline") }
+                            }
+                            "active" -> {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    AccountActionButton("Change role", Icons.TwoTone.ManageAccounts, Forest, Modifier.weight(1f)) { beginAction(account, "change_role") }
+                                    AccountActionButton("Reset password", Icons.TwoTone.Lock, Forest, Modifier.weight(1f)) { beginAction(account, "reset") }
+                                }
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    AccountActionButton("Disable", Icons.TwoTone.Warning, Color(0xFFFFA726), Modifier.weight(1f)) { beginAction(account, "disable") }
+                                    AccountActionButton("Delete", Icons.TwoTone.Delete, MaterialTheme.colorScheme.error, Modifier.weight(1f)) { beginAction(account, "delete") }
+                                }
+                            }
+                            "disabled" -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                AccountActionButton("Enable", Icons.TwoTone.CheckCircle, Forest, Modifier.weight(1f)) { beginAction(account, "enable") }
+                                AccountActionButton("Delete", Icons.TwoTone.Delete, MaterialTheme.colorScheme.error, Modifier.weight(1f)) { beginAction(account, "delete") }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     if (actionTarget != null) {
         val needsPassword = selectedAction == "approve" || selectedAction == "reset"
@@ -1956,56 +2036,51 @@ private fun AccountsScreen(
             onDismissRequest = { actionTarget = null }, containerColor = AppSurface, shape = RoundedCornerShape(28.dp),
             title = { Text(when (selectedAction) { "approve" -> "Approve account"; "reset" -> "Reset password"; "change_role" -> "Change access role"; "decline" -> "Decline request?"; "disable" -> "Disable account?"; "delete" -> "Delete account permanently?"; else -> "Enable account?" }, fontWeight = FontWeight.Bold) },
             text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("${actionTarget?.displayName} · @${actionTarget?.username}", color = Muted, fontSize = 12.sp)
+                Text((actionTarget?.displayName ?: "") + " · @" + (actionTarget?.username ?: ""), color = Muted, fontSize = 12.sp)
                 if (needsRole) ParticipantChoice("Role", selectedRole, listOf("viewer" to "Viewer", "scheduler" to "Scheduler")) { selectedRole = it }
                 if (needsPassword) OutlinedTextField(temporaryPassword, { temporaryPassword = it }, label = { Text("Temporary password") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 if (confirmOnly) Text(when (selectedAction) { "decline" -> "This access request will be removed."; "disable" -> "This account will lose access and be signed out."; "delete" -> "This removes the login permanently and revokes its sessions. Saved schedule and audit records are retained."; else -> "This account will regain website access." }, color = Muted, fontSize = 12.sp)
             } },
-            confirmButton = { TextButton(enabled = (!needsPassword || temporaryPassword.length >= 10), onClick = { actionTarget?.let { onAction(it, selectedAction, if (needsRole) selectedRole else "", temporaryPassword) }; actionTarget = null }) { Text(when (selectedAction) { "approve" -> "Approve"; "reset" -> "Set password"; "decline" -> "Decline"; "disable" -> "Disable"; "enable" -> "Enable"; "delete" -> "Delete"; else -> "Save role" }, color = if (selectedAction == "disable" || selectedAction == "decline" || selectedAction == "delete") MaterialTheme.colorScheme.error else Forest) } },
+            confirmButton = { TextButton(enabled = (!needsPassword || temporaryPassword.length >= 10), onClick = { actionTarget?.let { onAction(it, selectedAction, if (needsRole) selectedRole else "", temporaryPassword) }; actionTarget = null }) { Text(when (selectedAction) { "approve" -> "Approve"; "reset" -> "Set password"; "decline" -> "Decline"; "disable" -> "Disable"; "enable" -> "Enable"; "delete" -> "Delete"; else -> "Save role" }, color = if (selectedAction == "delete" || selectedAction == "decline") MaterialTheme.colorScheme.error else if (selectedAction == "disable") Color(0xFFFFA726) else Forest) } },
             dismissButton = { TextButton(onClick = { actionTarget = null }) { Text("Cancel", color = Forest) } }
         )
     }
 }
+
+
 @Composable
-private fun AccountRoleBadge(role:String) {
-    Surface(shape=CircleShape,color=ForestContainer,modifier=Modifier.size(21.dp)) {
-        Box(contentAlignment=Alignment.Center) {
-            if(role=="admin") Text("♛",color=Forest,fontSize=13.sp,fontWeight=FontWeight.Bold)
-            else Icon(Icons.Outlined.DateRange,contentDescription="Scheduler account",tint=Forest,modifier=Modifier.size(13.dp))
+private fun AccountPhotoAvatar(account: RemoteAccount, size: androidx.compose.ui.unit.Dp) {
+    val bitmap = remember(account.photoDataUrl) {
+        account.photoDataUrl.substringAfter(",", "").takeIf { it.isNotBlank() }?.let { encoded ->
+            runCatching {
+                val bytes = Base64.decode(encoded, Base64.DEFAULT)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+            }.getOrNull()
+        }
+    }
+    if (bitmap != null) {
+        Image(bitmap, contentDescription = account.displayName + " profile photo", contentScale = ContentScale.Crop, modifier = Modifier.size(size).clip(CircleShape))
+    } else {
+        Box(Modifier.size(size).background(ForestContainer, CircleShape), contentAlignment = Alignment.Center) {
+            Text(account.displayName.split(" ").take(2).mapNotNull { it.firstOrNull() }.joinToString("").ifBlank { "?" }.uppercase(), color = Forest, fontWeight = FontWeight.Bold, fontSize = (size.value * .30f).sp)
         }
     }
 }
 
 @Composable
-private fun AccountOverflowMenu(account: RemoteAccount, onAction: (RemoteAccount, String) -> Unit) {
-    var expanded by remember(account.id) { mutableStateOf(false) }
-    Box {
-        IconButton(onClick = { expanded = true }, modifier = Modifier.size(36.dp)) {
-            Box {
-                Text("⋮", fontSize = 20.sp, color = Forest)
-                if (account.status == "requested") Box(Modifier.align(Alignment.TopEnd).offset(x = 1.dp, y = 1.dp).size(8.dp).background(MaterialTheme.colorScheme.error, CircleShape))
-            }
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.background(AppSurface)) {
-            when (account.status) {
-                "requested" -> {
-                    DropdownMenuItem(text = { Text("View request message") }, onClick = { expanded = false; onAction(account, "view_request") })
-                    DropdownMenuItem(text = { Text("Approve request") }, onClick = { expanded = false; onAction(account, "approve") })
-                    DropdownMenuItem(text = { Text("Decline request", color = MaterialTheme.colorScheme.error) }, onClick = { expanded = false; onAction(account, "decline") })
-                }
-                "active" -> {
-                    DropdownMenuItem(text = { Text("Change role") }, onClick = { expanded = false; onAction(account, "change_role") })
-                    DropdownMenuItem(text = { Text("Reset password") }, onClick = { expanded = false; onAction(account, "reset") })
-                    DropdownMenuItem(text = { Text("Disable account") }, onClick = { expanded = false; onAction(account, "disable") })
-                    HorizontalDivider()
-                    DropdownMenuItem(text = { Text("Delete permanently", color = MaterialTheme.colorScheme.error) }, onClick = { expanded = false; onAction(account, "delete") })
-                }
-                else -> {
-                    DropdownMenuItem(text = { Text("Enable account") }, onClick = { expanded = false; onAction(account, "enable") })
-                    DropdownMenuItem(text = { Text("Delete permanently", color = MaterialTheme.colorScheme.error) }, onClick = { expanded = false; onAction(account, "delete") })
-                }
-            }
-        }
+private fun AccountInfoLine(label: String, value: String, tint: Color = Muted) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = Muted, fontSize = 12.sp)
+        Text(value, color = tint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun AccountActionButton(label: String, icon: ImageVector, tint: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    TextButton(onClick = onClick, modifier = modifier.heightIn(min = 42.dp), contentPadding = PaddingValues(horizontal = 5.dp, vertical = 6.dp)) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(19.dp))
+        Spacer(Modifier.width(5.dp))
+        Text(label, color = tint, fontSize = 11.sp, maxLines = 1)
     }
 }
 
