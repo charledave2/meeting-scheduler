@@ -82,6 +82,9 @@ import androidx.compose.material.icons.twotone.Close
 import androidx.compose.material.icons.twotone.Tune
 import androidx.compose.material.icons.twotone.ErrorOutline
 import androidx.compose.material.icons.twotone.Warning
+import androidx.compose.material.icons.twotone.PersonAdd
+import androidx.compose.material.icons.twotone.Sort
+import androidx.compose.material.icons.twotone.AdminPanelSettings
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
