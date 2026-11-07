@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.34.0 — 2026-11-07
+
+- Removed circular fills from Participants Add and Sort icon controls while keeping matching touch targets.
+- Reworked Export Text to follow the official schedule order with section headings, times, durations, details, roles, hall assignments, and closing program.
+- Export Text now creates a UTF-8 .txt attachment and opens Android's share sheet for direct sharing to other apps.
+- Published the APK and Android source archive as GitHub Release assets.
+
 ## v0.33.0 — 2026-11-07
 
 - Fixed the sign-in failure on devices where Android Keystore cannot generate an AES session key.
