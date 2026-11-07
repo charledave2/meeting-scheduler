@@ -1,5 +1,6 @@
 import { getRuntimeEnv } from "../../../../db";
 import { assertSameOrigin, getChatGPTUser } from "../../../chatgpt-auth";
+import { getToolAccessMap } from "../../../permissions";
 
 async function ensureProfilePhotosTable() {
   const database = getRuntimeEnv().DB;
@@ -22,6 +23,7 @@ export async function GET() {
       role: user.role,
       mustChangePassword: user.mustChangePassword,
       photoDataUrl: row?.photo_data_url ?? "",
+      toolAccess: await getToolAccessMap(user),
     },
   });
 }
