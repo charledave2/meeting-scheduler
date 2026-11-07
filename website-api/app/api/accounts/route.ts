@@ -1,5 +1,5 @@
 import { desc, eq } from "drizzle-orm";
-import { getDb } from "../../../db";
+import { getDb, getRuntimeEnv } from "../../../db";
 import { authAccounts, authSessions, users } from "../../../db/schema";
 import { assertSameOrigin, getChatGPTUser, hashPassword, validPassword } from "../../chatgpt-auth";
 
@@ -10,6 +10,13 @@ async function admin() {
 
 const assignableRoles = ["scheduler", "viewer"] as const;
 type AssignableRole = (typeof assignableRoles)[number];
+
+async function ensureAccountPhotosTable() {
+  const database = getRuntimeEnv().DB;
+  if (!database) throw new Error("Cloudflare D1 binding DB is unavailable.");
+  await database.prepare("CREATE TABLE IF NOT EXISTS account_profile_photos (account_id INTEGER PRIMARY KEY NOT NULL, photo_data_url TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
+  return database;
+}
 
 export async function GET() {
   if (!(await admin())) return Response.json({ error: "Admin only" }, { status: 403 });
@@ -26,7 +33,10 @@ export async function GET() {
     .from(authAccounts)
     .leftJoin(users, eq(authAccounts.userId, users.id))
     .orderBy(desc(authAccounts.createdAt));
-  return Response.json({ accounts });
+  const photoDb = await ensureAccountPhotosTable();
+  const photoRows = await photoDb.prepare("SELECT account_id, photo_data_url FROM account_profile_photos").all<{ account_id: number; photo_data_url: string }>();
+  const photos = new Map((photoRows.results ?? []).map((row) => [row.account_id, row.photo_data_url]));
+  return Response.json({ accounts: accounts.map((account) => ({ ...account, photoDataUrl: photos.get(account.id) ?? "" })) });
 }
 
 export async function PATCH(request: Request) {
@@ -39,8 +49,9 @@ export async function PATCH(request: Request) {
     action?: string;
     temporaryPassword?: string;
     role?: AssignableRole;
+    photoDataUrl?: string;
   };
-  const allowedActions = ["approve", "reset", "disable", "enable", "decline", "change_role"];
+  const allowedActions = ["approve", "reset", "disable", "enable", "decline", "change_role", "upload_photo"];
   if (!body.id || !body.action || !allowedActions.includes(body.action)) {
     return Response.json({ error: "Invalid account action." }, { status: 400 });
   }
@@ -48,6 +59,17 @@ export async function PATCH(request: Request) {
   const db = getDb();
   const [account] = await db.select().from(authAccounts).where(eq(authAccounts.id, body.id)).limit(1);
   if (!account) return Response.json({ error: "Account not found." }, { status: 404 });
+  if (body.action === "upload_photo") {
+    const photoDataUrl = body.photoDataUrl || "";
+    if (photoDataUrl.length > 600_000 || !/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(photoDataUrl)) {
+      return Response.json({ error: "Choose a valid JPEG image under the size limit." }, { status: 400 });
+    }
+    const photoDb = await ensureAccountPhotosTable();
+    await photoDb.prepare("INSERT INTO account_profile_photos (account_id, photo_data_url, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(account_id) DO UPDATE SET photo_data_url = excluded.photo_data_url, updated_at = CURRENT_TIMESTAMP")
+      .bind(account.id, photoDataUrl).run();
+    return Response.json({ message: "Account photo saved to cloud." });
+  }
+
   if ((body.action === "approve" || body.action === "reset") && !validPassword(body.temporaryPassword || "")) {
     return Response.json({ error: "Temporary password must have at least 10 characters." }, { status: 400 });
   }
@@ -75,6 +97,8 @@ export async function PATCH(request: Request) {
 
   if (body.action === "decline") {
     if (account.status !== "requested") return Response.json({ error: "This request is no longer pending." }, { status: 409 });
+    const photoDb = await ensureAccountPhotosTable();
+    await photoDb.prepare("DELETE FROM account_profile_photos WHERE account_id = ?").bind(account.id).run();
     await db.delete(authAccounts).where(eq(authAccounts.id, account.id));
     return Response.json({ message: `${account.displayName}'s request was declined and removed.`, removed: true });
   }
@@ -138,6 +162,8 @@ export async function DELETE(request: Request) {
     if (targetUser?.role === "admin") return Response.json({ error: "Admin accounts cannot be deleted here." }, { status: 400 });
   }
 
+  const photoDb = await ensureAccountPhotosTable();
+  await photoDb.prepare("DELETE FROM account_profile_photos WHERE account_id = ?").bind(account.id).run();
   await db.delete(authSessions).where(eq(authSessions.accountId, account.id));
   await db.delete(authAccounts).where(eq(authAccounts.id, account.id));
   // Keep the linked user row so saved schedules retain their owner/audit identity.
