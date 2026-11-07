@@ -336,6 +336,10 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var current by rememberSaveable { mutableStateOf(Screen.HOME) }
     val officialPreviewWebView = remember { mutableStateOf<WebView?>(null) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
+    LaunchedEffect(drawerState.isOpen) {
+        if (drawerState.isOpen) runCatching { api.currentUser() }
+            .onSuccess { profilePhotoDataUrl = it.photoDataUrl }
+    }
     val scope = rememberCoroutineScope()
     var weekStart by rememberSaveable { mutableStateOf(store.detail("week", LocalDate.of(2026, 11, 9).toString())) }
     var bible by rememberSaveable { mutableStateOf(store.detail("bible", "Jeremias 31")) }
@@ -845,6 +849,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     profilePhotoDataUrl = dataUrl
                     profilePhotoPath = null
                     toastMessage = "Na-save sa cloud ang profile photo."
+                    if (identityRole == "admin") { accountsLoaded = false; accountReloadTick++ }
                 }
                 .onFailure { profileError = it.message ?: "Hindi na-save sa cloud ang profile photo." }
         }
