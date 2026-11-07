@@ -997,6 +997,88 @@ private fun M3Card(content: @Composable ColumnScope.() -> Unit) {
 private fun Label(text: String) { Text(text.uppercase(), color = Muted, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.4.sp) }
 
 @Composable
+private fun HomeScreen(
+    modifier: Modifier,
+    accountName: String,
+    schedules: List<RemoteSchedule>,
+    loading: Boolean,
+    error: String?,
+    onRefresh: () -> Unit,
+    onOpenSchedule: (RemoteSchedule) -> Unit,
+    onCreateSchedule: () -> Unit
+) {
+    val hour = java.time.LocalTime.now().hour
+    val greeting = when (hour) { in 5..11 -> "Good morning"; in 12..17 -> "Good afternoon"; else -> "Good evening" }
+    val today = LocalDate.now()
+    val upcoming = remember(schedules, today) {
+        schedules.mapNotNull { remote ->
+            val start = scheduleStartDate(remote.weekLabel, remote.updatedAt) ?: return@mapNotNull null
+            if (start.plusDays(6).isBefore(today)) null else start to remote
+        }.sortedBy { it.first }.take(6)
+    }
+    PageColumn(modifier) {
+        PageHeading("MIDWEEK MEETING WORKSPACE", "Home Page", "Your congregation schedule at a glance.")
+        Card(shape = RoundedCornerShape(26.dp), colors = CardDefaults.cardColors(containerColor = ForestContainer)) {
+            Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(52.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f), RoundedCornerShape(17.dp)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.TwoTone.Home, contentDescription = null, tint = Forest, modifier = Modifier.size(27.dp))
+                }
+                Spacer(Modifier.width(14.dp))
+                Column {
+                    Text("$greeting,", color = Muted, fontSize = 14.sp)
+                    Text(accountName.ifBlank { "there" }, color = MaterialTheme.colorScheme.onPrimaryContainer, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                    Text(today.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.ENGLISH)), color = Muted, fontSize = 12.sp)
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Upcoming Meetings", fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                Text("Tap a meeting to preview its official schedule.", color = Muted, fontSize = 12.sp)
+            }
+            IconButton(onClick = onRefresh) { Icon(Icons.TwoTone.Refresh, contentDescription = "Refresh upcoming meetings", tint = Forest) }
+        }
+        when {
+            loading -> Box(Modifier.fillMaxWidth().padding(28.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Forest) }
+            error != null -> Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                Text(error, color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
+            }
+            upcoming.isEmpty() -> Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = SurfaceContainer)) {
+                Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(30.dp))
+                    Text("No upcoming saved meetings", fontWeight = FontWeight.SemiBold)
+                    Text("Create a workbook and save the schedule to the cloud to see it here.", color = Muted, fontSize = 12.sp)
+                    FilledTonalButton(onClick = onCreateSchedule, shape = RoundedCornerShape(16.dp)) {
+                        Icon(Icons.TwoTone.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(7.dp)); Text("Open Workbook")
+                    }
+                }
+            }
+            else -> upcoming.forEach { (date, remote) ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { onOpenSchedule(remote) },
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = SurfaceContainer),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(44.dp).background(ForestContainer, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(23.dp))
+                        }
+                        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                            Text(remote.weekLabel, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Text(remote.reading, color = Muted, fontSize = 12.sp)
+                            Text(date.format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.ENGLISH)), color = Forest, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        }
+                        Icon(Icons.TwoTone.Preview, contentDescription = "Preview schedule", tint = Forest)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
     PageColumn(modifier) {
         PageHeading("SCHEDULE BUILDER", "Workbook", "Pumili ng linggo. Kusang kukunin ang weekly program.")
