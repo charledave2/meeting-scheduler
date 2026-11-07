@@ -75,6 +75,7 @@ import androidx.compose.material.icons.twotone.History
 import androidx.compose.material.icons.twotone.ManageAccounts
 import androidx.compose.material.icons.twotone.Preview
 import androidx.compose.material.icons.twotone.Home
+import androidx.compose.material.icons.twotone.Close
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -329,6 +330,13 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var rotationBusy by remember { mutableStateOf(false) }
     var rotationError by remember { mutableStateOf<String?>(null) }
     var remoteRows by remember { mutableStateOf<List<RemoteSchedule>>(emptyList()) }
+    var homeSchedules by remember { mutableStateOf<List<RemoteSchedule>>(emptyList()) }
+    var homeLoaded by rememberSaveable { mutableStateOf(false) }
+    var homeBusy by remember { mutableStateOf(false) }
+    var homeError by remember { mutableStateOf<String?>(null) }
+    var homePreviewHtml by remember { mutableStateOf<String?>(null) }
+    var homePreviewWeek by remember { mutableStateOf<String?>(null) }
+    var homePreviewLoading by remember { mutableStateOf(false) }
     var editingRemoteId by rememberSaveable { mutableIntStateOf(0) }
     var suppressWeekLookup by remember { mutableStateOf(false) }
     var remoteScheduleLoadedWeek by remember { mutableStateOf("") }
@@ -343,6 +351,17 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     val week = remember(weekStart) { runCatching { LocalDate.parse(weekStart) }.getOrDefault(LocalDate.of(2026,11,9)) }
     val weekLabel = remember(week) { week.format(DateTimeFormatter.ofPattern("MMM d")) + " – " + week.plusDays(6).format(DateTimeFormatter.ofPattern("MMM d, yyyy")) }
     val eligible = participants.filter { it.enabled }
+
+    LaunchedEffect(current, signedIn, homeLoaded) {
+        if (current == Screen.HOME && signedIn && !homeLoaded && !homeBusy) {
+            homeBusy = true
+            homeError = null
+            runCatching { api.schedules() }
+                .onSuccess { homeSchedules = it; homeLoaded = true }
+                .onFailure { homeError = it.message ?: "Hindi makuha ang upcoming meetings."; homeLoaded = true }
+            homeBusy = false
+        }
+    }
 
     LaunchedEffect(weekStart, signedIn, participantsLoaded) {
         if (signedIn && participantsLoaded) {
@@ -510,6 +529,34 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         runCatching { applyRemoteSchedule(remote,navigate=true,edit=edit) }.onFailure { toastMessage=it.message ?: "Hindi mabuksan ang schedule" }
     } }
 
+    fun openUpcomingPreview(remote: RemoteSchedule) {
+        homePreviewWeek = remote.weekLabel
+        homePreviewHtml = null
+        homePreviewLoading = true
+        authScope.launch {
+            runCatching {
+                val saved = api.schedule(remote.id)
+                val meta = saved.optJSONObject("meta") ?: JSONObject()
+                val rawParts = saved.optJSONArray("parts") ?: JSONArray()
+                val assignments = (0 until rawParts.length()).mapNotNull { rawParts.optJSONObject(it)?.toAssignment() }
+                val start = meta.optString("weekStart").ifBlank { scheduleStartDate(remote.weekLabel, remote.updatedAt)?.toString() ?: LocalDate.now().toString() }
+                buildOfficialScheduleHtml(
+                    start,
+                    meta.optString("reading", remote.reading),
+                    meta.optString("openingSong", "27"),
+                    meta.optString("closingSong", "132"),
+                    assignments,
+                    meta.optString("chairman"),
+                    meta.optString("openingPrayer"),
+                    meta.optString("adviser"),
+                    meta.optString("audienceGroup")
+                )
+            }.onSuccess { homePreviewHtml = it }
+                .onFailure { toastMessage = it.message ?: "Hindi mabuksan ang preview."; homePreviewWeek = null }
+            homePreviewLoading = false
+        }
+    }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -588,6 +635,16 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 },
                 label = "screen transition"
             ) { destination -> when (destination) {
+                Screen.HOME -> HomeScreen(
+                    modifier = scroll,
+                    accountName = identityName,
+                    schedules = homeSchedules,
+                    loading = homeBusy,
+                    error = homeError,
+                    onRefresh = { homeLoaded = false },
+                    onOpenSchedule = ::openUpcomingPreview,
+                    onCreateSchedule = { current = Screen.DETAILS }
+                )
                 Screen.DETAILS -> DetailsScreen(
                     modifier = scroll, weekLabel = weekLabel, bible = bible, onBible = { bible = it; persistDetails() },
                     openingSong = openingSong, onOpeningSong = { openingSong = it; persistDetails() }, closingSong = closingSong,
@@ -685,6 +742,30 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 }
             }.onSuccess { path -> profilePhotoPath = path; store.saveProfilePhoto(identityUsername, path) }
                 .onFailure { profileError = it.message ?: "Hindi ma-save ang larawan." }
+        }
+    }
+    if (homePreviewWeek != null) {
+        Dialog(onDismissRequest = { homePreviewWeek = null; homePreviewHtml = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Surface(modifier = Modifier.fillMaxWidth(0.94f).fillMaxHeight(0.84f), shape = RoundedCornerShape(24.dp), color = AppSurface) {
+                Column(Modifier.fillMaxSize().padding(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(homePreviewWeek ?: "Schedule preview", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { homePreviewWeek = null; homePreviewHtml = null }) { Icon(Icons.TwoTone.Close, contentDescription = "Close preview", tint = Forest) }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    if (homePreviewLoading || homePreviewHtml == null) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Forest) }
+                    } else {
+                        key(homePreviewHtml) {
+                            AndroidView(factory = { viewContext -> WebView(viewContext).apply {
+                                setBackgroundColor(android.graphics.Color.WHITE)
+                                settings.javaScriptEnabled = true
+                                loadDataWithBaseURL("file:///android_asset/", homePreviewHtml ?: "", "text/HTML", "UTF-8", null)
+                            } }, modifier = Modifier.fillMaxSize())
+                        }
+                    }
+                }
+            }
         }
     }
     if (profileDialogOpen) {
@@ -918,7 +999,7 @@ private fun Label(text: String) { Text(text.uppercase(), color = Muted, fontSize
 @Composable
 private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
     PageColumn(modifier) {
-        PageHeading("SCHEDULE BUILDER", "Meeting Details", "Pumili ng linggo. Kusang kukunin ang weekly program.")
+        PageHeading("SCHEDULE BUILDER", "Workbook", "Pumili ng linggo. Kusang kukunin ang weekly program.")
         M3Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(38.dp).background(ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) { Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp)) }
