@@ -60,6 +60,12 @@ import androidx.compose.material.icons.twotone.Person
 import androidx.compose.material.icons.twotone.MoreVert
 import androidx.compose.material.icons.twotone.Edit
 import androidx.compose.material.icons.twotone.Delete
+import androidx.compose.material.icons.twotone.Logout
+import androidx.compose.material.icons.twotone.Assignment
+import androidx.compose.material.icons.twotone.Groups
+import androidx.compose.material.icons.twotone.History
+import androidx.compose.material.icons.twotone.ManageAccounts
+import androidx.compose.material.icons.twotone.Preview
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -156,12 +162,12 @@ private data class SavedSchedule(
     val chairman: String = "", val openingPrayer: String = "", val adviser: String = "", val audienceGroup: String = ""
 )
 private enum class Screen(val title: String, val section: String) {
-    DETAILS("Meeting details", "SCHEDULE TOOLS"),
+    DETAILS("Meeting Details", "SCHEDULE TOOLS"),
     ASSIGNMENTS("Assignments", "SCHEDULE TOOLS"),
-    PREVIEW("Preview & export", "SCHEDULE TOOLS"),
+    PREVIEW("Preview & Export", "SCHEDULE TOOLS"),
     PARTICIPANTS("Participants", "CONGREGATION"),
-    HISTORY("Schedule history", "CONGREGATION"),
-    ACCOUNTS("Accounts & access", "ADMINISTRATION")
+    HISTORY("Schedule History", "CONGREGATION"),
+    ACCOUNTS("Accounts & Access", "ADMINISTRATION")
 }
 
 private class LocalWorkspaceStore(context: Context) {
@@ -235,6 +241,17 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
 @Composable
 private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, store: LocalWorkspaceStore) {
     val context = LocalContext.current
+    val connectivity = remember(context) { context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager }
+    var isOnline by remember { mutableStateOf(false) }
+    LaunchedEffect(connectivity) {
+        while (true) {
+            val network = connectivity.activeNetwork
+            val caps = network?.let { connectivity.getNetworkCapabilities(it) }
+            isOnline = caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
+                caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            kotlinx.coroutines.delay(2500)
+        }
+    }
     val api = remember(context) { SchedulerApi(context) }
     val authScope = rememberCoroutineScope()
     var demoMode by rememberSaveable { mutableStateOf(false) }
@@ -492,16 +509,39 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     }
                     HorizontalDivider(color = SurfaceContainer)
                     DrawerSection("SCHEDULE TOOLS")
-                    DrawerEntry(Icons.Outlined.DateRange, Screen.DETAILS, current) { current = it; scope.launch { drawerState.close() } }
-                    DrawerEntry(Icons.Outlined.List, Screen.ASSIGNMENTS, current) { current = it; scope.launch { drawerState.close() } }
-                    DrawerEntry(Icons.Outlined.Home, Screen.PREVIEW, current) { current = it; scope.launch { drawerState.close() } }
+                    DrawerEntry(Icons.TwoTone.CalendarMonth, Screen.DETAILS, current) { current = it; scope.launch { drawerState.close() } }
+                    DrawerEntry(Icons.TwoTone.Assignment, Screen.ASSIGNMENTS, current) { current = it; scope.launch { drawerState.close() } }
+                    DrawerEntry(Icons.TwoTone.Preview, Screen.PREVIEW, current) { current = it; scope.launch { drawerState.close() } }
                     DrawerSection("CONGREGATION")
-                    DrawerEntry(Icons.Outlined.Person, Screen.PARTICIPANTS, current) { current = it; scope.launch { drawerState.close() } }
-                    DrawerEntry(Icons.Outlined.Refresh, Screen.HISTORY, current) { current = it; scope.launch { drawerState.close() } }
+                    DrawerEntry(Icons.TwoTone.Groups, Screen.PARTICIPANTS, current) { current = it; scope.launch { drawerState.close() } }
+                    DrawerEntry(Icons.TwoTone.History, Screen.HISTORY, current) { current = it; scope.launch { drawerState.close() } }
                     DrawerSection("ADMINISTRATION")
-                    DrawerEntry(Icons.Outlined.AccountCircle, Screen.ACCOUNTS, current) { current = it; scope.launch { drawerState.close() } }
+                    DrawerEntry(Icons.TwoTone.ManageAccounts, Screen.ACCOUNTS, current) { current = it; scope.launch { drawerState.close() } }
                     Spacer(Modifier.weight(1f))
-                    Text(if (demoMode) "DEMO WORKSPACE · SAMPLE DATA" else "CONNECTED · $identityName", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(14.dp))
+                    HorizontalDivider(color = SurfaceContainer, modifier = Modifier.padding(bottom = 12.dp))
+                    Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        val statusText = if (demoMode) "Offline · Demo workspace" else if (isOnline) "Connected · $identityName" else "Offline · $identityName"
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Box(Modifier.padding(end = 8.dp).size(8.dp).background(if (isOnline && !demoMode) Color(0xFF4CAF50) else Color(0xFFE45757), CircleShape))
+                            Text(statusText, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                        }
+                        TextButton(onClick = {
+                            api.signOut()
+                            signedIn = false
+                            demoMode = false
+                            store.demoMode = false
+                            identityName = ""
+                            identityUsername = ""
+                            identityRole = ""
+                            loginError = null
+                            authReady = true
+                            scope.launch { drawerState.close() }
+                        }) {
+                            Icon(Icons.TwoTone.Logout, contentDescription = null, tint = Forest, modifier = Modifier.size(19.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Sign Out", color = Forest, fontSize = 13.sp)
+                        }
+                    }
                 }
             }
         }
@@ -779,7 +819,7 @@ private fun Label(text: String) { Text(text.uppercase(), color = Muted, fontSize
 @Composable
 private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
     PageColumn(modifier) {
-        PageHeading("SCHEDULE BUILDER", "New schedule", "Pumili ng linggo. Kusang kukunin ang weekly program.")
+        PageHeading("SCHEDULE BUILDER", "Meeting Details", "Pumili ng linggo. Kusang kukunin ang weekly program.")
         M3Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(38.dp).background(ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) { Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp)) }
@@ -1080,7 +1120,7 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
     }
     var previewReady by remember(html){mutableStateOf(false)}
     PageColumn(modifier) {
-        PageHeading("SCHEDULE TOOLS", "Preview & export", "Official meeting schedule · tugma ang preview at PNG output.")
+        PageHeading("SCHEDULE TOOLS", "Preview & Export", "Official meeting schedule · tugma ang preview at PNG output.")
         Row(modifier=Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
             FilledTonalButton(
                 onClick=onPng, enabled=previewReady, modifier=Modifier.weight(1f).height(48.dp),
@@ -1334,7 +1374,7 @@ private fun HistoryScreen(
     var deleteTarget by remember { mutableStateOf<RemoteSchedule?>(null) }
     val sortedSchedules = remoteSchedules.sortedByDescending { scheduleStartDate(it.weekLabel) ?: LocalDate.MIN }
     PageColumn(modifier) {
-        PageHeading("SAVED SCHEDULES", "Schedule history", "Mga schedule na naka-save sa cloud database.")
+        PageHeading("SAVED SCHEDULES", "Schedule History", "Mga schedule na naka-save sa cloud database.")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("${remoteSchedules.size} saved · newest first", color = Muted, fontSize = 12.sp)
             FilledTonalButton(onClick = onNew, shape = RoundedCornerShape(16.dp)) {
