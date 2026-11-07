@@ -257,17 +257,6 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
 @Composable
 private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, store: LocalWorkspaceStore) {
     val context = LocalContext.current
-    val connectivity = remember(context) { context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager }
-    var isOnline by remember { mutableStateOf(false) }
-    LaunchedEffect(connectivity) {
-        while (true) {
-            val network = connectivity.activeNetwork
-            val caps = network?.let { connectivity.getNetworkCapabilities(it) }
-            isOnline = caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
-                caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-            kotlinx.coroutines.delay(2500)
-        }
-    }
     val api = remember(context) { SchedulerApi(context) }
     val authScope = rememberCoroutineScope()
     var demoMode by rememberSaveable { mutableStateOf(false) }
@@ -876,13 +865,6 @@ private fun ProfileAvatar(name: String, photoPath: String?, size: androidx.compo
         Box(Modifier.size(size).background(ForestContainer, CircleShape), contentAlignment = Alignment.Center) {
             Text(name.split(" ").filter { it.isNotBlank() }.take(2).mapNotNull { it.firstOrNull() }.joinToString("").ifBlank { "?" }.uppercase(), color = Forest, fontWeight = FontWeight.Bold, fontSize = (size.value * .34f).sp)
         }
-    }
-}
-
-@Composable
-private fun BrandMark(size: Int) {
-    Box(Modifier.size(size.dp).background(Forest, RoundedCornerShape(size.times(.34f).dp)), contentAlignment = Alignment.Center) {
-        Text("M", color = Color.White, fontSize = (size * .52f).sp, fontWeight = FontWeight.Bold)
     }
 }
 
