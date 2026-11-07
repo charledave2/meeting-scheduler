@@ -74,6 +74,7 @@ import androidx.compose.material.icons.twotone.Groups
 import androidx.compose.material.icons.twotone.History
 import androidx.compose.material.icons.twotone.ManageAccounts
 import androidx.compose.material.icons.twotone.Preview
+import androidx.compose.material.icons.twotone.Home
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -87,6 +88,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -174,7 +177,8 @@ private data class SavedSchedule(
     val chairman: String = "", val openingPrayer: String = "", val adviser: String = "", val audienceGroup: String = ""
 )
 private enum class Screen(val title: String, val section: String) {
-    DETAILS("Meeting Details", "SCHEDULE TOOLS"),
+    HOME("Home Page", "OVERVIEW"),
+    DETAILS("Workbook", "SCHEDULE TOOLS"),
     ASSIGNMENTS("Assignments", "SCHEDULE TOOLS"),
     PREVIEW("Preview & Export", "SCHEDULE TOOLS"),
     PARTICIPANTS("Participants", "CONGREGATION"),
@@ -192,9 +196,6 @@ private class LocalWorkspaceStore(context: Context) {
     var darkMode: Boolean
         get() = prefs.getBoolean("dark_mode", true)
         set(value) { prefs.edit().putBoolean("dark_mode", value).apply() }
-    var demoMode: Boolean
-        get() = prefs.getBoolean("demo_mode", false)
-        set(value) { prefs.edit().putBoolean("demo_mode", value).apply() }
     fun detail(key: String, fallback: String) = prefs.getString("detail_$key", fallback) ?: fallback
     fun setDetail(key: String, value: String) { prefs.edit().putString("detail_$key", value).apply() }
     fun saveDetails(week: String, bible: String, opening: String, closing: String, workbook: String) {
@@ -260,7 +261,6 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     val context = LocalContext.current
     val api = remember(context) { SchedulerApi(context) }
     val authScope = rememberCoroutineScope()
-    var demoMode by rememberSaveable { mutableStateOf(false) }
     var signedIn by rememberSaveable { mutableStateOf(false) }
     var authReady by remember { mutableStateOf(false) }
     var loginBusy by remember { mutableStateOf(false) }
@@ -287,26 +287,26 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         authReady = true
     }
     if (!splashFinished || !authReady) { MeetingSplashScreen(); return }
-    if (!demoMode && !signedIn) {
+    if (!signedIn) {
         if (!authReady) {
             Surface(color = AppSurface, modifier = Modifier.fillMaxSize()) { Box(contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Forest) } }
-        } else DemoLoginScreen(
+        } else LoginScreen(
             busy = loginBusy, error = loginError,
+            onRequestAccess = { name, username, note -> api.requestAccess(name, username, note); Unit },
             onLogin = { username, password ->
                 authScope.launch {
                     loginBusy = true; loginError = null
                     runCatching { api.login(username, password) }
-                        .onSuccess { identityName = store.profileName(it.username, it.name); identityUsername=it.username; profilePhotoPath=store.profilePhoto(it.username); identityRole=it.role; signedIn = true; store.demoMode = false }
+                        .onSuccess { identityName = store.profileName(it.username, it.name); identityUsername=it.username; profilePhotoPath=store.profilePhoto(it.username); identityRole=it.role; signedIn = true }
                         .onFailure { loginError = it.message ?: "Hindi makapag-sign in." }
                     loginBusy = false
                 }
-            },
-            onContinue = { demoMode = true; store.demoMode = true }
+            }
         )
         return
     }
 
-    var current by rememberSaveable { mutableStateOf(Screen.DETAILS) }
+    var current by rememberSaveable { mutableStateOf(Screen.HOME) }
     val officialPreviewWebView = remember { mutableStateOf<WebView?>(null) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -344,8 +344,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     val weekLabel = remember(week) { week.format(DateTimeFormatter.ofPattern("MMM d")) + " – " + week.plusDays(6).format(DateTimeFormatter.ofPattern("MMM d, yyyy")) }
     val eligible = participants.filter { it.enabled }
 
-    LaunchedEffect(weekStart, signedIn, demoMode, participantsLoaded) {
-        if (signedIn && !demoMode && participantsLoaded) {
+    LaunchedEffect(weekStart, signedIn, participantsLoaded) {
+        if (signedIn && participantsLoaded) {
             rotationBusy = true
             rotationError = null
             runCatching { api.participantRotation(weekStart) }
@@ -362,8 +362,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         }
     }
 
-    LaunchedEffect(signedIn, demoMode, participantsLoaded) {
-        if(signedIn && !demoMode && !participantsLoaded && !participantsBusy) {
+    LaunchedEffect(signedIn, participantsLoaded) {
+        if(signedIn && !participantsLoaded && !participantsBusy) {
             participantsBusy=true
             runCatching { api.members(includeInactive=true) }.onSuccess { response ->
                 participantAdmin=response.optBoolean("isAdmin",participantAdmin)
@@ -388,7 +388,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         chairman=""; openingPrayer=""; adviser=""; audienceGroup=""
         store.setDetail("chairman",""); store.setDetail("opening_prayer",""); store.setDetail("adviser",""); store.setDetail("audience_group","")
     }
-    fun saveToCloud() { if (signedIn && !demoMode && identityRole == "admin") authScope.launch {
+    fun saveToCloud() { if (signedIn && identityRole == "admin") authScope.launch {
         cloudStatus = "Sine-save sa cloud…"
         runCatching { api.saveSchedule(weekLabel, weekStart, bible, openingSong, closingSong, parts.map { it.toJson() }, chairman, openingPrayer, adviser, audienceGroup, workbook, editingRemoteId) }
             .onSuccess { historySaved -> cloudStatus = if (historySaved) "Naka-save sa cloud" else "Na-save; hindi na-update ang assignment history"; toastMessage = cloudStatus; historyLoaded=false; editingRemoteId=0 }
@@ -446,10 +446,10 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         workbookStatus="✓ Na-load ang saved cloud schedule"
         if(navigate) current=if(edit) Screen.DETAILS else Screen.PREVIEW
     }
-    LaunchedEffect(weekStart, signedIn, demoMode, weekLoadNonce) {
+    LaunchedEffect(weekStart, signedIn, weekLoadNonce) {
         if (suppressWeekLookup) { suppressWeekLookup=false; return@LaunchedEffect }
         if (remoteScheduleLoadedWeek==weekStart) return@LaunchedEffect
-        if (signedIn && !demoMode) {
+        if (signedIn) {
             workbookBusy=true; workbookStatus="Sinusuri kung may saved schedule sa napiling petsa…"
             val selectedDate=runCatching { LocalDate.parse(weekStart) }.getOrDefault(week)
             val saved=runCatching { api.schedules().firstOrNull { scheduleStartDate(it.weekLabel,it.updatedAt)==selectedDate } }.getOrNull()
@@ -521,6 +521,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                         Column { Text("Meeting Scheduler", fontWeight = FontWeight.Bold, fontSize = 17.sp); Text("Midweek meeting workspace", color = Muted, fontSize = 12.sp) }
                     }
                     HorizontalDivider(color = SurfaceContainer)
+                    DrawerSection("OVERVIEW")
+                    DrawerEntry(Icons.TwoTone.Home, Screen.HOME, current) { current = it; scope.launch { drawerState.close() } }
                     DrawerSection("SCHEDULE TOOLS")
                     DrawerEntry(Icons.TwoTone.CalendarMonth, Screen.DETAILS, current) { current = it; scope.launch { drawerState.close() } }
                     DrawerEntry(Icons.TwoTone.Assignment, Screen.ASSIGNMENTS, current) { current = it; scope.launch { drawerState.close() } }
@@ -541,8 +543,6 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                         TextButton(onClick = {
                             api.signOut()
                             signedIn = false
-                            demoMode = false
-                            store.demoMode = false
                             identityName = ""
                             identityUsername = ""
                             identityRole = ""
@@ -572,8 +572,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                         }
                     },
                     actions = {
-                        IconButton(onClick = onToggleTheme) { Icon(if (darkMode) Icons.TwoTone.LightMode else Icons.TwoTone.DarkMode, contentDescription = "Toggle theme", tint = Forest) }
-                        IconButton(onClick = { profileNameDraft = identityName; profileError = null; profileDialogOpen = true }, modifier = Modifier.padding(end = 8.dp).size(40.dp)) { ProfileAvatar(identityName, profilePhotoPath, 36.dp) }
+
                     },
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = AppSurface)
                 )
@@ -594,9 +593,9 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     openingSong = openingSong, onOpeningSong = { openingSong = it; persistDetails() }, closingSong = closingSong,
                     onClosingSong = { closingSong = it; persistDetails() },
                     onPickDate = { datePicker = true }, onImport = { authScope.launch { fetchWorkbookForSelectedWeek() } },
-                    workbookStatus = if (demoMode) "Mag-sign in sa website account para awtomatikong kumuha ng workbook." else workbookStatus,
+                    workbookStatus = workbookStatus,
                     workbookBusy = workbookBusy, workbookCaptureLog = workbookCaptureLog,
-                    canContinue = !workbookBusy && (demoMode || participantsLoaded) && !participantsBusy,
+                    canContinue = !workbookBusy && participantsLoaded && !participantsBusy,
                     onNext = { current = Screen.ASSIGNMENTS }
                 )
                 Screen.ASSIGNMENTS -> AssignmentsScreen(
@@ -604,7 +603,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     rotationBusy = rotationBusy, rotationError = rotationError,
                     chairman=chairman, openingPrayer=openingPrayer, adviser=adviser, audienceGroup=audienceGroup,
                     onRole={ role, value -> when(role) { "chairman" -> chairman=value; "opening_prayer" -> openingPrayer=value; "adviser" -> adviser=value; else -> audienceGroup=value }; store.setDetail(role, value) },
-                    isAdmin = signedIn && !demoMode && identityRole == "admin",
+                    isAdmin = signedIn && identityRole == "admin",
                     onAssign = { index, slot, name -> parts[index] = when(slot) { "assistant" -> parts[index].copy(assistant=name); "secondary" -> parts[index].copy(secondaryAssignee=name); "secondaryAssistant" -> parts[index].copy(secondaryAssistant=name); else -> parts[index].copy(person=name) }; store.saveAssignments(parts.toList()) },
                     onSaveCloud = ::saveToCloud, onContinueExport = { current = Screen.PREVIEW }
                 )
@@ -626,7 +625,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                         onAdd = { name -> participants.add(0, Participant(name)); store.saveParticipants(participants.toList()); toastMessage = "Naidagdag si $name" },
                         onToggle = { index -> participants[index] = participants[index].copy(enabled = !participants[index].enabled); store.saveParticipants(participants.toList()) },
                         onEdit = { original, changed -> authScope.launch {
-                            runCatching { if (changed.id > 0 && signedIn && !demoMode) api.updateMember(changed.id, changed.name, changed.appointment, changed.service, changed.gender, changed.unbaptized) else JSONObject() }
+                            runCatching { if (changed.id > 0 && signedIn) api.updateMember(changed.id, changed.name, changed.appointment, changed.service, changed.gender, changed.unbaptized) else JSONObject() }
                                 .onSuccess { response ->
                                     if (changed.unbaptized && !response.optBoolean("unbaptized",false)) { toastMessage = "Hindi pa updated ang website API. I-deploy muna ang backend update." }
                                     else participants.indexOfFirst { it.id == original.id && it.name == original.name }.takeIf { it >= 0 }?.let { index -> participants[index] = changed; store.saveParticipants(participants.toList()); toastMessage = "Na-update si ${changed.name}" }
@@ -646,12 +645,12 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                         } })
                 }
                 Screen.HISTORY -> {
-                    LaunchedEffect(current, signedIn, historyLoaded) { if (current == Screen.HISTORY && signedIn && !demoMode && !historyLoaded) runCatching { api.schedules() }.onSuccess { remoteRows = it; historyLoaded=true; cloudStatus = "History mula sa website" }.onFailure { cloudStatus = "Hindi makuha ang history: ${it.message}" } }
-                    HistoryScreen(modifier = scroll, remoteSchedules = remoteRows, cloudStatus = cloudStatus, isAdmin=signedIn && !demoMode && identityRole=="admin", onView={loadRemoteSchedule(it,false)}, onEdit={loadRemoteSchedule(it,true)}, onDelete={remote -> authScope.launch { runCatching { api.deleteSchedule(remote.id) }.onSuccess { historyLoaded=false; toastMessage="Na-delete ang schedule" }.onFailure { toastMessage=it.message ?: "Hindi ma-delete" } }}, onNew = { editingRemoteId=0; current=Screen.DETAILS })
+                    LaunchedEffect(current, signedIn, historyLoaded) { if (current == Screen.HISTORY && signedIn && !historyLoaded) runCatching { api.schedules() }.onSuccess { remoteRows = it; historyLoaded=true; cloudStatus = "History mula sa website" }.onFailure { cloudStatus = "Hindi makuha ang history: ${it.message}" } }
+                    HistoryScreen(modifier = scroll, remoteSchedules = remoteRows, cloudStatus = cloudStatus, isAdmin=signedIn && identityRole=="admin", onView={loadRemoteSchedule(it,false)}, onEdit={loadRemoteSchedule(it,true)}, onDelete={remote -> authScope.launch { runCatching { api.deleteSchedule(remote.id) }.onSuccess { historyLoaded=false; toastMessage="Na-delete ang schedule" }.onFailure { toastMessage=it.message ?: "Hindi ma-delete" } }}, onNew = { editingRemoteId=0; current=Screen.DETAILS })
                 }
                 Screen.ACCOUNTS -> {
                     LaunchedEffect(current, signedIn, accountsLoaded, accountReloadTick) {
-                        if(current==Screen.ACCOUNTS && signedIn && !demoMode && !accountsLoaded && !accountsBusy) {
+                        if(current==Screen.ACCOUNTS && signedIn && !accountsLoaded && !accountsBusy) {
                             accountsBusy=true; accountsError=null
                             try {
                                 runCatching { api.accounts() }.onSuccess { remoteAccounts=it;accountsLoaded=true }
