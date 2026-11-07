@@ -15,3 +15,4 @@
 - Added cloud stored account photos and profile actions inside the details modal.
 - Added Two Tone icons to Participants add, filter and edit controls with consistent sizing.
 - Styled account deletion actions in red and account disabling actions in orange.
+- Packaged the APK and Android source archive as GitHub Release assets.
