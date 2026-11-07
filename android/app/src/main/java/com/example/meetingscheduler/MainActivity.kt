@@ -715,7 +715,7 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
                     Label("JW.ORG WORKBOOK")
                     Text("Weekly program", fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 }
-                IconButton(onClick = onImport, enabled = !workbookBusy, modifier = Modifier.size(40.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(Icons.TwoTone.RefreshTwoTone, contentDescription = "I-refresh ang weekly program", tint = Forest, modifier = Modifier.size(23.dp)) }
+                IconButton(onClick = onImport, enabled = !workbookBusy, modifier = Modifier.size(40.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(Icons.TwoTone.Refresh, contentDescription = "I-refresh ang weekly program", tint = Forest, modifier = Modifier.size(23.dp)) }
             }
             Text("Awtomatikong naghahanap batay sa napiling linggo.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
             Surface(color = if (fetchError) MaterialTheme.colorScheme.error.copy(alpha = .08f) else MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().padding(top = 7.dp)) {
