@@ -189,7 +189,7 @@ private enum class Screen(val title: String, val section: String) {
 
 private class LocalWorkspaceStore(context: Context) {
     private val prefs = context.getSharedPreferences("meeting_scheduler_workspace", Context.MODE_PRIVATE)
-    private fun profileKey(kind: String, username: String) = "${kind}_${username.trim().lowercase(Locale.ROOT).ifBlank { "demo" }}"
+    private fun profileKey(kind: String, username: String) = "${kind}_${username.trim().lowercase(Locale.ROOT).ifBlank { "account" }}"
     fun profileName(username: String, default: String) = prefs.getString(profileKey("profile_name", username), null)?.takeIf { it.isNotBlank() } ?: default
     fun saveProfileName(username: String, value: String) { prefs.edit().putString(profileKey("profile_name", username), value).apply() }
     fun profilePhoto(username: String) = prefs.getString(profileKey("profile_photo_path", username), null)
