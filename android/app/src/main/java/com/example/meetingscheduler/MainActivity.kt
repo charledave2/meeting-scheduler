@@ -748,6 +748,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 Screen.HOME -> HomeScreen(
                     modifier = scroll,
                     accountName = identityName,
+                    canCreateSchedule = canEdit(Screen.DETAILS),
                     schedules = homeSchedules,
                     loading = homeBusy,
                     error = homeError,
@@ -1276,6 +1277,7 @@ private fun Label(text: String) { Text(text.uppercase(), color = Muted, fontSize
 private fun HomeScreen(
     modifier: Modifier,
     accountName: String,
+    canCreateSchedule: Boolean,
     schedules: List<RemoteSchedule>,
     loading: Boolean,
     error: String?,
