@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.33.0 — 2026-11-07
+
+- Fixed sign-in failure on devices where Android Keystore cannot generate an AES session key.
+- Added app-private AES-GCM fallback key storage for affected devices while retaining Android Keystore as the primary option.
+- Included clearer diagnostics for login API and session verification failures.
+- Published the APK and Android source archive as GitHub Release assets.
+
 ## v0.32.0 — 2026-11-07
 
 - Added clear sign-in diagnostics to distinguish login API failures from session verification failures; Android network permissions were confirmed in the manifest.
