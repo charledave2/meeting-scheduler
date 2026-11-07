@@ -597,6 +597,39 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         }
     }
 
+    val accountPhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        val account = accountPhotoTarget
+        if (uri != null && account != null) authScope.launch {
+            accountsBusy = true
+            accountsError = null
+            runCatching {
+                val dataUrl = withContext(Dispatchers.IO) {
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+                    var sample = 1
+                    while (maxOf(bounds.outWidth, bounds.outHeight).coerceAtLeast(1) / sample > 720) sample *= 2
+                    val options = BitmapFactory.Options().apply { inSampleSize = sample }
+                    val decoded = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+                        ?: error("Hindi mabasa ang napiling larawan.")
+                    val scale = minOf(1f, 512f / maxOf(decoded.width, decoded.height).coerceAtLeast(1))
+                    val bitmap = if (scale < 1f) Bitmap.createScaledBitmap(decoded, (decoded.width * scale).toInt().coerceAtLeast(1), (decoded.height * scale).toInt().coerceAtLeast(1), true) else decoded
+                    val output = ByteArrayOutputStream()
+                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, 78, output)) { "Hindi ma-compress ang larawan." }
+                    val encoded = Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+                    check(encoded.length <= 600_000) { "Masyadong malaki ang larawan. Pumili ng mas maliit." }
+                    "data:image/jpeg;base64,$encoded"
+                }
+                api.uploadAccountPhoto(account.id, dataUrl)
+            }.onSuccess {
+                toastMessage = "Na-save sa cloud ang account photo."
+                accountsLoaded = false
+                accountReloadTick++
+            }.onFailure { accountsError = it.message ?: "Hindi na-upload ang account photo." }
+            accountsBusy = false
+        }
+        accountPhotoTarget = null
+    }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -771,38 +804,6 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 }
             } }
         }
-    }
-    val accountPhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        val account = accountPhotoTarget
-        if (uri != null && account != null) authScope.launch {
-            accountsBusy = true
-            accountsError = null
-            runCatching {
-                val dataUrl = withContext(Dispatchers.IO) {
-                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-                    var sample = 1
-                    while (maxOf(bounds.outWidth, bounds.outHeight).coerceAtLeast(1) / sample > 720) sample *= 2
-                    val options = BitmapFactory.Options().apply { inSampleSize = sample }
-                    val decoded = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
-                        ?: error("Hindi mabasa ang napiling larawan.")
-                    val scale = minOf(1f, 512f / maxOf(decoded.width, decoded.height).coerceAtLeast(1))
-                    val bitmap = if (scale < 1f) Bitmap.createScaledBitmap(decoded, (decoded.width * scale).toInt().coerceAtLeast(1), (decoded.height * scale).toInt().coerceAtLeast(1), true) else decoded
-                    val output = ByteArrayOutputStream()
-                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, 78, output)) { "Hindi ma-compress ang larawan." }
-                    val encoded = Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
-                    check(encoded.length <= 600_000) { "Masyadong malaki ang larawan. Pumili ng mas maliit." }
-                    "data:image/jpeg;base64,$encoded"
-                }
-                api.uploadAccountPhoto(account.id, dataUrl)
-            }.onSuccess {
-                toastMessage = "Na-save sa cloud ang account photo."
-                accountsLoaded = false
-                accountReloadTick++
-            }.onFailure { accountsError = it.message ?: "Hindi na-upload ang account photo." }
-            accountsBusy = false
-        }
-        accountPhotoTarget = null
     }
     val profilePhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) authScope.launch {
