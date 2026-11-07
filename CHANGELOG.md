@@ -2,7 +2,7 @@
 
 ## v0.32.0 — 2026-11-07
 
-- Added clear sign-in diagnostics to distinguish login API failures from session verification failures.
+- Added clear sign-in diagnostics to distinguish login API failures from session verification failures; Android network permissions were confirmed in the manifest.
 - Diagnostic messages show the exception type and safe server/network details without exposing passwords or session tokens.
 - Published the APK and Android source archive as GitHub Release assets.
 
