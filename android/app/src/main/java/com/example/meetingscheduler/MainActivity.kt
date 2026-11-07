@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.BitmapFactory
 import android.print.PrintManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -15,6 +16,9 @@ import android.view.View
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -63,6 +67,7 @@ import androidx.compose.material.icons.twotone.Person
 import androidx.compose.material.icons.twotone.MoreVert
 import androidx.compose.material.icons.twotone.Edit
 import androidx.compose.material.icons.twotone.Delete
+import androidx.compose.material.icons.twotone.AddAPhoto
 import androidx.compose.material.icons.twotone.Logout
 import androidx.compose.material.icons.twotone.Assignment
 import androidx.compose.material.icons.twotone.Groups
@@ -75,6 +80,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalContext
@@ -176,6 +184,10 @@ private enum class Screen(val title: String, val section: String) {
 
 private class LocalWorkspaceStore(context: Context) {
     private val prefs = context.getSharedPreferences("meeting_scheduler_workspace", Context.MODE_PRIVATE)
+    fun profileName(default: String) = prefs.getString("profile_name", null)?.takeIf { it.isNotBlank() } ?: default
+    fun saveProfileName(value: String) { prefs.edit().putString("profile_name", value).apply() }
+    fun profilePhoto() = prefs.getString("profile_photo_path", null)
+    fun saveProfilePhoto(path: String) { prefs.edit().putString("profile_photo_path", path).apply() }
     var darkMode: Boolean
         get() = prefs.getBoolean("dark_mode", true)
         set(value) { prefs.edit().putBoolean("dark_mode", value).apply() }
@@ -268,6 +280,10 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var identityName by rememberSaveable { mutableStateOf("") }
     var identityUsername by rememberSaveable { mutableStateOf("") }
     var identityRole by rememberSaveable { mutableStateOf("") }
+    var profilePhotoPath by rememberSaveable { mutableStateOf(store.profilePhoto()) }
+    var profileDialogOpen by remember { mutableStateOf(false) }
+    var profileNameDraft by remember { mutableStateOf("") }
+    var profileError by remember { mutableStateOf<String?>(null) }
     var workbookStatus by rememberSaveable { mutableStateOf("Naghahanap ng workbook para sa napiling linggo…") }
     var workbookBusy by remember { mutableStateOf(false) }
     var workbookCaptureLog by remember { mutableStateOf(listOf("READY · waiting for the selected meeting week")) }
@@ -276,7 +292,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     LaunchedEffect(api) {
         runCatching { api.currentUser() }.onSuccess {
             if (it.mustChangePassword) { api.signOut(); loginError = "Palitan muna ang password mo sa website bago mag-sign in sa app." }
-            else { identityName = it.name; identityUsername=it.username; identityRole=it.role; signedIn = true }
+            else { identityName = store.profileName(it.name); identityUsername=it.username; identityRole=it.role; signedIn = true }
         }
         authReady = true
     }
@@ -290,7 +306,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 authScope.launch {
                     loginBusy = true; loginError = null
                     runCatching { api.login(username, password) }
-                        .onSuccess { identityName = it.name; identityUsername=it.username; identityRole=it.role; signedIn = true; store.demoMode = false }
+                        .onSuccess { identityName = store.profileName(it.name); identityUsername=it.username; identityRole=it.role; signedIn = true; store.demoMode = false }
                         .onFailure { loginError = it.message ?: "Hindi makapag-sign in." }
                     loginBusy = false
                 }
@@ -510,7 +526,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             ModalDrawerSheet(modifier = Modifier.widthIn(max = 340.dp), drawerContainerColor = AppSurface) {
                 Column(Modifier.fillMaxHeight().padding(horizontal = 14.dp, vertical = 18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 10.dp, bottom = 16.dp)) {
-                        BrandMark(48)
+                        Box(Modifier.size(48.dp).clip(CircleShape).clickable { profileNameDraft = identityName; profileError = null; profileDialogOpen = true }) { ProfileAvatar(identityName, profilePhotoPath, 48.dp) }
                         Spacer(Modifier.width(12.dp))
                         Column { Text("Meeting Scheduler", fontWeight = FontWeight.Bold, fontSize = 17.sp); Text("Midweek meeting workspace", color = Muted, fontSize = 12.sp) }
                     }
@@ -525,12 +541,12 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     DrawerSection("ADMINISTRATION")
                     DrawerEntry(Icons.TwoTone.ManageAccounts, Screen.ACCOUNTS, current) { current = it; scope.launch { drawerState.close() } }
                     Spacer(Modifier.weight(1f))
-                    HorizontalDivider(color = SurfaceContainer, modifier = Modifier.padding(bottom = 12.dp))
-                    Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        val statusText = if (demoMode) "Offline · Demo workspace" else if (isOnline) "Connected · $identityName" else "Offline · $identityName"
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            Box(Modifier.padding(end = 8.dp).size(8.dp).background(if (isOnline && !demoMode) Color(0xFF4CAF50) else Color(0xFFE45757), CircleShape))
-                            Text(statusText, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                    HorizontalDivider(color = SurfaceContainer, modifier = Modifier.padding(bottom = 8.dp))
+                    Column(Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 4.dp), horizontalAlignment = Alignment.Start) {
+                        TextButton(onClick = onToggleTheme, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
+                            Icon(if (darkMode) Icons.TwoTone.LightMode else Icons.TwoTone.DarkMode, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (darkMode) "Light Mode" else "Dark Mode", color = Forest, fontSize = 13.sp)
                         }
                         TextButton(onClick = {
                             api.signOut()
@@ -543,9 +559,9 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                             loginError = null
                             authReady = true
                             scope.launch { drawerState.close() }
-                        }) {
-                            Icon(Icons.TwoTone.Logout, contentDescription = null, tint = Forest, modifier = Modifier.size(19.dp))
-                            Spacer(Modifier.width(6.dp))
+                        }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
+                            Icon(Icons.TwoTone.Logout, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
                             Text("Sign Out", color = Forest, fontSize = 13.sp)
                         }
                     }
@@ -567,7 +583,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     },
                     actions = {
                         IconButton(onClick = onToggleTheme) { Icon(if (darkMode) Icons.TwoTone.LightMode else Icons.TwoTone.DarkMode, contentDescription = "Toggle theme", tint = Forest) }
-                        Text("CD", color = Forest, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 14.dp).size(36.dp).background(ForestContainer, CircleShape).wrapContentSize(Alignment.Center))
+                        IconButton(onClick = { profileNameDraft = identityName; profileError = null; profileDialogOpen = true }, modifier = Modifier.padding(end = 8.dp).size(40.dp)) { ProfileAvatar(identityName, profilePhotoPath, 36.dp) }
                     },
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = AppSurface)
                 )
@@ -668,6 +684,55 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 }
             } }
         }
+    }
+    val profilePhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) authScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val destination = File(context.filesDir, "profile-avatar")
+                    val input = context.contentResolver.openInputStream(uri) ?: error("Hindi mabasa ang napiling larawan.")
+                    input.use { source -> destination.outputStream().use { output -> source.copyTo(output) } }
+                    destination.absolutePath
+                }
+            }.onSuccess { path -> profilePhotoPath = path; store.saveProfilePhoto(path) }
+                .onFailure { profileError = it.message ?: "Hindi ma-save ang larawan." }
+        }
+    }
+    if (profileDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { profileDialogOpen = false },
+            containerColor = AppSurface,
+            shape = RoundedCornerShape(28.dp),
+            title = { Text("Edit Profile", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    ProfileAvatar(identityName, profilePhotoPath, 76.dp)
+                    OutlinedButton(onClick = { profilePhotoPicker.launch(arrayOf("image/*")) }, shape = RoundedCornerShape(18.dp)) {
+                        Icon(Icons.TwoTone.AddAPhoto, contentDescription = null, tint = Forest, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(7.dp))
+                        Text(if (profilePhotoPath.isNullOrBlank()) "Add Photo" else "Change Photo", color = Forest)
+                    }
+                    OutlinedTextField(
+                        value = profileNameDraft,
+                        onValueChange = { profileNameDraft = it; profileError = null },
+                        label = { Text("Name") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text("Naka-save ang pangalan at larawan sa device na ito.", color = Muted, fontSize = 11.sp)
+                    profileError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 11.sp) }
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = profileNameDraft.isNotBlank(), onClick = {
+                    identityName = profileNameDraft.trim()
+                    store.saveProfileName(identityName)
+                    profileDialogOpen = false
+                }) { Text("Save", color = Forest) }
+            },
+            dismissButton = { TextButton(onClick = { profileDialogOpen = false }) { Text("Cancel", color = Muted) } }
+        )
     }
     if (datePicker) {
         val pickerState = rememberDatePickerState(initialSelectedDateMillis = week.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
@@ -798,6 +863,18 @@ private fun DemoLoginScreen(busy: Boolean, error: String?, onLogin: (String, Str
                 }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ProfileAvatar(name: String, photoPath: String?, size: androidx.compose.ui.unit.Dp) {
+    val bitmap = remember(photoPath) { photoPath?.let { runCatching { BitmapFactory.decodeFile(it)?.asImageBitmap() }.getOrNull() } }
+    if (bitmap != null) {
+        Image(bitmap, contentDescription = "Profile photo", contentScale = ContentScale.Crop, modifier = Modifier.size(size).clip(CircleShape))
+    } else {
+        Box(Modifier.size(size).background(ForestContainer, CircleShape), contentAlignment = Alignment.Center) {
+            Text(name.split(" ").filter { it.isNotBlank() }.take(2).mapNotNull { it.firstOrNull() }.joinToString("").ifBlank { "?" }.uppercase(), color = Forest, fontWeight = FontWeight.Bold, fontSize = (size.value * .34f).sp)
         }
     }
 }
