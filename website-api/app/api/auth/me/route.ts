@@ -32,7 +32,7 @@ export async function PATCH(request: Request) {
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const body = await request.json() as { photoDataUrl?: string };
   const photoDataUrl = body.photoDataUrl || "";
-  if (photoDataUrl.length > 600_000 || !/^data:image\\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(photoDataUrl)) {
+  if (photoDataUrl.length > 600_000 || !/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(photoDataUrl)) {
     return Response.json({ error: "Choose a valid JPEG image under the size limit." }, { status: 400 });
   }
   const database = await ensureProfilePhotosTable();
