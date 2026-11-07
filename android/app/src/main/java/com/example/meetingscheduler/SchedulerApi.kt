@@ -21,7 +21,7 @@ import javax.crypto.SecretKey
 internal data class ApiIdentity(val name: String, val username: String, val role: String, val mustChangePassword: Boolean)
 internal data class WorkbookImport(val link: String, val meta: JSONObject, val parts: List<JSONObject>)
 internal data class RemoteSchedule(val id: Int, val weekLabel: String, val reading: String, val updatedAt: String)
-internal data class RemoteAccount(val id: Int, val displayName: String, val username: String, val status: String, val role: String, val createdAt: String, val requestNote: String)
+internal data class RemoteAccount(val id: Int, val displayName: String, val username: String, val status: String, val role: String, val createdAt: String, val requestNote: String, val photoDataUrl: String = "")
 internal data class ParticipantRotation(
     val memberId: Int, val mainThisMonth: Int, val assistantThisMonth: Int, val totalThisMonth: Int,
     val lastAssignmentDate: String?, val nextEligibleDate: String?, val eligible: Boolean, val exempt: Boolean,
@@ -118,8 +118,12 @@ internal class SchedulerApi(context: Context) {
     suspend fun accounts(): List<RemoteAccount> = withContext(Dispatchers.IO) {
         val rows = request("/api/accounts", "GET", null).optJSONArray("accounts") ?: JSONArray()
         (0 until rows.length()).mapNotNull { i -> rows.optJSONObject(i)?.let { row ->
-            RemoteAccount(row.optInt("id"), row.optString("displayName"), row.optString("username"), row.optString("status"), row.optString("role", "viewer"), row.optString("createdAt"), row.optString("requestNote"))
+            RemoteAccount(row.optInt("id"), row.optString("displayName"), row.optString("username"), row.optString("status"), row.optString("role", "viewer"), row.optString("createdAt"), row.optString("requestNote"), row.optString("photoDataUrl"))
         } }
+    }
+
+    suspend fun uploadAccountPhoto(id: Int, photoDataUrl: String): JSONObject = withContext(Dispatchers.IO) {
+        request("/api/accounts", "PATCH", JSONObject().put("id", id).put("action", "upload_photo").put("photoDataUrl", photoDataUrl))
     }
 
     suspend fun accountAction(id: Int, action: String, role: String = "", temporaryPassword: String = ""): JSONObject = withContext(Dispatchers.IO) {
