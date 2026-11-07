@@ -36,11 +36,18 @@ internal class SchedulerApi(context: Context) {
         val response = request("/api/auth/login", "POST", JSONObject().put("username", username).put("password", password), authorized = false, captureCookie = true)
         if (!response.optString("redirectTo").startsWith("/")) throw IllegalStateException("Hindi tinanggap ang login.")
         val identity = meBlocking()
-        if (identity.mustChangePassword) { vault.clear(); throw IllegalStateException("Kailangan mo munang magpalit ng password sa website bago gamitin ang app.") }
         identity
     }
 
     suspend fun currentUser(): ApiIdentity = withContext(Dispatchers.IO) { meBlocking() }
+    suspend fun changePassword(currentPassword: String, newPassword: String) = withContext(Dispatchers.IO) {
+        request(
+            "/api/auth/change-password",
+            "POST",
+            JSONObject().put("currentPassword", currentPassword).put("newPassword", newPassword),
+            captureCookie = true
+        )
+    }
     suspend fun requestAccess(displayName: String, username: String, requestNote: String) = withContext(Dispatchers.IO) {
         request(
             "/api/auth/request",
