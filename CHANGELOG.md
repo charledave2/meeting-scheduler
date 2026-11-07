@@ -2,7 +2,7 @@
 
 ## v0.31.0 — 2026-11-07
 
-- Updated Participants Add, Filter & Sort, and Edit controls to matching-size Material You Two Tone icons.
+- Updated Participants Add, Filter & Sort, and Edit controls to matching-size Google Material You Two Tone icons.
 - Replaced the Filter & Sort text label with its Sort icon.
 - Removed status filter chips and account labels from the Accounts & Access photo grid.
 - Added an Administrator badge to the admin account photo.
