@@ -4,13 +4,14 @@ import { members, schedules, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { addCalendarMonth, meetingDateFromLabel } from "../../meeting-date";
 import { ensureScheduleSoftDeleteStorage } from "../../schedule-soft-delete-storage";
+import { canAccessAnyTool } from "../../permissions";
 
 type SavedPart={id?:number;title?:string;assignee?:string;assistant?:string;secondaryAssignee?:string;secondaryAssistant?:string};
 type DerivedRecord={memberId:number;meetingDate:string;assignmentRole:"main"|"assistant"};
 
 export async function GET(request:Request){
   try{
-    const auth=await getChatGPTUser();if(!auth)return Response.json({error:"Unauthorized"},{status:401});
+    const auth=await getChatGPTUser();if(!auth)return Response.json({error:"Unauthorized"},{status:401});if(!await canAccessAnyTool(auth,["participants","assignments"],"view"))return Response.json({error:"This account cannot view participant rotation."},{status:403});
     await ensureScheduleSoftDeleteStorage();
     const db=getDb();const [user]=await db.select({id:users.id}).from(users).where(eq(users.email,auth.email)).limit(1);if(!user)return Response.json({error:"Unauthorized"},{status:401});
     const raw=new URL(request.url).searchParams.get("date")||"";const asOfDate=/^\d{4}-\d{2}-\d{2}$/.test(raw)?raw:meetingDateFromLabel(raw);if(!asOfDate)return Response.json({error:"Invalid meeting date"},{status:400});
