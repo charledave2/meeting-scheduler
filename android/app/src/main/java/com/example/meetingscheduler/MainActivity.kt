@@ -76,6 +76,8 @@ import androidx.compose.material.icons.twotone.ManageAccounts
 import androidx.compose.material.icons.twotone.Preview
 import androidx.compose.material.icons.twotone.Home
 import androidx.compose.material.icons.twotone.Close
+import androidx.compose.material.icons.twotone.ErrorOutline
+import androidx.compose.material.icons.twotone.Warning
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -84,6 +86,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.runtime.SideEffect
@@ -266,6 +269,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var authReady by remember { mutableStateOf(false) }
     var loginBusy by remember { mutableStateOf(false) }
     var loginError by remember { mutableStateOf<String?>(null) }
+    var passwordChangeRequired by rememberSaveable { mutableStateOf(false) }
     var splashFinished by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) { delay(1_050); splashFinished = true }
     var identityName by rememberSaveable { mutableStateOf("") }
@@ -282,8 +286,9 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var participantAdmin by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(api) {
         runCatching { api.currentUser() }.onSuccess {
-            if (it.mustChangePassword) { api.signOut(); loginError = "Palitan muna ang password mo sa website bago mag-sign in sa app." }
-            else { identityName = store.profileName(it.username, it.name); identityUsername=it.username; profilePhotoPath=store.profilePhoto(it.username); identityRole=it.role; signedIn = true }
+            identityName = store.profileName(it.username, it.name); identityUsername = it.username
+            profilePhotoPath = store.profilePhoto(it.username); identityRole = it.role
+            if (it.mustChangePassword) passwordChangeRequired = true else signedIn = true
         }
         authReady = true
     }
@@ -292,13 +297,26 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         if (!authReady) {
             Surface(color = AppSurface, modifier = Modifier.fillMaxSize()) { Box(contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Forest) } }
         } else LoginScreen(
-            busy = loginBusy, error = loginError,
+            busy = loginBusy, error = loginError, mustChangePassword = passwordChangeRequired,
             onRequestAccess = { name, username, note -> api.requestAccess(name, username, note); Unit },
+            onChangePassword = { currentPassword, newPassword ->
+                authScope.launch {
+                    loginBusy = true; loginError = null
+                    runCatching { api.changePassword(currentPassword, newPassword) }
+                        .onSuccess { passwordChangeRequired = false; signedIn = true }
+                        .onFailure { loginError = it.message ?: "Hindi mapalitan ang password." }
+                    loginBusy = false
+                }
+            },
             onLogin = { username, password ->
                 authScope.launch {
                     loginBusy = true; loginError = null
                     runCatching { api.login(username, password) }
-                        .onSuccess { identityName = store.profileName(it.username, it.name); identityUsername=it.username; profilePhotoPath=store.profilePhoto(it.username); identityRole=it.role; signedIn = true }
+                        .onSuccess {
+                            identityName = store.profileName(it.username, it.name); identityUsername = it.username
+                            profilePhotoPath = store.profilePhoto(it.username); identityRole = it.role
+                            if (it.mustChangePassword) passwordChangeRequired = true else signedIn = true
+                        }
                         .onFailure { loginError = it.message ?: "Hindi makapag-sign in." }
                     loginBusy = false
                 }
@@ -348,9 +366,26 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var accountsError by remember { mutableStateOf<String?>(null) }
     var accountReloadTick by remember { mutableIntStateOf(0) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
+    var restrictedTapCount by rememberSaveable { mutableIntStateOf(0) }
+    var accessNotice by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     val week = remember(weekStart) { runCatching { LocalDate.parse(weekStart) }.getOrDefault(LocalDate.of(2026,11,9)) }
     val weekLabel = remember(week) { week.format(DateTimeFormatter.ofPattern("MMM d")) + " – " + week.plusDays(6).format(DateTimeFormatter.ofPattern("MMM d, yyyy")) }
     val eligible = participants.filter { it.enabled }
+    fun canAccess(screen: Screen): Boolean = when (identityRole.lowercase()) {
+        "admin", "administrator" -> true
+        "scheduler" -> screen != Screen.PARTICIPANTS && screen != Screen.ACCOUNTS
+        "viewer" -> screen == Screen.HOME
+        else -> false
+    }
+    fun navigateTo(screen: Screen) {
+        if (canAccess(screen)) current = screen
+        else {
+            restrictedTapCount += 1
+            accessNotice = if (restrictedTapCount >= 7)
+                "Please Don't Spam, Just Message the Administrator for Access." to true
+            else "Your Account Doesn't Have Access to This Tool." to false
+        }
+    }
 
     LaunchedEffect(current, signedIn, homeLoaded) {
         if (current == Screen.HOME && signedIn && !homeLoaded && !homeBusy) {
@@ -569,16 +604,16 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     }
                     HorizontalDivider(color = SurfaceContainer)
                     DrawerSection("OVERVIEW")
-                    DrawerEntry(Icons.TwoTone.Home, Screen.HOME, current) { current = it; scope.launch { drawerState.close() } }
+                    DrawerEntry(Icons.TwoTone.Home, Screen.HOME, current, restricted = !canAccess(Screen.HOME)) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
                     DrawerSection("SCHEDULE TOOLS")
-                    DrawerEntry(Icons.TwoTone.CalendarMonth, Screen.DETAILS, current) { current = it; scope.launch { drawerState.close() } }
-                    DrawerEntry(Icons.TwoTone.Assignment, Screen.ASSIGNMENTS, current) { current = it; scope.launch { drawerState.close() } }
-                    DrawerEntry(Icons.TwoTone.Preview, Screen.PREVIEW, current) { current = it; scope.launch { drawerState.close() } }
+                    DrawerEntry(Icons.TwoTone.CalendarMonth, Screen.DETAILS, current, restricted = !canAccess(Screen.DETAILS)) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
+                    DrawerEntry(Icons.TwoTone.Assignment, Screen.ASSIGNMENTS, current, restricted = !canAccess(Screen.ASSIGNMENTS)) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
+                    DrawerEntry(Icons.TwoTone.Preview, Screen.PREVIEW, current, restricted = !canAccess(Screen.PREVIEW)) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
                     DrawerSection("CONGREGATION")
-                    DrawerEntry(Icons.TwoTone.Groups, Screen.PARTICIPANTS, current) { current = it; scope.launch { drawerState.close() } }
-                    DrawerEntry(Icons.TwoTone.History, Screen.HISTORY, current) { current = it; scope.launch { drawerState.close() } }
+                    DrawerEntry(Icons.TwoTone.Groups, Screen.PARTICIPANTS, current, restricted = !canAccess(Screen.PARTICIPANTS)) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
+                    DrawerEntry(Icons.TwoTone.History, Screen.HISTORY, current, restricted = !canAccess(Screen.HISTORY)) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
                     DrawerSection("ADMINISTRATION")
-                    DrawerEntry(Icons.TwoTone.ManageAccounts, Screen.ACCOUNTS, current) { current = it; scope.launch { drawerState.close() } }
+                    DrawerEntry(Icons.TwoTone.ManageAccounts, Screen.ACCOUNTS, current, restricted = !canAccess(Screen.ACCOUNTS)) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
                     Spacer(Modifier.weight(1f))
                     HorizontalDivider(color = SurfaceContainer, modifier = Modifier.padding(bottom = 8.dp))
                     Column(Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 4.dp), horizontalAlignment = Alignment.Start) {
@@ -643,7 +678,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     error = homeError,
                     onRefresh = { homeLoaded = false },
                     onOpenSchedule = ::openUpcomingPreview,
-                    onCreateSchedule = { current = Screen.DETAILS }
+                    onCreateSchedule = { navigateTo(Screen.DETAILS) }
                 )
                 Screen.DETAILS -> DetailsScreen(
                     modifier = scroll, weekLabel = weekLabel, bible = bible, onBible = { bible = it; persistDetails() },
@@ -653,7 +688,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     workbookStatus = workbookStatus,
                     workbookBusy = workbookBusy, workbookCaptureLog = workbookCaptureLog,
                     canContinue = !workbookBusy && participantsLoaded && !participantsBusy,
-                    onNext = { current = Screen.ASSIGNMENTS }
+                    onNext = { navigateTo(Screen.ASSIGNMENTS) }
                 )
                 Screen.ASSIGNMENTS -> AssignmentsScreen(
                     modifier = scroll, parts = parts, eligible = eligible, rotation = rotationStats,
@@ -662,7 +697,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     onRole={ role, value -> when(role) { "chairman" -> chairman=value; "opening_prayer" -> openingPrayer=value; "adviser" -> adviser=value; else -> audienceGroup=value }; store.setDetail(role, value) },
                     isAdmin = signedIn && identityRole == "admin",
                     onAssign = { index, slot, name -> parts[index] = when(slot) { "assistant" -> parts[index].copy(assistant=name); "secondary" -> parts[index].copy(secondaryAssignee=name); "secondaryAssistant" -> parts[index].copy(secondaryAssistant=name); else -> parts[index].copy(person=name) }; store.saveAssignments(parts.toList()) },
-                    onSaveCloud = ::saveToCloud, onContinueExport = { current = Screen.PREVIEW }
+                    onSaveCloud = ::saveToCloud, onContinueExport = { navigateTo(Screen.PREVIEW) }
                 )
                 Screen.PREVIEW -> PreviewScreen(
                     modifier = scroll, weekStart = weekStart, bible = bible, openingSong = openingSong,
@@ -703,7 +738,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 }
                 Screen.HISTORY -> {
                     LaunchedEffect(current, signedIn, historyLoaded) { if (current == Screen.HISTORY && signedIn && !historyLoaded) runCatching { api.schedules() }.onSuccess { remoteRows = it; historyLoaded=true; cloudStatus = "History mula sa website" }.onFailure { cloudStatus = "Hindi makuha ang history: ${it.message}" } }
-                    HistoryScreen(modifier = scroll, remoteSchedules = remoteRows, cloudStatus = cloudStatus, isAdmin=signedIn && identityRole=="admin", onView={loadRemoteSchedule(it,false)}, onEdit={loadRemoteSchedule(it,true)}, onDelete={remote -> authScope.launch { runCatching { api.deleteSchedule(remote.id) }.onSuccess { historyLoaded=false; toastMessage="Na-delete ang schedule" }.onFailure { toastMessage=it.message ?: "Hindi ma-delete" } }}, onNew = { editingRemoteId=0; current=Screen.DETAILS })
+                    HistoryScreen(modifier = scroll, remoteSchedules = remoteRows, cloudStatus = cloudStatus, isAdmin=signedIn && identityRole=="admin", onView={loadRemoteSchedule(it,false)}, onEdit={loadRemoteSchedule(it,true)}, onDelete={remote -> authScope.launch { runCatching { api.deleteSchedule(remote.id) }.onSuccess { historyLoaded=false; toastMessage="Na-delete ang schedule" }.onFailure { toastMessage=it.message ?: "Hindi ma-delete" } }}, onNew = { editingRemoteId=0; navigateTo(Screen.DETAILS) })
                 }
                 Screen.ACCOUNTS -> {
                     LaunchedEffect(current, signedIn, accountsLoaded, accountReloadTick) {
@@ -818,6 +853,17 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         }, dismissButton = { TextButton(onClick = { datePicker = false }) { Text("Cancel") } }) { DatePicker(state = pickerState) }
     }
     toastMessage?.let { msg -> LaunchedEffect(msg) { Toast.makeText(context, msg, Toast.LENGTH_SHORT).show(); toastMessage = null } }
+    accessNotice?.let { (message, warning) ->
+        LaunchedEffect(accessNotice) { delay(2_100); accessNotice = null }
+        Dialog(onDismissRequest = { accessNotice = null }) {
+            Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(24.dp)) {
+                Row(Modifier.padding(horizontal = 22.dp, vertical = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+                    Icon(if (warning) Icons.TwoTone.Warning else Icons.TwoTone.ErrorOutline, contentDescription = null, tint = Color(0xFFBA1A1A), modifier = Modifier.size(30.dp))
+                    Text(message, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, lineHeight = 19.sp)
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -855,12 +901,27 @@ private fun MeetingSplashScreen() {
 private fun LoginScreen(
     busy: Boolean,
     error: String?,
+    mustChangePassword: Boolean,
     onLogin: (String, String) -> Unit,
+    onChangePassword: (String, String) -> Unit,
     onRequestAccess: suspend (String, String, String) -> Unit
 ) {
     var username by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var showPassword by rememberSaveable { mutableStateOf(false) }
+    var changePasswordOpen by rememberSaveable { mutableStateOf(false) }
+    var currentTemporaryPassword by rememberSaveable { mutableStateOf("") }
+    var newPassword by rememberSaveable { mutableStateOf("") }
+    var confirmNewPassword by rememberSaveable { mutableStateOf("") }
+    var showNewPassword by rememberSaveable { mutableStateOf(false) }
+    var changePasswordError by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(mustChangePassword) {
+        if (mustChangePassword) {
+            currentTemporaryPassword = password
+            changePasswordError = null
+            changePasswordOpen = true
+        } else changePasswordOpen = false
+    }
     var requestOpen by remember { mutableStateOf(false) }
     var requestSuccess by remember { mutableStateOf(false) }
     var requestBusy by remember { mutableStateOf(false) }
@@ -954,6 +1015,32 @@ private fun LoginScreen(
             }
         }
     }
+    if (changePasswordOpen) {
+        AlertDialog(
+            onDismissRequest = { if (!busy && !mustChangePassword) changePasswordOpen = false },
+            containerColor = AppSurface,
+            shape = RoundedCornerShape(28.dp),
+            title = { Text("Set a new password", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Temporary password ang gamit mo. Gumawa ng bagong password para ma-access ang app.", color = Muted, fontSize = 12.sp)
+                    OutlinedTextField(currentTemporaryPassword, { currentTemporaryPassword = it; changePasswordError = null }, label = { Text("Temporary password") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(newPassword, { newPassword = it; changePasswordError = null }, label = { Text("New password") }, singleLine = true, visualTransformation = if (showNewPassword) VisualTransformation.None else PasswordVisualTransformation(), trailingIcon = { IconButton(onClick = { showNewPassword = !showNewPassword }) { Icon(if (showNewPassword) Icons.TwoTone.VisibilityOff else Icons.TwoTone.Visibility, contentDescription = "Toggle password visibility", tint = Forest) } }, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(confirmNewPassword, { confirmNewPassword = it; changePasswordError = null }, label = { Text("Confirm new password") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
+                    (changePasswordError ?: error)?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                    if (newPassword.isNotBlank() && newPassword.length < 10) Text("Use at least 10 characters.", color = Muted, fontSize = 11.sp)
+                    else if (confirmNewPassword.isNotBlank() && confirmNewPassword != newPassword) Text("Hindi magkapareho ang bagong password.", color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !busy && currentTemporaryPassword.isNotBlank() && newPassword.length >= 10 && confirmNewPassword == newPassword,
+                    onClick = { changePasswordError = null; onChangePassword(currentTemporaryPassword, newPassword) }
+                ) { if (busy) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp, color = Forest) else Text("Change Password", color = Forest) }
+            },
+            dismissButton = { if (!mustChangePassword) TextButton(onClick = { changePasswordOpen = false }) { Text("Cancel", color = Muted) } }
+        )
+    }
     if (requestOpen) {
         AlertDialog(
             onDismissRequest = { if (!requestBusy) requestOpen = false },
@@ -1018,12 +1105,13 @@ private fun ProfileAvatar(name: String, photoPath: String?, size: androidx.compo
 private fun DrawerSection(title: String) { Text(title, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 16.dp, top = 18.dp, bottom = 7.dp)) }
 
 @Composable
-private fun DrawerEntry(icon: ImageVector, screen: Screen, selected: Screen, onClick: (Screen) -> Unit) {
+private fun DrawerEntry(icon: ImageVector, screen: Screen, selected: Screen, restricted: Boolean = false, onClick: (Screen) -> Unit) {
     NavigationDrawerItem(
-        label = { Text(screen.title, fontWeight = if (selected == screen) FontWeight.Bold else FontWeight.Medium) },
+        modifier = if (restricted) Modifier.alpha(0.48f) else Modifier,
+        label = { Text(screen.title, fontWeight = if (selected == screen) FontWeight.Bold else FontWeight.Medium, color = if (restricted) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface) },
         icon = {
             Box(Modifier.size(36.dp).background(if (selected == screen) ForestContainer else SurfaceContainer, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = null, tint = if (selected == screen) Forest else Muted)
+                Icon(icon, contentDescription = null, tint = if (restricted) MaterialTheme.colorScheme.outline else if (selected == screen) Forest else Muted)
             }
         },
         selected = selected == screen,
