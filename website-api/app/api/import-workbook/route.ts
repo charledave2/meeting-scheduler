@@ -1,4 +1,5 @@
 import { getChatGPTUser } from "../../chatgpt-auth";
+import { canAccessTool } from "../../permissions";
 
 type Section = "treasures" | "ministry" | "living";
 const clean = (value: string) => value.replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#160;/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, " ").replace(/\(\s+/g, "(").replace(/\s+\)/g, ")").trim();
@@ -14,7 +15,7 @@ const sectionFromHeading = (heading: string): Section | null => {
 export async function POST(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
-  if (user.role === "viewer") return Response.json({ error: "Viewer accounts cannot import workbooks." }, { status: 403 });
+  if (!await canAccessTool(user, "workbook", "view")) return Response.json({ error: "This account cannot view the workbook tool." }, { status: 403 });
   try {
     const { url } = await request.json() as { url?: string };
     if (!url) return Response.json({ error: "Enter the JW.org link." }, { status: 400 });
