@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.31.0 — 2026-11-07
+
+- Updated Participants Add, Filter & Sort, and Edit controls to matching-size Material You Two Tone icons.
+- Replaced the Filter & Sort text label with its Sort icon.
+- Removed status filter chips and account labels from the Accounts & Access photo grid.
+- Added an Administrator badge to the admin account photo.
+- Added blank values for Appointment and Service Status so publisher-only participants can keep these details empty.
+- Packaged the APK and Android source archive as GitHub Release assets.
+
 ## v0.29.0 — 2026-11-07
 
 - Added role-based access restrictions for Admin, Scheduler, and Viewer accounts.
