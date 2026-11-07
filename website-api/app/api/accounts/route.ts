@@ -2,6 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { getDb, getRuntimeEnv } from "../../../db";
 import { authAccounts, authSessions, users } from "../../../db/schema";
 import { assertSameOrigin, getChatGPTUser, hashPassword, validPassword } from "../../chatgpt-auth";
+import { getToolAccessMap, saveToolAccessMap } from "../../permissions";
 
 async function admin() {
   const user = await getChatGPTUser();
@@ -36,7 +37,12 @@ export async function GET() {
   const photoDb = await ensureAccountPhotosTable();
   const photoRows = await photoDb.prepare("SELECT account_id, photo_data_url FROM account_profile_photos").all<{ account_id: number; photo_data_url: string }>();
   const photos = new Map((photoRows.results ?? []).map((row) => [row.account_id, row.photo_data_url]));
-  return Response.json({ accounts: accounts.map((account) => ({ ...account, photoDataUrl: photos.get(account.id) ?? "" })) });
+  const enriched = await Promise.all(accounts.map(async (account) => ({
+    ...account,
+    photoDataUrl: photos.get(account.id) ?? "",
+    toolAccess: await getToolAccessMap({ accountId: account.id, role: account.role === "admin" ? "admin" : account.role === "scheduler" ? "scheduler" : "viewer" }),
+  })));
+  return Response.json({ accounts: enriched });
 }
 
 export async function PATCH(request: Request) {
@@ -50,8 +56,9 @@ export async function PATCH(request: Request) {
     temporaryPassword?: string;
     role?: AssignableRole;
     photoDataUrl?: string;
+    toolAccess?: Record<string, unknown>;
   };
-  const allowedActions = ["approve", "reset", "disable", "enable", "decline", "change_role", "upload_photo"];
+  const allowedActions = ["approve", "reset", "disable", "enable", "decline", "change_role", "upload_photo", "update_tool_access"];
   if (!body.id || !body.action || !allowedActions.includes(body.action)) {
     return Response.json({ error: "Invalid account action." }, { status: 400 });
   }
@@ -59,6 +66,17 @@ export async function PATCH(request: Request) {
   const db = getDb();
   const [account] = await db.select().from(authAccounts).where(eq(authAccounts.id, body.id)).limit(1);
   if (!account) return Response.json({ error: "Account not found." }, { status: 404 });
+  if (body.action === "update_tool_access") {
+    if (!account.userId) return Response.json({ error: "Only approved accounts can have tool access customized." }, { status: 400 });
+    const [target] = await db.select({ role: users.role }).from(users).where(eq(users.id, account.userId)).limit(1);
+    if (target?.role === "admin") return Response.json({ error: "Administrator access is fixed." }, { status: 400 });
+    try {
+      const toolAccess = await saveToolAccessMap(account.id, body.toolAccess);
+      return Response.json({ message: "Tool access updated.", toolAccess });
+    } catch (error) {
+      return Response.json({ error: error instanceof Error ? error.message : "Invalid tool access settings." }, { status: 400 });
+    }
+  }
   if (body.action === "upload_photo") {
     const photoDataUrl = body.photoDataUrl || "";
     if (photoDataUrl.length > 600_000 || !/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(photoDataUrl)) {
