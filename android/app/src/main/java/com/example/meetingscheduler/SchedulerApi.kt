@@ -239,6 +239,7 @@ internal class SchedulerApi(context: Context) {
 
 private class SessionVault(context: Context) {
     private val prefs = context.getSharedPreferences("scheduler_api_session", Context.MODE_PRIVATE)
+    private val fallbackPrefs = context.getSharedPreferences("scheduler_api_session_key_fallback", Context.MODE_PRIVATE)
     private val alias = "meeting_scheduler_session_v1"
     fun read(): String? = runCatching {
         val encrypted = prefs.getString("cookie", null) ?: return null
@@ -255,11 +256,25 @@ private class SessionVault(context: Context) {
     }
     fun clear() { prefs.edit().remove("cookie").apply() }
     private fun key(): SecretKey {
-        val store = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (store.getKey(alias, null) as? SecretKey)?.let { return it }
-        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-        generator.init(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-            .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
-        return generator.generateKey()
+        try {
+            val store = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+            (store.getKey(alias, null) as? SecretKey)?.let { return it }
+            val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+            generator.init(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
+            return generator.generateKey()
+        } catch (_: Exception) {
+            // Some Android devices cannot provision AndroidKeyStore AES keys. Keep the session encrypted
+            // with a per-install key held in the app-private sandbox so sign-in can still complete.
+            val encoded = fallbackPrefs.getString("aes_key", null)
+            if (encoded != null) {
+                val bytes = Base64.decode(encoded, Base64.NO_WRAP)
+                if (bytes.size == 32) return javax.crypto.spec.SecretKeySpec(bytes, KeyProperties.KEY_ALGORITHM_AES)
+            }
+            val bytes = ByteArray(32)
+            java.security.SecureRandom().nextBytes(bytes)
+            fallbackPrefs.edit().putString("aes_key", Base64.encodeToString(bytes, Base64.NO_WRAP)).commit()
+            return javax.crypto.spec.SecretKeySpec(bytes, KeyProperties.KEY_ALGORITHM_AES)
+        }
     }
 }
