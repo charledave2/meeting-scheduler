@@ -45,7 +45,7 @@ import androidx.compose.material.icons.twotone.Description
 import androidx.compose.material.icons.twotone.Share
 import androidx.compose.material.icons.twotone.CalendarMonth
 import androidx.compose.material.icons.twotone.AutoStories
-import androidx.compose.material.icons.twotone.Refresh as RefreshTwoTone
+import androidx.compose.material.icons.twotone.Refresh
 import androidx.compose.material.icons.twotone.ArrowForward
 import androidx.compose.material.icons.twotone.CloudUpload
 import androidx.compose.material.icons.twotone.CheckCircle
@@ -709,7 +709,7 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
         M3Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(38.dp).background(if (fetchError) MaterialTheme.colorScheme.error.copy(alpha = .12f) else ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
-                    Icon(if (workbookBusy) Icons.TwoTone.RefreshTwoTone else if (workbookStatus.startsWith("✓")) Icons.TwoTone.CheckCircle else Icons.TwoTone.AutoStories, contentDescription = null, tint = if (fetchError) MaterialTheme.colorScheme.error else Forest, modifier = Modifier.size(22.dp))
+                    Icon(if (workbookBusy) Icons.TwoTone.Refresh else if (workbookStatus.startsWith("✓")) Icons.TwoTone.CheckCircle else Icons.TwoTone.AutoStories, contentDescription = null, tint = if (fetchError) MaterialTheme.colorScheme.error else Forest, modifier = Modifier.size(22.dp))
                 }
                 Column(Modifier.weight(1f).padding(start = 11.dp)) {
                     Label("JW.ORG WORKBOOK")
@@ -719,7 +719,7 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
             }
             Text("Awtomatikong naghahanap batay sa napiling linggo.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
             Surface(color = if (fetchError) MaterialTheme.colorScheme.error.copy(alpha = .08f) else MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().padding(top = 7.dp)) {
-                Text(workbookStatus, color = if (fetchError) MaterialTheme.colorScheme.error else if (workbookStatus.startsWith("✓")) Forest else Muted, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.padding(12.dp))
+                Text(workbookStatus.removePrefix("✓ "), color = if (fetchError) MaterialTheme.colorScheme.error else if (workbookStatus.startsWith("✓")) Forest else Muted, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.padding(12.dp))
             }
         }
         if (isAdmin) {
