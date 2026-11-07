@@ -184,10 +184,11 @@ private enum class Screen(val title: String, val section: String) {
 
 private class LocalWorkspaceStore(context: Context) {
     private val prefs = context.getSharedPreferences("meeting_scheduler_workspace", Context.MODE_PRIVATE)
-    fun profileName(default: String) = prefs.getString("profile_name", null)?.takeIf { it.isNotBlank() } ?: default
-    fun saveProfileName(value: String) { prefs.edit().putString("profile_name", value).apply() }
-    fun profilePhoto() = prefs.getString("profile_photo_path", null)
-    fun saveProfilePhoto(path: String) { prefs.edit().putString("profile_photo_path", path).apply() }
+    private fun profileKey(kind: String, username: String) = "${kind}_${username.trim().lowercase(Locale.ROOT).ifBlank { "demo" }}"
+    fun profileName(username: String, default: String) = prefs.getString(profileKey("profile_name", username), null)?.takeIf { it.isNotBlank() } ?: default
+    fun saveProfileName(username: String, value: String) { prefs.edit().putString(profileKey("profile_name", username), value).apply() }
+    fun profilePhoto(username: String) = prefs.getString(profileKey("profile_photo_path", username), null)
+    fun saveProfilePhoto(username: String, path: String) { prefs.edit().putString(profileKey("profile_photo_path", username), path).apply() }
     var darkMode: Boolean
         get() = prefs.getBoolean("dark_mode", true)
         set(value) { prefs.edit().putBoolean("dark_mode", value).apply() }
@@ -269,7 +270,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var identityName by rememberSaveable { mutableStateOf("") }
     var identityUsername by rememberSaveable { mutableStateOf("") }
     var identityRole by rememberSaveable { mutableStateOf("") }
-    var profilePhotoPath by rememberSaveable { mutableStateOf(store.profilePhoto()) }
+    var profilePhotoPath by rememberSaveable { mutableStateOf<String?>(null) }
     var profileDialogOpen by remember { mutableStateOf(false) }
     var profileNameDraft by remember { mutableStateOf("") }
     var profileError by remember { mutableStateOf<String?>(null) }
@@ -281,7 +282,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     LaunchedEffect(api) {
         runCatching { api.currentUser() }.onSuccess {
             if (it.mustChangePassword) { api.signOut(); loginError = "Palitan muna ang password mo sa website bago mag-sign in sa app." }
-            else { identityName = store.profileName(it.name); identityUsername=it.username; identityRole=it.role; signedIn = true }
+            else { identityName = store.profileName(it.username, it.name); identityUsername=it.username; profilePhotoPath=store.profilePhoto(it.username); identityRole=it.role; signedIn = true }
         }
         authReady = true
     }
@@ -295,7 +296,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 authScope.launch {
                     loginBusy = true; loginError = null
                     runCatching { api.login(username, password) }
-                        .onSuccess { identityName = store.profileName(it.name); identityUsername=it.username; identityRole=it.role; signedIn = true; store.demoMode = false }
+                        .onSuccess { identityName = store.profileName(it.username, it.name); identityUsername=it.username; profilePhotoPath=store.profilePhoto(it.username); identityRole=it.role; signedIn = true; store.demoMode = false }
                         .onFailure { loginError = it.message ?: "Hindi makapag-sign in." }
                     loginBusy = false
                 }
@@ -683,7 +684,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     input.use { source -> destination.outputStream().use { output -> source.copyTo(output) } }
                     destination.absolutePath
                 }
-            }.onSuccess { path -> profilePhotoPath = path; store.saveProfilePhoto(path) }
+            }.onSuccess { path -> profilePhotoPath = path; store.saveProfilePhoto(identityUsername, path) }
                 .onFailure { profileError = it.message ?: "Hindi ma-save ang larawan." }
         }
     }
@@ -716,7 +717,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             confirmButton = {
                 TextButton(enabled = profileNameDraft.isNotBlank(), onClick = {
                     identityName = profileNameDraft.trim()
-                    store.saveProfileName(identityName)
+                    store.saveProfileName(identityUsername, identityName)
                     profileDialogOpen = false
                 }) { Text("Save", color = Forest) }
             },
