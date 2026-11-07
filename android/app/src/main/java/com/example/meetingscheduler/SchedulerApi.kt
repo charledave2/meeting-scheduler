@@ -33,10 +33,19 @@ internal class SchedulerApi(context: Context) {
     private val base = "https://meeting-scheduler.yelyahwilliams2005.workers.dev"
 
     suspend fun login(username: String, password: String): ApiIdentity = withContext(Dispatchers.IO) {
-        val response = request("/api/auth/login", "POST", JSONObject().put("username", username).put("password", password), authorized = false, captureCookie = true)
-        if (!response.optString("redirectTo").startsWith("/")) throw IllegalStateException("Hindi tinanggap ang login.")
-        val identity = meBlocking()
-        identity
+        val response = try {
+            request("/api/auth/login", "POST", JSONObject().put("username", username).put("password", password), authorized = false, captureCookie = true)
+        } catch (error: Exception) {
+            val detail = error.message?.takeIf { it.isNotBlank() } ?: "walang karagdagang detalye"
+            throw IllegalStateException("Hindi natapos ang login request (${error.javaClass.simpleName}): $detail", error)
+        }
+        if (!response.optString("redirectTo").startsWith("/")) throw IllegalStateException("Tinanggap ng server ang request pero walang login confirmation.")
+        try {
+            meBlocking()
+        } catch (error: Exception) {
+            val detail = error.message?.takeIf { it.isNotBlank() } ?: "walang karagdagang detalye"
+            throw IllegalStateException("Tinanggap ang login pero pumalya ang session check (${error.javaClass.simpleName}): $detail", error)
+        }
     }
 
     suspend fun currentUser(): ApiIdentity = withContext(Dispatchers.IO) { meBlocking() }
