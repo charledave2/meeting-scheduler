@@ -25,11 +25,6 @@ export function ensureScheduleSoftDeleteStorage() {
       deleted_by: "deleted_by INTEGER",
       delete_reason: "delete_reason TEXT DEFAULT '' NOT NULL",
     });
-    await ensureColumns(database, "assignment_history", {
-      voided_at: "voided_at TEXT",
-      voided_by: "voided_by INTEGER",
-      void_reason: "void_reason TEXT DEFAULT '' NOT NULL",
-    });
     await ensureColumns(database, "weekend_schedules", {
       deleted_at: "deleted_at TEXT",
       deleted_by: "deleted_by INTEGER",
