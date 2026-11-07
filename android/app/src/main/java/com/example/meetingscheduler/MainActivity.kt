@@ -43,6 +43,12 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.twotone.Description
 import androidx.compose.material.icons.twotone.Share
+import androidx.compose.material.icons.twotone.CalendarMonth
+import androidx.compose.material.icons.twotone.AutoStories
+import androidx.compose.material.icons.twotone.Refresh as RefreshTwoTone
+import androidx.compose.material.icons.twotone.ArrowForward
+import androidx.compose.material.icons.twotone.CloudUpload
+import androidx.compose.material.icons.twotone.CheckCircle
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -682,14 +688,14 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
         PageHeading("SCHEDULE BUILDER", "New schedule", "Pumili ng linggo. Kusang kukunin ang weekly program.")
         M3Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(38.dp).background(ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) { Text("▣", color = Forest, fontSize = 18.sp) }
+                Box(Modifier.size(38.dp).background(ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) { Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp)) }
                 Column(Modifier.weight(1f).padding(start = 11.dp)) {
                     Label("MEETING WEEK")
                     Text("Pangunahing impormasyon", fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 }
             }
             OutlinedButton(onClick = onPickDate, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), shape = RoundedCornerShape(15.dp), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
-                Text("▣", color = Forest, fontSize = 16.sp)
+                Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(19.dp))
                 Text(weekLabel, modifier = Modifier.weight(1f).padding(start = 10.dp), color = Ink, fontWeight = FontWeight.SemiBold)
                 Text("Change", color = Forest, fontSize = 12.sp)
             }
@@ -703,28 +709,31 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
         M3Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(38.dp).background(if (fetchError) MaterialTheme.colorScheme.error.copy(alpha = .12f) else ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
-                    Text(if (workbookBusy) "…" else if (workbookStatus.startsWith("✓")) "✓" else "▤", color = if (fetchError) MaterialTheme.colorScheme.error else Forest, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    Icon(if (workbookBusy) Icons.TwoTone.RefreshTwoTone else if (workbookStatus.startsWith("✓")) Icons.TwoTone.CheckCircle else Icons.TwoTone.AutoStories, contentDescription = null, tint = if (fetchError) MaterialTheme.colorScheme.error else Forest, modifier = Modifier.size(22.dp))
                 }
                 Column(Modifier.weight(1f).padding(start = 11.dp)) {
                     Label("JW.ORG WORKBOOK")
                     Text("Weekly program", fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 }
-                if (workbookBusy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = Forest)
+                IconButton(onClick = onImport, enabled = !workbookBusy, modifier = Modifier.size(40.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(Icons.TwoTone.RefreshTwoTone, contentDescription = "I-refresh ang weekly program", tint = Forest, modifier = Modifier.size(23.dp)) }
             }
             Text("Awtomatikong naghahanap batay sa napiling linggo.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
             Surface(color = if (fetchError) MaterialTheme.colorScheme.error.copy(alpha = .08f) else MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().padding(top = 7.dp)) {
                 Text(workbookStatus, color = if (fetchError) MaterialTheme.colorScheme.error else if (workbookStatus.startsWith("✓")) Forest else Muted, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.padding(12.dp))
             }
-            if (!workbookStatus.startsWith("✓") && !workbookBusy && !workbookStatus.startsWith("Mag-sign in")) {
-                TextButton(onClick = onImport, modifier = Modifier.align(Alignment.End)) { Text("Try again", color = Forest) }
+        }
+        if (isAdmin) {
+            OutlinedButton(onClick = onSaveCloud, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
+                Icon(Icons.TwoTone.CloudUpload, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Save to cloud")
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = onSaveDraft, shape = RoundedCornerShape(18.dp), modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 14.dp)) { Text("Save draft") }
-            Button(onClick = onSave, shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest), modifier = Modifier.weight(1.2f), contentPadding = PaddingValues(vertical = 14.dp)) { Text("✓  Save schedule") }
+        Button(onClick = onNext, enabled=canContinue, modifier=Modifier.fillMaxWidth(), shape=RoundedCornerShape(18.dp), colors=ButtonDefaults.buttonColors(containerColor=Forest), contentPadding=PaddingValues(vertical=15.dp)) {
+            Text(if(workbookBusy) "Checking saved schedule…" else if(!canContinue) "Loading participants…" else "Continue to assignments")
+            Spacer(Modifier.width(9.dp))
+            Icon(Icons.TwoTone.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
         }
-        if (isAdmin) Button(onClick=onSaveCloud, modifier=Modifier.fillMaxWidth(), shape=RoundedCornerShape(18.dp), colors=ButtonDefaults.buttonColors(containerColor=Forest)){Text("☁  Save to cloud")}
-        Button(onClick = onNext, enabled=canContinue, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest), contentPadding = PaddingValues(vertical = 15.dp)) { Text(if(workbookBusy) "Checking saved schedule…" else if(!canContinue) "Loading participants…" else "Continue to assignments   →") }
     }
 }
 
