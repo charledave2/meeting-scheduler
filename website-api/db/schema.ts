@@ -17,8 +17,8 @@ export const users = sqliteTable("users", {
 export const members = sqliteTable("members", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
-  appointment: text("appointment", { enum: ["elder", "ministerial", "publisher"] }).notNull().default("publisher"),
-  serviceStatus: text("service_status", { enum: ["regular_pioneer", "none"] }).notNull().default("none"),
+  appointment: text("appointment", { enum: ["", "elder", "ministerial", "publisher"] }).notNull().default("publisher"),
+  serviceStatus: text("service_status", { enum: ["", "regular_pioneer", "none"] }).notNull().default("none"),
   gender: text("gender", { enum: ["brother", "sister", "unspecified"] }).notNull().default("unspecified"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   unbaptized: integer("unbaptized", { mode: "boolean" }).notNull().default(false),
