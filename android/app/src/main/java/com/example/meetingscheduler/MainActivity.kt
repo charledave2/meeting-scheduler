@@ -1515,7 +1515,7 @@ private fun AssignmentPicker(index: Int, part: Assignment, eligible: List<Partic
             }
         } else {
             SlotPicker(if(qualified) "Qualified brother" else "Participant",part.person,if(qualified) elders else eligible,rotation=rotation,enabled=!readOnly){onAssign("main",it)}
-            if(part.hasAssistant&&!what) SlotPicker("Assistant",part.assistant,eligible,rotation=rotation){onAssign("assistant",it)}
+            if(part.hasAssistant&&!what) SlotPicker("Assistant",part.assistant,eligible,rotation=rotation,enabled=!readOnly){onAssign("assistant",it)}
         }
     }
 }
@@ -1527,6 +1527,7 @@ private fun SlotPicker(
     choices: List<Participant>,
     modifier: Modifier = Modifier,
     rotation: Map<Int, ParticipantRotation> = emptyMap(),
+    enabled: Boolean = true,
     onPick: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -1555,6 +1556,7 @@ private fun SlotPicker(
                 orderedChoices.forEach { participant ->
                     val stat = rotation[participant.id]
                     DropdownMenuItem(
+                        enabled = enabled,
                         text = {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Column(Modifier.weight(1f)) {
