@@ -1469,7 +1469,7 @@ private fun AccountsScreen(
     fun beginAction(account:RemoteAccount,action:String){actionTarget=account;selectedAction=action;temporaryPassword="";selectedRole=account.role.ifBlank{"viewer"}}
     PageColumn(modifier) {
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-            Column { Text("ADMINISTRATION",color=Forest,fontSize=10.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.3.sp);Text("Accounts & access",fontSize=25.sp,fontWeight=FontWeight.Bold) }
+            Column { Text("ADMINISTRATION",color=Forest,fontSize=10.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.3.sp);Text("Accounts & Access",fontSize=25.sp,fontWeight=FontWeight.Bold) }
             TextButton(onClick=onRefresh,enabled=!loading){Text("Refresh",color=Forest)}
         }
         Text("Review requests and manage website access.",color=Muted,fontSize=12.sp)
