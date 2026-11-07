@@ -41,6 +41,15 @@ internal class SchedulerApi(context: Context) {
     }
 
     suspend fun currentUser(): ApiIdentity = withContext(Dispatchers.IO) { meBlocking() }
+    suspend fun requestAccess(displayName: String, username: String, requestNote: String) = withContext(Dispatchers.IO) {
+        request(
+            "/api/auth/request",
+            "POST",
+            JSONObject().put("displayName", displayName).put("username", username).put("requestNote", requestNote),
+            authorized = false
+        )
+    }
+
 
     suspend fun saveSchedule(weekLabel: String, weekStart: String, reading: String, openingSong: String, closingSong: String,
                              parts: List<JSONObject>, chairman: String, openingPrayer: String, adviser: String, audienceGroup: String,
