@@ -293,6 +293,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var workbookCaptureLog by remember { mutableStateOf(listOf("READY · waiting for the selected meeting week")) }
     var cloudStatus by rememberSaveable { mutableStateOf("Konektado sa website") }
     var participantAdmin by rememberSaveable { mutableStateOf(false) }
+    var participantCanEdit by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(api) {
         runCatching { api.currentUser() }.onSuccess {
             identityName = store.profileName(it.username, it.name); identityUsername = it.username
@@ -453,7 +454,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         if(signedIn && !participantsLoaded && !participantsBusy && (canAccess(Screen.PARTICIPANTS) || canAccess(Screen.ASSIGNMENTS))) {
             participantsBusy=true
             runCatching { api.members(includeInactive=true) }.onSuccess { response ->
-                participantAdmin=response.optBoolean("isAdmin",participantAdmin)
+                participantAdmin=response.optBoolean("isAdmin",participantAdmin); participantCanEdit=response.optBoolean("canManageRoles",participantCanEdit)
                 val rows=response.optJSONArray("members") ?: JSONArray(); participants.clear()
                 for(i in 0 until rows.length()) rows.optJSONObject(i)?.let { row -> participants.add(Participant(row.optString("name"),row.optString("appointment"),row.optString("serviceStatus"),row.optString("gender").ifBlank{"unspecified"},row.optBoolean("active",true),row.optInt("id"),row.optBoolean("unbaptized",false))) }
                 store.saveParticipants(participants.toList()); participantsLoaded=true; cloudStatus="Nakuha ang participants mula sa website"
@@ -769,14 +770,14 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     rotationBusy = rotationBusy, rotationError = rotationError,
                     chairman=chairman, openingPrayer=openingPrayer, adviser=adviser, audienceGroup=audienceGroup,
                     onRole={ role, value -> when(role) { "chairman" -> chairman=value; "opening_prayer" -> openingPrayer=value; "adviser" -> adviser=value; else -> audienceGroup=value }; store.setDetail(role, value) },
-                    isAdmin = signedIn && identityRole == "admin",
+                    isAdmin = signedIn && identityRole == "admin", readOnly = !canEdit(Screen.ASSIGNMENTS), canContinueExport = canAccess(Screen.PREVIEW),
                     onAssign = { index, slot, name -> parts[index] = when(slot) { "assistant" -> parts[index].copy(assistant=name); "secondary" -> parts[index].copy(secondaryAssignee=name); "secondaryAssistant" -> parts[index].copy(secondaryAssistant=name); else -> parts[index].copy(person=name) }; store.saveAssignments(parts.toList()) },
                     onSaveCloud = ::saveToCloud, onContinueExport = { navigateTo(Screen.PREVIEW) }
                 )
                 Screen.PREVIEW -> PreviewScreen(
                     modifier = scroll, weekStart = weekStart, bible = bible, openingSong = openingSong,
                     closingSong = closingSong, parts = parts, chairman=chairman, openingPrayer=openingPrayer,
-                    adviser=adviser, audienceGroup=audienceGroup, previewWebView=officialPreviewWebView,
+                    adviser=adviser, audienceGroup=audienceGroup, previewWebView=officialPreviewWebView, allowExport=canEdit(Screen.PREVIEW),
                     onExportText = {
                         val text = buildOfficialScheduleText(weekStart, bible, openingSong, closingSong, parts, chairman, openingPrayer, adviser, audienceGroup)
                         val file = File(context.cacheDir, "meeting-schedule-${weekStart}.txt")
@@ -819,7 +820,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 }
                 Screen.HISTORY -> {
                     LaunchedEffect(current, signedIn, historyLoaded) { if (current == Screen.HISTORY && signedIn && !historyLoaded) runCatching { api.schedules() }.onSuccess { remoteRows = it; historyLoaded=true; cloudStatus = "History mula sa website" }.onFailure { cloudStatus = "Hindi makuha ang history: ${it.message}" } }
-                    HistoryScreen(modifier = scroll, remoteSchedules = remoteRows, cloudStatus = cloudStatus, isAdmin=signedIn && identityRole=="admin", onView={loadRemoteSchedule(it,false)}, onEdit={loadRemoteSchedule(it,true)}, onDelete={remote -> authScope.launch { runCatching { api.deleteSchedule(remote.id) }.onSuccess { historyLoaded=false; toastMessage="Na-delete ang schedule" }.onFailure { toastMessage=it.message ?: "Hindi ma-delete" } }}, onNew = { editingRemoteId=0; navigateTo(Screen.DETAILS) })
+                    HistoryScreen(modifier = scroll, remoteSchedules = remoteRows, cloudStatus = cloudStatus, isAdmin=signedIn && identityRole=="admin", canEdit=canEdit(Screen.HISTORY), canCreate=canEdit(Screen.DETAILS), onView={loadRemoteSchedule(it,false)}, onEdit={loadRemoteSchedule(it,true)}, onDelete={remote -> authScope.launch { runCatching { api.deleteSchedule(remote.id) }.onSuccess { historyLoaded=false; toastMessage="Na-delete ang schedule" }.onFailure { toastMessage=it.message ?: "Hindi ma-delete" } }}, onNew = { editingRemoteId=0; navigateTo(Screen.DETAILS) })
                 }
                 Screen.ACCOUNTS -> {
                     LaunchedEffect(current, signedIn, accountsLoaded, accountReloadTick) {
@@ -1320,7 +1321,7 @@ private fun HomeScreen(
                     Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(30.dp))
                     Text("No upcoming saved meetings", fontWeight = FontWeight.SemiBold)
                     Text("Create a workbook and save the schedule to the cloud to see it here.", color = Muted, fontSize = 12.sp)
-                    FilledTonalButton(onClick = onCreateSchedule, shape = RoundedCornerShape(16.dp)) {
+                    if (canCreateSchedule) FilledTonalButton(onClick = onCreateSchedule, shape = RoundedCornerShape(16.dp)) {
                         Icon(Icons.TwoTone.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(7.dp)); Text("Open Workbook")
                     }
@@ -1351,7 +1352,7 @@ private fun HomeScreen(
 }
 
 @Composable
-private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
+private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, canContinueToAssignments:Boolean, readOnly:Boolean, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
     PageColumn(modifier) {
         PageHeading("SCHEDULE BUILDER", "Workbook", "Pumili ng linggo. Kusang kukunin ang weekly program.")
         M3Card {
@@ -1362,14 +1363,14 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
                     Text("Pangunahing impormasyon", fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 }
             }
-            OutlinedButton(onClick = onPickDate, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), shape = RoundedCornerShape(15.dp), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
+            OutlinedButton(onClick = onPickDate, enabled=!readOnly, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), shape = RoundedCornerShape(15.dp), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
                 Text(weekLabel, modifier = Modifier.weight(1f), color = Ink, fontWeight = FontWeight.SemiBold)
                 Text("Change", color = Forest, fontSize = 12.sp)
             }
-            OutlinedTextField(bible, onBible, label = { Text("Bible reading") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+            OutlinedTextField(bible, onBible, enabled=!readOnly, label = { Text("Bible reading") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(openingSong, onOpeningSong, label = { Text("Opening song") }, singleLine = true, modifier = Modifier.weight(1f))
-                OutlinedTextField(closingSong, onClosingSong, label = { Text("Closing song") }, singleLine = true, modifier = Modifier.weight(1f))
+                OutlinedTextField(openingSong, onOpeningSong, enabled=!readOnly, label = { Text("Opening song") }, singleLine = true, modifier = Modifier.weight(1f))
+                OutlinedTextField(closingSong, onClosingSong, enabled=!readOnly, label = { Text("Closing song") }, singleLine = true, modifier = Modifier.weight(1f))
             }
         }
         val fetchError = workbookStatus.contains("hindi", ignoreCase = true) || workbookStatus.contains("wala", ignoreCase = true) || workbookStatus.contains("permission", ignoreCase = true)
@@ -1409,7 +1410,7 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
                 }
             }
         }
-        Button(onClick = onNext, enabled=canContinue, modifier=Modifier.fillMaxWidth(), shape=RoundedCornerShape(18.dp), colors=ButtonDefaults.buttonColors(containerColor=Forest), contentPadding=PaddingValues(vertical=15.dp)) {
+        if (canContinueToAssignments) Button(onClick = onNext, enabled=canContinue, modifier=Modifier.fillMaxWidth(), shape=RoundedCornerShape(18.dp), colors=ButtonDefaults.buttonColors(containerColor=Forest), contentPadding=PaddingValues(vertical=15.dp)) {
             Text(if(workbookBusy) "Checking saved schedule…" else if(!canContinue) "Loading participants…" else "Continue to assignments")
             Spacer(Modifier.width(9.dp))
             Icon(Icons.TwoTone.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
@@ -1648,14 +1649,14 @@ private fun rotationShortDate(value: String): String = runCatching {
 }.getOrDefault(value)
 
 @Composable
-private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, openingSong:String, closingSong:String, parts:List<Assignment>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, previewWebView:MutableState<WebView?>, onExportText:()->Unit, onPng:()->Unit) {
+private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, openingSong:String, closingSong:String, parts:List<Assignment>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, previewWebView:MutableState<WebView?>, allowExport:Boolean, onExportText:()->Unit, onPng:()->Unit) {
     val html=remember(weekStart,bible,openingSong,closingSong,parts.toList(),chairman,openingPrayer,adviser,audienceGroup) {
         buildOfficialScheduleHtml(weekStart,bible,openingSong,closingSong,parts,chairman,openingPrayer,adviser,audienceGroup)
     }
     var previewReady by remember(html){mutableStateOf(false)}
     PageColumn(modifier) {
         PageHeading("SCHEDULE TOOLS", "Preview & Export", "Official meeting schedule · tugma ang preview at PNG output.")
-        Row(modifier=Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+        if (allowExport) Row(modifier=Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
             FilledTonalButton(
                 onClick=onPng, enabled=previewReady, modifier=Modifier.weight(1f).height(48.dp),
                 shape=RoundedCornerShape(16.dp), contentPadding=PaddingValues(horizontal=10.dp)
@@ -1994,7 +1995,7 @@ private fun HistoryScreen(
         PageHeading("SAVED SCHEDULES", "Schedule History", "Mga schedule na naka-save sa cloud database.")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("${remoteSchedules.size} saved · newest first", color = Muted, fontSize = 12.sp)
-            FilledTonalButton(onClick = onNew, shape = RoundedCornerShape(16.dp)) {
+            if (canCreate) FilledTonalButton(onClick = onNew, shape = RoundedCornerShape(16.dp)) {
                 Icon(Icons.TwoTone.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("New schedule")
@@ -2027,11 +2028,11 @@ private fun HistoryScreen(
                                 Icon(Icons.TwoTone.MoreVert, contentDescription = "Schedule actions", tint = Forest)
                             }
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, modifier = Modifier.background(AppSurface)) {
-                                DropdownMenuItem(
+                                if (canEdit) DropdownMenuItem(
                                     text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.TwoTone.Edit, contentDescription = null, tint = Forest, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(10.dp)); Text("Edit") } },
                                     onClick = { menu = false; onEdit(remote) }
                                 )
-                                DropdownMenuItem(
+                                if (isAdmin) DropdownMenuItem(
                                     text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.TwoTone.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(10.dp)); Text("Delete", color = MaterialTheme.colorScheme.error) } },
                                     onClick = { menu = false; deleteTarget = remote }
                                 )
