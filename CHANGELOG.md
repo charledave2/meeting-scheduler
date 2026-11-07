@@ -2,7 +2,7 @@
 
 ## v0.35.0 — 2026-11-07
 
-- Show cloud-stored account photos in the signed-in user's burger-menu profile image.
+- Show each account's cloud-stored photo in the profile image at the top of the burger menu.
 - Let each signed-in user upload or replace their own profile photo to the shared Cloudflare D1 photo store.
 - Added an authenticated `/api/auth/me` photo read and upload endpoint.
 - Published the APK and Android source archive as GitHub Release assets.
