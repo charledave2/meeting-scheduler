@@ -256,6 +256,11 @@ private class SessionVault(context: Context) {
     }
     fun clear() { prefs.edit().remove("cookie").apply() }
     private fun key(): SecretKey {
+        val savedFallback = fallbackPrefs.getString("aes_key", null)
+        if (savedFallback != null) runCatching {
+            val bytes = Base64.decode(savedFallback, Base64.NO_WRAP)
+            if (bytes.size == 32) return javax.crypto.spec.SecretKeySpec(bytes, KeyProperties.KEY_ALGORITHM_AES)
+        }
         try {
             val store = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             (store.getKey(alias, null) as? SecretKey)?.let { return it }
@@ -266,11 +271,6 @@ private class SessionVault(context: Context) {
         } catch (_: Exception) {
             // Some Android devices cannot provision AndroidKeyStore AES keys. Keep the session encrypted
             // with a per-install key held in the app-private sandbox so sign-in can still complete.
-            val encoded = fallbackPrefs.getString("aes_key", null)
-            if (encoded != null) {
-                val bytes = Base64.decode(encoded, Base64.NO_WRAP)
-                if (bytes.size == 32) return javax.crypto.spec.SecretKeySpec(bytes, KeyProperties.KEY_ALGORITHM_AES)
-            }
             val bytes = ByteArray(32)
             java.security.SecureRandom().nextBytes(bytes)
             fallbackPrefs.edit().putString("aes_key", Base64.encodeToString(bytes, Base64.NO_WRAP)).commit()
