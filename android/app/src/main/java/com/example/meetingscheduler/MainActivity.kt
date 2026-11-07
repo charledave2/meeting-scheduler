@@ -52,6 +52,14 @@ import androidx.compose.material.icons.twotone.CheckCircle
 import androidx.compose.material.icons.twotone.Menu
 import androidx.compose.material.icons.twotone.LightMode
 import androidx.compose.material.icons.twotone.DarkMode
+import androidx.compose.material.icons.twotone.Add
+import androidx.compose.material.icons.twotone.Visibility
+import androidx.compose.material.icons.twotone.VisibilityOff
+import androidx.compose.material.icons.twotone.Lock
+import androidx.compose.material.icons.twotone.Person
+import androidx.compose.material.icons.twotone.MoreVert
+import androidx.compose.material.icons.twotone.Edit
+import androidx.compose.material.icons.twotone.Delete
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -637,21 +645,75 @@ private fun DemoLoginScreen(busy: Boolean, error: String?, onLogin: (String, Str
     var showPassword by rememberSaveable { mutableStateOf(false) }
     Surface(color = AppSurface, modifier = Modifier.fillMaxSize()) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            val compact=maxHeight<700.dp
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=24.dp,vertical=if(compact)18.dp else 30.dp),verticalArrangement=Arrangement.Center) {
-                Row(verticalAlignment = Alignment.CenterVertically) { BrandMark(if(compact)44 else 52); Spacer(Modifier.width(12.dp)); Column { Text("Meeting Scheduler", fontWeight = FontWeight.Bold, fontSize = 20.sp); Text("Midweek meeting workspace", color = Muted, fontSize = 13.sp) } }
-                Spacer(Modifier.height(if(compact)20.dp else 30.dp))
-                Card(shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), border=androidx.compose.foundation.BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
-                    Column(Modifier.fillMaxWidth().padding(if(compact)18.dp else 22.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+            val compact = maxHeight < 700.dp
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = if (compact) 18.dp else 28.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(Modifier.size(if (compact) 58.dp else 68.dp).background(ForestContainer, RoundedCornerShape(22.dp)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(if (compact) 31.dp else 36.dp))
+                }
+                Spacer(Modifier.height(13.dp))
+                Text("Meeting Scheduler", fontWeight = FontWeight.Bold, fontSize = 23.sp)
+                Text("Midweek meeting workspace", color = Muted, fontSize = 13.sp)
+                Spacer(Modifier.height(if (compact) 22.dp else 30.dp))
+                Card(
+                    shape = RoundedCornerShape(28.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(if (compact) 18.dp else 22.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
                         Text("ACCOUNT ACCESS", color = Forest, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.6.sp)
                         Text("Welcome back", fontSize = 27.sp, fontWeight = FontWeight.Bold)
-                        Text("Mag-sign in gamit ang scheduler account mo.", color = Muted, fontSize=13.sp)
-                        OutlinedTextField(username, { username = it }, label = { Text("Username") }, singleLine = true, shape=RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(password, { password = it }, label = { Text("Password") }, singleLine = true, shape=RoundedCornerShape(16.dp), visualTransformation=if(showPassword) VisualTransformation.None else PasswordVisualTransformation(), trailingIcon={TextButton(onClick={showPassword=!showPassword},contentPadding=PaddingValues(horizontal=8.dp)){Text(if(showPassword)"Hide" else "Show",color=Forest,fontSize=11.sp)}}, modifier = Modifier.fillMaxWidth())
-                        error?.let { Surface(color=MaterialTheme.colorScheme.errorContainer,shape=RoundedCornerShape(14.dp),modifier=Modifier.fillMaxWidth()){Text(it,color=MaterialTheme.colorScheme.onErrorContainer,fontSize=12.sp,modifier=Modifier.padding(12.dp))} }
-                        Button(onClick = { onLogin(username, password) }, enabled = !busy && username.isNotBlank() && password.isNotBlank(), modifier = Modifier.fillMaxWidth().heightIn(min=50.dp), shape=RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = Forest)) { Text(if (busy) "Signing in…" else "Sign in",fontWeight=FontWeight.SemiBold) }
-                        HorizontalDivider(Modifier.padding(vertical=2.dp),color=MaterialTheme.colorScheme.outlineVariant)
-                        OutlinedButton(onClick = onContinue, modifier = Modifier.fillMaxWidth().heightIn(min=48.dp), shape=RoundedCornerShape(18.dp)) { Text("Open demo workspace", color = Forest, fontWeight = FontWeight.SemiBold) }
+                        Text("Mag-sign in gamit ang account mo.", color = Muted, fontSize = 13.sp)
+                        OutlinedTextField(
+                            username,
+                            { username = it },
+                            label = { Text("Username") },
+                            leadingIcon = { Icon(Icons.TwoTone.Person, contentDescription = null, tint = Forest) },
+                            singleLine = true,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            password,
+                            { password = it },
+                            label = { Text("Password") },
+                            leadingIcon = { Icon(Icons.TwoTone.Lock, contentDescription = null, tint = Forest) },
+                            singleLine = true,
+                            shape = RoundedCornerShape(16.dp),
+                            visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { showPassword = !showPassword }) {
+                                    Icon(if (showPassword) Icons.TwoTone.VisibilityOff else Icons.TwoTone.Visibility, contentDescription = if (showPassword) "Hide password" else "Show password", tint = Forest)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        error?.let {
+                            Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                                Text(it, color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 12.sp, modifier = Modifier.padding(12.dp))
+                            }
+                        }
+                        Button(
+                            onClick = { onLogin(username, password) },
+                            enabled = !busy && username.isNotBlank() && password.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                            shape = RoundedCornerShape(18.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Forest)
+                        ) {
+                            Text(if (busy) "Signing in…" else "Sign in", fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.width(8.dp))
+                            if (busy) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                            else Icon(Icons.TwoTone.ArrowForward, contentDescription = null, modifier = Modifier.size(19.dp))
+                        }
+                        HorizontalDivider(Modifier.padding(vertical = 2.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                        OutlinedButton(onClick = onContinue, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = RoundedCornerShape(18.dp)) {
+                            Icon(Icons.TwoTone.Visibility, contentDescription = null, tint = Forest, modifier = Modifier.size(19.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Open demo workspace", color = Forest, fontWeight = FontWeight.SemiBold)
+                        }
                         Text("Demo mode uses sample data only.", color = Muted, fontSize = 11.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
                     }
                 }
@@ -1178,7 +1240,11 @@ private fun ParticipantsScreen(
                             Box(Modifier.size(38.dp).background(ForestContainer,CircleShape),contentAlignment=Alignment.Center){Text(p.name.split(" ").take(2).mapNotNull{it.firstOrNull()}.joinToString("").uppercase(),color=Forest,fontWeight=FontWeight.Bold,fontSize=11.sp)}
                             Column(Modifier.weight(1f).padding(start=10.dp)) {
                                 Text(p.name,fontWeight=FontWeight.SemiBold,fontSize=13.sp,maxLines=1)
-                                Text("${if(p.unbaptized) "Unbaptized · " else ""}${appointmentLabel(p.appointment)} · ${serviceLabel(p.service)} · ${genderLabel(p.gender)}${if(!p.enabled) " · Inactive" else ""}",color=Muted,fontSize=10.sp,maxLines=1)
+                                Text(
+                                    if (p.unbaptized) "Unbaptized · ${genderLabel(p.gender)}${if(!p.enabled) " · Inactive" else ""}"
+                                    else "${appointmentLabel(p.appointment)} · ${serviceLabel(p.service)} · ${genderLabel(p.gender)}${if(!p.enabled) " · Inactive" else ""}",
+                                    color=Muted,fontSize=10.sp,maxLines=1
+                                )
                             }
                             TextButton(onClick={beginEdit(p)},contentPadding=PaddingValues(horizontal=6.dp)){Text("Edit",color=Forest,fontSize=12.sp)}
                             if(isAdmin) {
@@ -1204,8 +1270,8 @@ private fun ParticipantsScreen(
         text={Column(verticalArrangement=Arrangement.spacedBy(9.dp)) {
             OutlinedTextField(editName,{editName=it},label={Text("Name")},singleLine=true,modifier=Modifier.fillMaxWidth())
             ParticipantChoice("Gender",editGender,listOf("brother" to "Brother","sister" to "Sister")){editGender=it}
-            ParticipantChoice("Appointment",editAppointment,listOf("publisher" to "Publisher","ministerial" to "Ministerial servant","elder" to "Elder")){editAppointment=it;if(it!="publisher")editUnbaptized=false}
-            ParticipantChoice("Service status",editService,listOf("none" to "Publisher","regular_pioneer" to "Regular pioneer")){editService=it;if(it=="regular_pioneer")editUnbaptized=false}
+            ParticipantChoice("Appointment",editAppointment,listOf("publisher" to "Publisher","ministerial" to "Ministerial servant","elder" to "Elder"),enabled=!editUnbaptized){editAppointment=it;if(it!="publisher")editUnbaptized=false}
+            ParticipantChoice("Service status",editService,listOf("none" to "Publisher","regular_pioneer" to "Regular pioneer"),enabled=!editUnbaptized){editService=it;if(it=="regular_pioneer")editUnbaptized=false}
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("Unbaptized",fontSize=14.sp);Switch(checked=editUnbaptized,onCheckedChange={editUnbaptized=it;if(it){editAppointment="publisher";editService="none"}},colors=SwitchDefaults.colors(checkedThumbColor=Color.White,checkedTrackColor=Forest))}
         }},
         confirmButton={TextButton(onClick={editing?.let{old->if(editName.isNotBlank())onEdit(old,old.copy(name=editName.trim(),gender=editGender,appointment=editAppointment,service=editService,unbaptized=editUnbaptized))};editing=null}){Text("Save",color=Forest)}},
@@ -1232,16 +1298,16 @@ private fun serviceLabel(value: String) = if(value.lowercase()=="regular_pioneer
 private fun genderLabel(value: String) = when(value.lowercase()) { "sister" -> "Sister"; "brother" -> "Brother"; else -> "Unspecified" }
 
 @Composable
-private fun ParticipantChoice(label: String, value: String, options: List<Pair<String,String>>, onSelect: (String)->Unit) {
+private fun ParticipantChoice(label: String, value: String, options: List<Pair<String,String>>, enabled: Boolean = true, onSelect: (String)->Unit) {
     var expanded by remember { mutableStateOf(false) }
     Column {
         Text(label, color=Muted, fontSize=11.sp)
         Box {
-            OutlinedButton(onClick={expanded=true}, modifier=Modifier.fillMaxWidth(), shape=RoundedCornerShape(16.dp), contentPadding=PaddingValues(horizontal=13.dp, vertical=9.dp)) {
+            OutlinedButton(onClick={expanded=true}, enabled=enabled, modifier=Modifier.fillMaxWidth(), shape=RoundedCornerShape(16.dp), contentPadding=PaddingValues(horizontal=13.dp, vertical=9.dp)) {
                 Text(options.firstOrNull { it.first==value }?.second ?: options.first().second, color=Ink, modifier=Modifier.weight(1f))
             }
             DropdownMenu(expanded=expanded, onDismissRequest={expanded=false}, modifier=Modifier.background(AppSurface)) {
-                options.forEach { (key,title) -> DropdownMenuItem(text={Text(title)}, onClick={onSelect(key);expanded=false}) }
+                options.forEach { (key,title) -> DropdownMenuItem(text={Text(title)}, enabled=enabled, onClick={onSelect(key);expanded=false}) }
             }
         }
     }
@@ -1255,27 +1321,81 @@ private fun MetricCard(label: String, value: String, modifier: Modifier = Modifi
 }
 
 @Composable
-private fun HistoryScreen(modifier: Modifier, remoteSchedules: List<RemoteSchedule>, cloudStatus: String, isAdmin:Boolean, onView:(RemoteSchedule)->Unit, onEdit:(RemoteSchedule)->Unit, onDelete:(RemoteSchedule)->Unit, onNew: () -> Unit) {
+private fun HistoryScreen(
+    modifier: Modifier,
+    remoteSchedules: List<RemoteSchedule>,
+    cloudStatus: String,
+    isAdmin: Boolean,
+    onView: (RemoteSchedule) -> Unit,
+    onEdit: (RemoteSchedule) -> Unit,
+    onDelete: (RemoteSchedule) -> Unit,
+    onNew: () -> Unit
+) {
     var deleteTarget by remember { mutableStateOf<RemoteSchedule?>(null) }
-    val sortedSchedules=remoteSchedules.sortedByDescending { scheduleStartDate(it.weekLabel) ?: LocalDate.MIN }
+    val sortedSchedules = remoteSchedules.sortedByDescending { scheduleStartDate(it.weekLabel) ?: LocalDate.MIN }
     PageColumn(modifier) {
         PageHeading("SAVED SCHEDULES", "Schedule history", "Mga schedule na naka-save sa cloud database.")
-        Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.SpaceBetween, verticalAlignment=Alignment.CenterVertically){ Text("${remoteSchedules.size} saved · newest first",color=Muted,fontSize=12.sp); FilledTonalButton(onClick=onNew,shape=RoundedCornerShape(16.dp)){Text("＋ New schedule")}}
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("${remoteSchedules.size} saved · newest first", color = Muted, fontSize = 12.sp)
+            FilledTonalButton(onClick = onNew, shape = RoundedCornerShape(16.dp)) {
+                Icon(Icons.TwoTone.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("New schedule")
+            }
+        }
         if (cloudStatus.isNotBlank()) Text(cloudStatus, color = Muted, fontSize = 11.sp)
         M3Card {
-            if(remoteSchedules.isEmpty()) Text("Wala pang schedule sa cloud database.",color=Muted,fontSize=13.sp,modifier=Modifier.padding(vertical=14.dp))
+            if (remoteSchedules.isEmpty()) {
+                Text("Wala pang schedule sa cloud database.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 14.dp))
+            }
             sortedSchedules.forEach { remote ->
-                HorizontalDivider(Modifier.padding(vertical=6.dp), color=SurfaceContainer)
-                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
-                    Box(Modifier.size(36.dp).background(ForestContainer,CircleShape),contentAlignment=Alignment.Center){Text("▦",color=Forest,fontSize=17.sp)}
-                    Column(Modifier.weight(1f).padding(start=9.dp)){Text(remote.weekLabel,fontWeight=FontWeight.SemiBold,fontSize=13.sp,maxLines=1);Text("${remote.reading} · ${remote.updatedAt.take(10)}",color=Muted,fontSize=10.sp)}
-                    TextButton(onClick={onView(remote)},contentPadding=PaddingValues(horizontal=6.dp)){Text("View",fontSize=11.sp,color=Forest)}
-                    if(isAdmin){ var menu by remember(remote.id){mutableStateOf(false)}; Box { TextButton(onClick={menu=true},contentPadding=PaddingValues(horizontal=4.dp)){Text("⋮",fontSize=20.sp,color=Forest)}; DropdownMenu(expanded=menu,onDismissRequest={menu=false},modifier=Modifier.background(AppSurface)){DropdownMenuItem(text={Text("Edit")},onClick={menu=false;onEdit(remote)});DropdownMenuItem(text={Text("Delete",color=MaterialTheme.colorScheme.error)},onClick={menu=false;deleteTarget=remote})} } }
+                HorizontalDivider(Modifier.padding(vertical = 6.dp), color = SurfaceContainer)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(36.dp).background(ForestContainer, CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp))
+                    }
+                    Column(Modifier.weight(1f).padding(start = 9.dp)) {
+                        Text(remote.weekLabel, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1)
+                        Text("${remote.reading} · ${remote.updatedAt.take(10)}", color = Muted, fontSize = 10.sp)
+                    }
+                    TextButton(onClick = { onView(remote) }, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                        Icon(Icons.TwoTone.Visibility, contentDescription = null, tint = Forest, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("View", fontSize = 11.sp, color = Forest)
+                    }
+                    if (isAdmin) {
+                        var menu by remember(remote.id) { mutableStateOf(false) }
+                        Box {
+                            IconButton(onClick = { menu = true }, modifier = Modifier.size(36.dp)) {
+                                Icon(Icons.TwoTone.MoreVert, contentDescription = "Schedule actions", tint = Forest)
+                            }
+                            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, modifier = Modifier.background(AppSurface)) {
+                                DropdownMenuItem(
+                                    text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.TwoTone.Edit, contentDescription = null, tint = Forest, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(10.dp)); Text("Edit") } },
+                                    onClick = { menu = false; onEdit(remote) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.TwoTone.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(10.dp)); Text("Delete", color = MaterialTheme.colorScheme.error) } },
+                                    onClick = { menu = false; deleteTarget = remote }
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
     }
-    deleteTarget?.let { item -> AlertDialog(onDismissRequest={deleteTarget=null},containerColor=AppSurface,shape=RoundedCornerShape(26.dp),title={Text("Delete saved schedule?")},text={Text("${item.weekLabel} will be removed from schedule history. Assignment history will be archived safely.",color=Muted)},confirmButton={TextButton(onClick={onDelete(item);deleteTarget=null}){Text("Delete",color=MaterialTheme.colorScheme.error)}},dismissButton={TextButton(onClick={deleteTarget=null}){Text("Cancel",color=Forest)}}) }
+    deleteTarget?.let { item ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            containerColor = AppSurface,
+            shape = RoundedCornerShape(26.dp),
+            title = { Text("Delete saved schedule?") },
+            text = { Text("${item.weekLabel} will be removed from schedule history. Assignment history will be archived safely.", color = Muted) },
+            confirmButton = { TextButton(onClick = { onDelete(item); deleteTarget = null }) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancel", color = Forest) } }
+        )
+    }
 }
 
 private fun scheduleStartDate(label:String, updatedAt:String=""): LocalDate? = runCatching {
