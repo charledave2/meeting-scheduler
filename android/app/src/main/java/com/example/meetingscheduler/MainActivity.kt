@@ -49,6 +49,9 @@ import androidx.compose.material.icons.twotone.Refresh
 import androidx.compose.material.icons.twotone.ArrowForward
 import androidx.compose.material.icons.twotone.CloudUpload
 import androidx.compose.material.icons.twotone.CheckCircle
+import androidx.compose.material.icons.twotone.Menu
+import androidx.compose.material.icons.twotone.LightMode
+import androidx.compose.material.icons.twotone.DarkMode
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -476,12 +479,12 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     navigationIcon = {
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
                             Box(Modifier.size(36.dp).background(ForestContainer, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Outlined.Menu, contentDescription = "Open navigation menu", tint = Forest)
+                                Icon(Icons.TwoTone.Menu, contentDescription = "Open navigation menu", tint = Forest)
                             }
                         }
                     },
                     actions = {
-                        IconButton(onClick = onToggleTheme) { Text(if (darkMode) "☼" else "☾", color = Forest, fontSize = 22.sp) }
+                        IconButton(onClick = onToggleTheme) { Icon(if (darkMode) Icons.TwoTone.LightMode else Icons.TwoTone.DarkMode, contentDescription = "Toggle theme", tint = Forest) }
                         Text("CD", color = Forest, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 14.dp).size(36.dp).background(ForestContainer, CircleShape).wrapContentSize(Alignment.Center))
                     },
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = AppSurface)
