@@ -7,7 +7,7 @@
 - Removed status filter chips and account labels from the Accounts & Access photo grid.
 - Added an Administrator badge to the admin account photo.
 - Added blank values for Appointment and Service Status so publisher-only participants can keep these details empty.
-- Packaged the APK and Android source archive as GitHub Release assets.
+- Published the APK and Android source archive as GitHub Release assets.
 
 ## v0.29.0 — 2026-11-07
 
