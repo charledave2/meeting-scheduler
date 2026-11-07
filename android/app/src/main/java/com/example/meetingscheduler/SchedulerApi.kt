@@ -22,6 +22,11 @@ internal data class ApiIdentity(val name: String, val username: String, val role
 internal data class WorkbookImport(val link: String, val meta: JSONObject, val parts: List<JSONObject>)
 internal data class RemoteSchedule(val id: Int, val weekLabel: String, val reading: String, val updatedAt: String)
 internal data class RemoteAccount(val id: Int, val displayName: String, val username: String, val status: String, val role: String, val createdAt: String, val requestNote: String)
+internal data class ParticipantRotation(
+    val memberId: Int, val mainThisMonth: Int, val assistantThisMonth: Int, val totalThisMonth: Int,
+    val lastAssignmentDate: String?, val nextEligibleDate: String?, val eligible: Boolean, val exempt: Boolean,
+    val neverAssigned: Boolean, val recommended: Boolean
+)
 
 internal class SchedulerApi(context: Context) {
     private val vault = SessionVault(context)
@@ -59,6 +64,25 @@ internal class SchedulerApi(context: Context) {
 
     suspend fun members(includeInactive: Boolean = false): JSONObject = withContext(Dispatchers.IO) {
         request("/api/members${if (includeInactive) "?includeInactive=true" else ""}", "GET", null)
+    }
+
+    suspend fun participantRotation(date: String): List<ParticipantRotation> = withContext(Dispatchers.IO) {
+        val rows = request("/api/rotation?date=$date", "GET", null).optJSONArray("stats") ?: JSONArray()
+        (0 until rows.length()).mapNotNull { index -> rows.optJSONObject(index)?.let { row ->
+            fun optionalDate(key: String) = row.optString(key).takeIf { it.isNotBlank() && it != "null" }
+            ParticipantRotation(
+                memberId = row.optInt("memberId"),
+                mainThisMonth = row.optInt("mainThisMonth"),
+                assistantThisMonth = row.optInt("assistantThisMonth"),
+                totalThisMonth = row.optInt("totalThisMonth"),
+                lastAssignmentDate = optionalDate("lastAssignmentDate"),
+                nextEligibleDate = optionalDate("nextEligibleDate"),
+                eligible = row.optBoolean("eligible"),
+                exempt = row.optBoolean("exempt"),
+                neverAssigned = row.optBoolean("neverAssigned"),
+                recommended = row.optBoolean("recommended")
+            )
+        } }
     }
 
     suspend fun updateMember(id: Int, name: String, appointment: String, serviceStatus: String, gender: String, unbaptized: Boolean): JSONObject = withContext(Dispatchers.IO) {
