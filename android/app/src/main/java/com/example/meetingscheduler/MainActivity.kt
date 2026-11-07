@@ -911,7 +911,11 @@ private fun SlotPicker(
                 modifier = Modifier.heightIn(max = 340.dp).background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 DropdownMenuItem(text = { Text("Unassigned") }, onClick = { onPick(""); expanded = false })
-                choices.forEach { participant ->
+                val orderedChoices = choices.sortedWith(
+                    compareBy<Participant> { participantRotationRank(rotation[it.id]) }
+                        .thenBy { it.name.lowercase(Locale.ROOT) }
+                )
+                orderedChoices.forEach { participant ->
                     val stat = rotation[participant.id]
                     DropdownMenuItem(
                         text = {
@@ -968,6 +972,16 @@ private fun SlotPicker(
             }
         )
     }
+}
+
+private fun participantRotationRank(stat: ParticipantRotation?): Int = when {
+    stat == null -> 9
+    stat.exempt -> 8
+    stat.neverAssigned -> 0
+    stat.recommended -> 1
+    stat.eligible && stat.totalThisMonth == 0 -> 2
+    stat.totalThisMonth == 0 -> 3
+    else -> 4 + minOf(stat.totalThisMonth, 3)
 }
 
 @Composable
