@@ -1716,7 +1716,7 @@ private fun ParticipantsScreen(
             Column { Text("CLOUD DATA",color=Forest,fontSize=10.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.3.sp);Text("Participants",fontSize=25.sp,fontWeight=FontWeight.Bold) }
             Row(verticalAlignment=Alignment.CenterVertically) {
                 IconButton(onClick=onRefresh,enabled=isAdmin,modifier=Modifier.size(40.dp)){Icon(Icons.TwoTone.Refresh,contentDescription="Refresh participants",tint=if(isAdmin) Forest else Muted,modifier=Modifier.size(20.dp))}
-                FilledTonalButton(onClick={showAdd=true},modifier=Modifier.height(40.dp),contentPadding=PaddingValues(horizontal=13.dp,vertical=7.dp)){Icon(Icons.TwoTone.Add,contentDescription=null,modifier=Modifier.size(20.dp));Spacer(Modifier.width(5.dp));Text("Add",fontSize=13.sp)}
+                IconButton(onClick={showAdd=true},modifier=Modifier.size(40.dp).clip(CircleShape).background(ForestContainer)){Icon(Icons.TwoTone.PersonAdd,contentDescription="Add participant",tint=Forest,modifier=Modifier.size(20.dp))}
             }
         }
         Text("${participants.size} participants · ${filtered.size} shown",color=Muted,fontSize=12.sp)
@@ -1724,7 +1724,7 @@ private fun ParticipantsScreen(
             Column(Modifier.fillMaxSize().padding(14.dp)) {
                 Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(query,{query=it},placeholder={Text("Search participant")},singleLine=true,shape=RoundedCornerShape(18.dp),modifier=Modifier.weight(1f),textStyle=MaterialTheme.typography.bodyMedium)
-                    FilledTonalButton(onClick={showFilters=true},modifier=Modifier.height(40.dp),contentPadding=PaddingValues(horizontal=11.dp,vertical=7.dp)){Icon(Icons.TwoTone.Tune,contentDescription=null,modifier=Modifier.size(20.dp));Spacer(Modifier.width(5.dp));Text("Filter · Sort",fontSize=11.sp)}
+                    IconButton(onClick={showFilters=true},modifier=Modifier.size(40.dp).clip(CircleShape).background(ForestContainer)){Icon(Icons.TwoTone.Sort,contentDescription="Filter and sort participants",tint=Forest,modifier=Modifier.size(20.dp))}
                 }
                 LazyColumn(Modifier.weight(1f).fillMaxWidth(),contentPadding=PaddingValues(top=6.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
                     itemsIndexed(filtered,key={_,entry->if(entry.value.id>0)entry.value.id.toLong() else entry.index.toLong()}) { _,entry ->
@@ -1764,9 +1764,9 @@ private fun ParticipantsScreen(
         text={Column(verticalArrangement=Arrangement.spacedBy(9.dp)) {
             OutlinedTextField(editName,{editName=it},label={Text("Name")},singleLine=true,modifier=Modifier.fillMaxWidth())
             ParticipantChoice("Gender",editGender,listOf("brother" to "Brother","sister" to "Sister")){editGender=it}
-            ParticipantChoice("Appointment",editAppointment,listOf("" to "Select","publisher" to "Publisher","ministerial" to "Ministerial servant","elder" to "Elder"),enabled=!editUnbaptized){editAppointment=it;if(it!="publisher")editUnbaptized=false}
-            ParticipantChoice("Service status",editService,listOf("" to "Select","none" to "Publisher","regular_pioneer" to "Regular pioneer"),enabled=!editUnbaptized){editService=it;if(it=="regular_pioneer")editUnbaptized=false}
-            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("Unbaptized",fontSize=14.sp);Switch(checked=editUnbaptized,onCheckedChange={editUnbaptized=it;if(it){editAppointment="publisher";editService="none"}},colors=SwitchDefaults.colors(checkedThumbColor=Color.White,checkedTrackColor=Forest))}
+            ParticipantChoice("Appointment",editAppointment,listOf("" to "","publisher" to "Publisher","ministerial" to "Ministerial servant","elder" to "Elder"),enabled=!editUnbaptized){editAppointment=it;if(it!="publisher")editUnbaptized=false}
+            ParticipantChoice("Service status",editService,listOf("" to "","none" to "Publisher","regular_pioneer" to "Regular pioneer"),enabled=!editUnbaptized){editService=it;if(it=="regular_pioneer")editUnbaptized=false}
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("Unbaptized",fontSize=14.sp);Switch(checked=editUnbaptized,onCheckedChange={editUnbaptized=it;if(it){editAppointment="";editService=""}},colors=SwitchDefaults.colors(checkedThumbColor=Color.White,checkedTrackColor=Forest))}
         }},
         confirmButton={TextButton(onClick={editing?.let{old->if(editName.isNotBlank())onEdit(old,old.copy(name=editName.trim(),gender=editGender,appointment=editAppointment,service=editService,unbaptized=editUnbaptized))};editing=null}){Text("Save",color=Forest)}},
         dismissButton={TextButton(onClick={editing=null}){Text("Cancel",color=Forest)}}
@@ -1787,8 +1787,8 @@ private fun ParticipantsScreen(
     if(deleteTarget!=null) AlertDialog(onDismissRequest={deleteTarget=null},containerColor=AppSurface,shape=RoundedCornerShape(28.dp),title={Text("Delete participant?")},text={Text("Permanent delete removes ${deleteTarget?.name} and their assignment history. This cannot be undone.")},confirmButton={TextButton(onClick={deleteTarget?.let(onDelete);deleteTarget=null}){Text("Delete",color=MaterialTheme.colorScheme.error)}},dismissButton={TextButton(onClick={deleteTarget=null}){Text("Cancel",color=Forest)}})
 }
 
-private fun appointmentLabel(value: String) = when(value.lowercase()) { "" -> "Select"; "elder" -> "Elder"; "ministerial" -> "Ministerial"; "publisher" -> "Publisher"; else -> "Publisher" }
-private fun serviceLabel(value: String) = when(value.lowercase()) { "" -> "Select"; "regular_pioneer" -> "Regular pioneer"; "none" -> "Publisher"; else -> "Publisher" }
+private fun appointmentLabel(value: String) = when(value.lowercase()) { "" -> ""; "elder" -> "Elder"; "ministerial" -> "Ministerial"; "publisher" -> "Publisher"; else -> "Publisher" }
+private fun serviceLabel(value: String) = when(value.lowercase()) { "" -> ""; "regular_pioneer" -> "Regular pioneer"; "none" -> "Publisher"; else -> "Publisher" }
 private fun genderLabel(value: String) = when(value.lowercase()) { "sister" -> "Sister"; "brother" -> "Brother"; else -> "Unspecified" }
 
 @Composable
@@ -1798,10 +1798,10 @@ private fun ParticipantChoice(label: String, value: String, options: List<Pair<S
         Text(label, color=Muted, fontSize=11.sp)
         Box {
             OutlinedButton(onClick={expanded=true}, enabled=enabled, modifier=Modifier.fillMaxWidth(), shape=RoundedCornerShape(16.dp), contentPadding=PaddingValues(horizontal=13.dp, vertical=9.dp)) {
-                Text(options.firstOrNull { it.first==value }?.second ?: options.first().second, color=Ink, modifier=Modifier.weight(1f))
+                Text(options.firstOrNull { it.first==value }?.second?.ifBlank { " " } ?: options.first().second.ifBlank { " " }, color=Ink, modifier=Modifier.weight(1f))
             }
             DropdownMenu(expanded=expanded, onDismissRequest={expanded=false}, modifier=Modifier.background(AppSurface)) {
-                options.forEach { (key,title) -> DropdownMenuItem(text={Text(title)}, enabled=enabled, onClick={onSelect(key);expanded=false}) }
+                options.forEach { (key,title) -> DropdownMenuItem(text={Text(title.ifBlank { " " })}, enabled=enabled, onClick={onSelect(key);expanded=false}) }
             }
         }
     }
@@ -1915,14 +1915,12 @@ private fun AccountsScreen(
     onRefresh: () -> Unit, onUploadPhoto: (RemoteAccount) -> Unit,
     onAction: (RemoteAccount, String, String, String) -> Unit
 ) {
-    var statusFilter by rememberSaveable { mutableStateOf("all") }
     var selectedAccount by remember { mutableStateOf<RemoteAccount?>(null) }
     var actionTarget by remember { mutableStateOf<RemoteAccount?>(null) }
     var selectedAction by remember { mutableStateOf("") }
     var temporaryPassword by remember { mutableStateOf("") }
     var selectedRole by remember { mutableStateOf("viewer") }
-    val filtered = accounts.filter { statusFilter == "all" || it.status == statusFilter }
-        .sortedWith(compareBy<RemoteAccount>({ if (it.role == "admin") 0 else 1 }, { when (it.status) { "requested" -> 0; "active" -> 1; else -> 2 } }, { it.displayName.lowercase() }))
+    val filtered = accounts.sortedWith(compareBy<RemoteAccount>({ if (it.role == "admin") 0 else 1 }, { when (it.status) { "requested" -> 0; "active" -> 1; else -> 2 } }, { it.displayName.lowercase() }))
     fun beginAction(account: RemoteAccount, action: String) {
         selectedAccount = null
         actionTarget = account
