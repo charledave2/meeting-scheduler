@@ -1971,7 +1971,8 @@ private fun AccountsScreen(
             if (filtered.isEmpty() && accounts.isNotEmpty()) Text("No accounts in this status.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(vertical = 10.dp))
         }
     }
-    selectedAccount?.let { account ->
+    selectedAccount?.let { selected ->
+        val account = accounts.firstOrNull { it.id == selected.id } ?: selected
         val roleName = when (account.role.lowercase()) { "admin" -> "Administrator"; "scheduler" -> "Scheduler"; "viewer" -> "Viewer"; else -> account.role.replaceFirstChar { it.uppercase() } }
         val statusName = when (account.status.lowercase()) { "requested" -> "Requested"; "active" -> "Active"; "disabled" -> "Disabled"; else -> account.status.replaceFirstChar { it.uppercase() } }
         val isSelf = account.username.equals(currentUsername, true) || account.role == "admin"
