@@ -2,7 +2,7 @@
 
 ## v0.34.0 — 2026-11-07
 
-- Removed circular fills from Participants Add and Sort icon controls while keeping matching touch targets.
+- Removed circular fills from the Participants Add and Sort icons while preserving matching 40 dp touch targets.
 - Reworked Export Text to follow the official schedule order with section headings, times, durations, details, roles, hall assignments, and closing program.
 - Export Text now creates a UTF-8 .txt attachment and opens Android's share sheet for direct sharing to other apps.
 - Published the APK and Android source archive as GitHub Release assets.
