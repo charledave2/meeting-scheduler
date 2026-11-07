@@ -1938,12 +1938,6 @@ private fun AccountsScreen(
         }
         Text("Tap an account photo to view details and actions.", color = Muted, fontSize = 12.sp)
         M3Card {
-            Text("STATUS", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                listOf("all" to "All", "requested" to "Requested", "active" to "Active", "disabled" to "Disabled").forEach { (key, label) ->
-                    FilterChip(selected = statusFilter == key, onClick = { statusFilter = key }, label = { Text(label, fontSize = 10.sp, maxLines = 1) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp), colors = FilterChipDefaults.filterChipColors(selectedContainerColor = ForestContainer, selectedLabelColor = Forest))
-                }
-            }
             if (loading && accounts.isEmpty()) Box(Modifier.fillMaxWidth().padding(22.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Forest, modifier = Modifier.size(24.dp), strokeWidth = 2.dp) }
             if (error != null) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
             if (accounts.isEmpty() && !loading && error == null) Text("No accounts available.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp))
@@ -1958,15 +1952,18 @@ private fun AccountsScreen(
                             Box {
                                 AccountPhotoAvatar(account, 68.dp)
                                 if (account.status == "requested") Box(Modifier.align(Alignment.TopEnd).size(11.dp).background(MaterialTheme.colorScheme.error, CircleShape))
+                                if (account.role.equals("admin", true)) {
+                                    Surface(Modifier.align(Alignment.BottomEnd).size(24.dp), shape = CircleShape, color = ForestContainer, border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                                        Box(contentAlignment = Alignment.Center) { Icon(Icons.TwoTone.AdminPanelSettings, contentDescription = "Administrator", tint = Forest, modifier = Modifier.size(15.dp)) }
+                                    }
+                                }
                             }
-                            Text(account.displayName.ifBlank { account.username }, fontWeight = FontWeight.SemiBold, fontSize = 10.sp, maxLines = 1)
-                            Text("@" + account.username, color = Muted, fontSize = 9.sp, maxLines = 1)
                         }
                     }
                     repeat(3 - rowAccounts.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
-            if (filtered.isEmpty() && accounts.isNotEmpty()) Text("No accounts in this status.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(vertical = 10.dp))
+            if (filtered.isEmpty() && accounts.isNotEmpty()) Text("No accounts available.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(vertical = 10.dp))
         }
     }
     selectedAccount?.let { selected ->
