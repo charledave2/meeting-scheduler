@@ -41,6 +41,8 @@ import androidx.compose.material.icons.outlined.List
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.twotone.Description
+import androidx.compose.material.icons.twotone.Share
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -510,15 +512,15 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 Screen.PREVIEW -> PreviewScreen(
                     modifier = scroll, weekStart = weekStart, bible = bible, openingSong = openingSong,
                     closingSong = closingSong, parts = parts, chairman=chairman, openingPrayer=openingPrayer,
-                    adviser=adviser, audienceGroup=audienceGroup, previewWebView=officialPreviewWebView, onSave = ::saveSchedule, onSaveCloud=::saveToCloud, isAdmin=signedIn && !demoMode && identityRole=="admin",
-                    onShare = {
+                    adviser=adviser, audienceGroup=audienceGroup, previewWebView=officialPreviewWebView,
+                    onExportText = {
                         val text = buildString {
                             append("Meeting schedule · ").append(weekLabel).append("\nBible reading: ").append(bible).append("\n")
                             parts.forEach { append(it.title).append(": ").append(it.person.ifBlank { "—" }).append("\n") }
                         }
                         val intent = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }
-                        context.startActivity(Intent.createChooser(intent, "Share schedule"))
-                    }, onExport = ::printSchedule, onPng = ::shareSchedulePng
+                        context.startActivity(Intent.createChooser(intent, "Export schedule text"))
+                    }, onPng = ::shareSchedulePng
                 )
                 Screen.PARTICIPANTS -> {
                     ParticipantsScreen(modifier = scroll, participants = participants,
@@ -816,23 +818,34 @@ private fun AssignmentPicker(index: Int, part: Assignment, eligible: List<Partic
 }
 
 @Composable
-private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, openingSong:String, closingSong:String, parts:List<Assignment>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, previewWebView:MutableState<WebView?>, onSave:()->Unit, onSaveCloud:()->Unit, isAdmin:Boolean, onShare:()->Unit, onExport:()->Unit, onPng:()->Unit) {
+private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, openingSong:String, closingSong:String, parts:List<Assignment>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, previewWebView:MutableState<WebView?>, onExportText:()->Unit, onPng:()->Unit) {
     val html=remember(weekStart,bible,openingSong,closingSong,parts.toList(),chairman,openingPrayer,adviser,audienceGroup) {
         buildOfficialScheduleHtml(weekStart,bible,openingSong,closingSong,parts,chairman,openingPrayer,adviser,audienceGroup)
     }
     var previewReady by remember(html){mutableStateOf(false)}
     PageColumn(modifier) {
         PageHeading("SCHEDULE TOOLS", "Preview & export", "Official meeting schedule · tugma ang preview at PNG output.")
-        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick=onExport,modifier=Modifier.weight(1f),shape=RoundedCornerShape(18.dp)){Text("Print / PDF",fontSize=12.sp)}
-            OutlinedButton(onClick=onPng,enabled=previewReady,modifier=Modifier.weight(1f),shape=RoundedCornerShape(18.dp)){Text("PNG",fontSize=12.sp)}
-            FilledTonalButton(onClick=onSave,modifier=Modifier.weight(1f),shape=RoundedCornerShape(18.dp)){Text("Save",fontSize=12.sp)}
+        Row(modifier=Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+            FilledTonalButton(
+                onClick=onPng, enabled=previewReady, modifier=Modifier.weight(1f).height(48.dp),
+                shape=RoundedCornerShape(16.dp), contentPadding=PaddingValues(horizontal=10.dp)
+            ) {
+                Icon(Icons.TwoTone.Share, contentDescription=null, modifier=Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Share PNG",fontSize=13.sp,maxLines=1)
+            }
+            OutlinedButton(
+                onClick=onExportText, modifier=Modifier.weight(1f).height(48.dp),
+                shape=RoundedCornerShape(16.dp), contentPadding=PaddingValues(horizontal=10.dp)
+            ) {
+                Icon(Icons.TwoTone.Description, contentDescription=null, modifier=Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Export text",fontSize=13.sp,maxLines=1)
+            }
         }
-        if(isAdmin) Button(onClick=onSaveCloud,modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(18.dp),colors=ButtonDefaults.buttonColors(containerColor=Forest)){Text("☁  Save to cloud")}
         Surface(color=Color.White,contentColor=Color(0xFF171717),shape=RoundedCornerShape(6.dp),shadowElevation=4.dp,modifier=Modifier.fillMaxWidth()) {
             OfficialScheduleWebPreview(html,previewWebView,Modifier.fillMaxWidth()){previewReady=true}
         }
-        OutlinedButton(onClick=onShare,modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(18.dp)){Text("Share schedule text")}
     }
 }
 
