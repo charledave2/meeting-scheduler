@@ -18,7 +18,7 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 
-internal data class ApiIdentity(val name: String, val username: String, val role: String, val mustChangePassword: Boolean)
+internal data class ApiIdentity(val name: String, val username: String, val role: String, val mustChangePassword: Boolean, val photoDataUrl: String = "")
 internal data class WorkbookImport(val link: String, val meta: JSONObject, val parts: List<JSONObject>)
 internal data class RemoteSchedule(val id: Int, val weekLabel: String, val reading: String, val updatedAt: String)
 internal data class RemoteAccount(val id: Int, val displayName: String, val username: String, val status: String, val role: String, val createdAt: String, val requestNote: String, val photoDataUrl: String = "")
@@ -146,7 +146,11 @@ internal class SchedulerApi(context: Context) {
     private fun meBlocking(): ApiIdentity {
         val data = request("/api/auth/me", "GET", null)
         val user = data.optJSONObject("user") ?: throw IllegalStateException("Hindi mabasa ang account.")
-        return ApiIdentity(user.optString("displayName"), user.optString("username"), user.optString("role"), user.optBoolean("mustChangePassword"))
+        return ApiIdentity(user.optString("displayName"), user.optString("username"), user.optString("role"), user.optBoolean("mustChangePassword"), user.optString("photoDataUrl"))
+    }
+
+    suspend fun uploadOwnProfilePhoto(photoDataUrl: String) = withContext(Dispatchers.IO) {
+        request("/api/auth/me", "PATCH", JSONObject().put("photoDataUrl", photoDataUrl))
     }
 
     suspend fun importForWeek(weekStart: String, onProgress: suspend (String) -> Unit = {}): WorkbookImport = withContext(Dispatchers.IO) {
