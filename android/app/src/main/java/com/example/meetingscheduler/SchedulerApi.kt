@@ -96,21 +96,26 @@ internal class SchedulerApi(context: Context) {
         return ApiIdentity(user.optString("displayName"), user.optString("username"), user.optString("role"), user.optBoolean("mustChangePassword"))
     }
 
-    suspend fun importForWeek(weekStart: String): WorkbookImport = withContext(Dispatchers.IO) {
+    suspend fun importForWeek(weekStart: String, onProgress: suspend (String) -> Unit = {}): WorkbookImport = withContext(Dispatchers.IO) {
         val date = LocalDate.parse(weekStart).with(TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
         val wolUrl = "https://wol.jw.org/tl/wol/dt/r27/lp-tg/${date.year}/${date.monthValue}/${date.dayOfMonth}"
+        onProgress("GET · WOL meeting page · ${date}")
         val html = fetchText(wolUrl)
+        onProgress("PARSE · looking for workbook document IDs")
         val candidates = workbookDocumentIds(html, date)
+        onProgress("FOUND · ${candidates.size} workbook candidate(s)")
         if (candidates.isEmpty()) throw IllegalStateException("Walang nailathalang workbook para sa linggong ito.")
         var lastError: Throwable? = null
         for (docId in candidates) {
             val link = "https://www.jw.org/finder?srcid=jwlshare&wtlocale=TG&prefer=lang&docid=$docId"
             try {
+                onProgress("POST · /api/import-workbook · doc $docId")
                 val result = request("/api/import-workbook", "POST", JSONObject().put("url", link))
                 val meta = result.optJSONObject("meta") ?: throw IllegalStateException("Hindi kumpleto ang workbook response.")
                 val rawParts = result.optJSONArray("parts") ?: throw IllegalStateException("Walang meeting parts sa workbook.")
                 val parts = (0 until rawParts.length()).mapNotNull { rawParts.optJSONObject(it) }
                 if (parts.isEmpty()) throw IllegalStateException("Walang meeting parts sa workbook.")
+                onProgress("PARSED · metadata plus ${parts.size} meeting parts")
                 return@withContext WorkbookImport(link, meta, parts)
             } catch (error: Throwable) {
                 lastError = error
