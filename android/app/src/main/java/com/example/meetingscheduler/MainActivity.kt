@@ -516,7 +516,9 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     modifier = scroll, parts = parts, eligible = eligible,
                     chairman=chairman, openingPrayer=openingPrayer, adviser=adviser, audienceGroup=audienceGroup,
                     onRole={ role, value -> when(role) { "chairman" -> chairman=value; "opening_prayer" -> openingPrayer=value; "adviser" -> adviser=value; else -> audienceGroup=value }; store.setDetail(role, value) },
-                    onAssign = { index, slot, name -> parts[index] = when(slot) { "assistant" -> parts[index].copy(assistant=name); "secondary" -> parts[index].copy(secondaryAssignee=name); "secondaryAssistant" -> parts[index].copy(secondaryAssistant=name); else -> parts[index].copy(person=name) }; store.saveAssignments(parts.toList()) }, onSave = ::saveSchedule
+                    isAdmin = signedIn && !demoMode && identityRole == "admin",
+                    onAssign = { index, slot, name -> parts[index] = when(slot) { "assistant" -> parts[index].copy(assistant=name); "secondary" -> parts[index].copy(secondaryAssignee=name); "secondaryAssistant" -> parts[index].copy(secondaryAssistant=name); else -> parts[index].copy(person=name) }; store.saveAssignments(parts.toList()) },
+                    onSaveCloud = ::saveToCloud, onContinueExport = { current = Screen.PREVIEW }
                 )
                 Screen.PREVIEW -> PreviewScreen(
                     modifier = scroll, weekStart = weekStart, bible = bible, openingSong = openingSong,
@@ -741,7 +743,7 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
 }
 
 @Composable
-private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligible: List<Participant>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, onRole:(String,String)->Unit, onAssign: (Int,String,String) -> Unit, onSave: () -> Unit) {
+private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligible: List<Participant>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, isAdmin:Boolean, onRole:(String,String)->Unit, onAssign: (Int,String,String) -> Unit, onSaveCloud: () -> Unit, onContinueExport: () -> Unit) {
     Column(modifier.verticalScroll(rememberScrollState()).padding(start=16.dp,end=16.dp,top=7.dp,bottom=16.dp), verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("Pumili ng participant para sa bawat bahagi ng pulong.", color=Muted, fontSize=12.sp, lineHeight=16.sp)
         Card(shape=RoundedCornerShape(18.dp), colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant), border=androidx.compose.foundation.BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
@@ -775,16 +777,28 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
                 }
             }
         }
-        FilledTonalButton(
-            onClick = onSave,
-            modifier = Modifier.fillMaxWidth().padding(top=2.dp),
+        if (isAdmin) {
+            OutlinedButton(
+                onClick = onSaveCloud,
+                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                shape = RoundedCornerShape(20.dp),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 13.dp)
+            ) {
+                Icon(Icons.TwoTone.CloudUpload, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(9.dp))
+                Text("Save to Cloud", fontWeight = FontWeight.SemiBold)
+            }
+        }
+        Button(
+            onClick = onContinueExport,
+            modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
-            contentPadding = PaddingValues(horizontal=20.dp, vertical=13.dp),
-            colors = ButtonDefaults.filledTonalButtonColors(containerColor=ForestContainer, contentColor=MaterialTheme.colorScheme.onPrimaryContainer)
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Forest)
         ) {
-            Icon(Icons.Outlined.Check, contentDescription=null, modifier=Modifier.size(18.dp))
+            Text("Continue to Export", fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.width(9.dp))
-            Text("Save assignments", fontWeight=FontWeight.SemiBold)
+            Icon(Icons.TwoTone.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
         }
     }
 }
@@ -793,8 +807,15 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
 private fun AssignmentPicker(index: Int, part: Assignment, eligible: List<Participant>, onAssign: (String,String) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            val tint=when(part.section){"ministry"->Color(0xFFE8DCC1);"living"->Color(0xFFE8D0CE);else->Color(0xFFD5E3E2)}
-            Box(Modifier.size(27.dp).background(tint, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) { Text("${part.id.takeIf { it>0 } ?: index+1}", color = Forest, fontWeight = FontWeight.Bold, fontSize = 11.sp) }
+            val darkBadges = MaterialTheme.colorScheme.background == DarkPalette.background
+            val badgeColors = when (part.section) {
+                "ministry" -> if (darkBadges) Color(0xFF5C4300) to Color(0xFFFFD782) else Color(0xFFFFD782) to Color(0xFF513A00)
+                "living" -> if (darkBadges) Color(0xFF63342F) to Color(0xFFFFB8AE) else Color(0xFFFFB8AE) to Color(0xFF652F2A)
+                else -> if (darkBadges) Color(0xFF164C50) to Color(0xFF9DE2E0) else Color(0xFFB7E7E4) to Color(0xFF12494B)
+            }
+            Box(Modifier.size(30.dp).background(badgeColors.first, RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) {
+                Text("${part.id.takeIf { it>0 } ?: index+1}", color = badgeColors.second, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+            }
             Spacer(Modifier.width(9.dp))
             Column(Modifier.weight(1f)) { Text(part.title.substringAfter(". ",part.title), fontWeight = FontWeight.Bold, fontSize = 13.sp, lineHeight=16.sp); Text(listOf(part.time,part.duration,part.detail).filter{it.isNotBlank()}.joinToString(" · "), color = Muted, fontSize = 10.sp, lineHeight = 13.sp) }
         }
