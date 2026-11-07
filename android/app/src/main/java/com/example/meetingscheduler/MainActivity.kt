@@ -23,6 +23,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -81,6 +84,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -259,6 +263,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var authReady by remember { mutableStateOf(false) }
     var loginBusy by remember { mutableStateOf(false) }
     var loginError by remember { mutableStateOf<String?>(null) }
+    var splashFinished by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) { delay(1_050); splashFinished = true }
     var identityName by rememberSaveable { mutableStateOf("") }
     var identityUsername by rememberSaveable { mutableStateOf("") }
     var identityRole by rememberSaveable { mutableStateOf("") }
@@ -274,6 +280,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         }
         authReady = true
     }
+    if (!splashFinished || !authReady) { MeetingSplashScreen(); return }
     if (!demoMode && !signedIn) {
         if (!authReady) {
             Surface(color = AppSurface, modifier = Modifier.fillMaxSize()) { Box(contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Forest) } }
@@ -679,6 +686,37 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
 }
 
 @Composable
+private fun MeetingSplashScreen() {
+    var reveal by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { delay(140); reveal = true }
+    Surface(color = Color(0xFF173522), modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            AnimatedVisibility(visible = reveal, enter = fadeIn(tween(500)) + scaleIn(tween(500))) {
+                Box(
+                    Modifier.size(104.dp).background(Color(0xFF304536), RoundedCornerShape(32.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Color(0xFFDDE9D9), modifier = Modifier.size(58.dp))
+                    Icon(Icons.TwoTone.CheckCircle, contentDescription = null, tint = Color(0xFFD2AB36), modifier = Modifier.align(Alignment.BottomEnd).padding(17.dp).size(24.dp))
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+            AnimatedVisibility(visible = reveal, enter = fadeIn(tween(420, delayMillis = 120)) + slideInVertically(tween(420, delayMillis = 120)) { it / 5 }) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Meeting Scheduler", color = Color(0xFFDDE9D9), fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
+                    Text("Midweek meeting workspace", color = Color(0xFFA8C3A4), fontSize = 13.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun DemoLoginScreen(busy: Boolean, error: String?, onLogin: (String, String) -> Unit, onContinue: () -> Unit) {
     var username by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
@@ -698,6 +736,7 @@ private fun DemoLoginScreen(busy: Boolean, error: String?, onLogin: (String, Str
                 Text("Meeting Scheduler", fontWeight = FontWeight.Bold, fontSize = 23.sp)
                 Text("Midweek meeting workspace", color = Muted, fontSize = 13.sp)
                 Spacer(Modifier.height(if (compact) 22.dp else 30.dp))
+                AnimatedVisibility(visible = true, enter = fadeIn(tween(520)) + slideInVertically(tween(520)) { it / 10 }) {
                 Card(
                     shape = RoundedCornerShape(28.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -756,6 +795,7 @@ private fun DemoLoginScreen(busy: Boolean, error: String?, onLogin: (String, Str
                         }
                         Text("Demo mode uses sample data only.", color = Muted, fontSize = 11.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
                     }
+                }
                 }
             }
         }
