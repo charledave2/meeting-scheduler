@@ -763,6 +763,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     workbookStatus = workbookStatus,
                     workbookBusy = workbookBusy, workbookCaptureLog = workbookCaptureLog,
                     canContinue = !workbookBusy && participantsLoaded && !participantsBusy,
+                    canContinueToAssignments = canAccess(Screen.ASSIGNMENTS),
+                    readOnly = !canEdit(Screen.DETAILS),
                     onNext = { navigateTo(Screen.ASSIGNMENTS) }
                 )
                 Screen.ASSIGNMENTS -> AssignmentsScreen(
@@ -807,6 +809,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                                 .onFailure { toastMessage = it.message ?: "Hindi na-update ang participant" }
                         } },
                         isAdmin=participantAdmin,
+                        canEdit=canEdit(Screen.PARTICIPANTS) && participantCanEdit,
                         onRefresh={participantsLoaded=false},
                         onSetActive={ person,active -> authScope.launch {
                             runCatching { api.setMemberActive(person.id,active) }.onSuccess {
@@ -1383,7 +1386,7 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
                     Label("JW.ORG WORKBOOK")
                     Text("Weekly program", fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 }
-                IconButton(onClick = onImport, enabled = !workbookBusy, modifier = Modifier.size(40.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(Icons.TwoTone.Refresh, contentDescription = "I-refresh ang weekly program", tint = Forest, modifier = Modifier.size(23.dp)) }
+                IconButton(onClick = onImport, enabled = !workbookBusy && !readOnly, modifier = Modifier.size(40.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(Icons.TwoTone.Refresh, contentDescription = "I-refresh ang weekly program", tint = Forest, modifier = Modifier.size(23.dp)) }
             }
             Text("Awtomatikong naghahanap batay sa napiling linggo.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
             Surface(
@@ -1461,7 +1464,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
                 }
             }
         }
-        if (isAdmin) {
+        if (isAdmin && !readOnly) {
             OutlinedButton(
                 onClick = onSaveCloud,
                 modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
@@ -1473,7 +1476,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
                 Text("Save to Cloud", fontWeight = FontWeight.SemiBold)
             }
         }
-        Button(
+        if (canContinueExport) Button(
             onClick = onContinueExport,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -1536,7 +1539,8 @@ private fun SlotPicker(
         Text(label, color = Muted, fontSize = 10.sp, lineHeight = 12.sp)
         Box(Modifier.fillMaxWidth().padding(top = 2.dp)) {
             OutlinedButton(
-                onClick = { expanded = true },
+                onClick = { if (enabled) expanded = true },
+                enabled = enabled,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(11.dp),
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
@@ -1841,7 +1845,7 @@ private fun buildOfficialScheduleHtml(weekStart:String,bible:String,openingSong:
 private fun ParticipantsScreen(
     modifier: Modifier, participants: List<Participant>, onAdd: (String) -> Unit,
     onToggle: (Int) -> Unit, onEdit: (Participant, Participant) -> Unit,
-    isAdmin: Boolean, onRefresh: () -> Unit,
+    isAdmin: Boolean, canEdit: Boolean, onRefresh: () -> Unit,
     onSetActive: (Participant, Boolean) -> Unit, onDelete: (Participant) -> Unit
 ) {
     var query by rememberSaveable { mutableStateOf("") }
@@ -1986,6 +1990,8 @@ private fun HistoryScreen(
     remoteSchedules: List<RemoteSchedule>,
     cloudStatus: String,
     isAdmin: Boolean,
+    canEdit: Boolean,
+    canCreate: Boolean,
     onView: (RemoteSchedule) -> Unit,
     onEdit: (RemoteSchedule) -> Unit,
     onDelete: (RemoteSchedule) -> Unit,
