@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.32.0 — 2026-11-07
+
+- Added clear sign-in diagnostics to distinguish login API failures from session verification failures.
+- Diagnostic messages show the exception type and safe server/network details without exposing passwords or session tokens.
+- Published the APK and Android source archive as GitHub Release assets.
+
 ## v0.31.0 — 2026-11-07
 
 - Updated Participants Add, Filter & Sort, and Edit controls to matching-size Google Material You Two Tone icons.
