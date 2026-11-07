@@ -669,17 +669,25 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                         Column { Text("Meeting Scheduler", fontWeight = FontWeight.Bold, fontSize = 17.sp); Text("Midweek meeting workspace", color = Muted, fontSize = 12.sp) }
                     }
                     HorizontalDivider(color = SurfaceContainer)
-                    DrawerSection("OVERVIEW")
-                    DrawerEntry(Icons.TwoTone.Home, Screen.HOME, current, restricted = !canAccess(Screen.HOME)) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                    DrawerSection("SCHEDULE TOOLS")
-                    DrawerEntry(Icons.TwoTone.CalendarMonth, Screen.DETAILS, current, restricted = !canAccess(Screen.DETAILS)) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                    DrawerEntry(Icons.TwoTone.Assignment, Screen.ASSIGNMENTS, current, restricted = !canAccess(Screen.ASSIGNMENTS)) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                    DrawerEntry(Icons.TwoTone.Preview, Screen.PREVIEW, current, restricted = !canAccess(Screen.PREVIEW)) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                    DrawerSection("CONGREGATION")
-                    DrawerEntry(Icons.TwoTone.Groups, Screen.PARTICIPANTS, current, restricted = !canAccess(Screen.PARTICIPANTS)) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                    DrawerEntry(Icons.TwoTone.History, Screen.HISTORY, current, restricted = !canAccess(Screen.HISTORY)) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                    DrawerSection("ADMINISTRATION")
-                    DrawerEntry(Icons.TwoTone.ManageAccounts, Screen.ACCOUNTS, current, restricted = !canAccess(Screen.ACCOUNTS)) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
+                    if (canAccess(Screen.HOME)) {
+                        DrawerSection("OVERVIEW")
+                        DrawerEntry(Icons.TwoTone.Home, Screen.HOME, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
+                    }
+                    if (listOf(Screen.DETAILS, Screen.ASSIGNMENTS, Screen.PREVIEW).any(::canAccess)) {
+                        DrawerSection("SCHEDULE TOOLS")
+                        if (canAccess(Screen.DETAILS)) DrawerEntry(Icons.TwoTone.CalendarMonth, Screen.DETAILS, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
+                        if (canAccess(Screen.ASSIGNMENTS)) DrawerEntry(Icons.TwoTone.Assignment, Screen.ASSIGNMENTS, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
+                        if (canAccess(Screen.PREVIEW)) DrawerEntry(Icons.TwoTone.Preview, Screen.PREVIEW, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
+                    }
+                    if (canAccess(Screen.PARTICIPANTS) || canAccess(Screen.HISTORY)) {
+                        DrawerSection("CONGREGATION")
+                        if (canAccess(Screen.PARTICIPANTS)) DrawerEntry(Icons.TwoTone.Groups, Screen.PARTICIPANTS, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
+                        if (canAccess(Screen.HISTORY)) DrawerEntry(Icons.TwoTone.History, Screen.HISTORY, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
+                    }
+                    if (identityRole.equals("admin", true)) {
+                        DrawerSection("ADMINISTRATION")
+                        DrawerEntry(Icons.TwoTone.ManageAccounts, Screen.ACCOUNTS, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
+                    }
                     Spacer(Modifier.weight(1f))
                     HorizontalDivider(color = SurfaceContainer, modifier = Modifier.padding(bottom = 8.dp))
                     Column(Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 4.dp), horizontalAlignment = Alignment.Start) {
@@ -833,6 +841,13 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                             runCatching { api.accountAction(account.id,action,role,password) }
                                 .onSuccess { response -> toastMessage=response.optString("message","Account updated.");accountsLoaded=false;accountReloadTick++ }
                                 .onFailure { accountsError=it.message ?: "Hindi na-update ang account." }
+                            accountsBusy=false
+                        } },
+                        onUpdateToolAccess={ account, modes -> authScope.launch {
+                            accountsBusy=true; accountsError=null
+                            runCatching { api.updateAccountToolAccess(account.id, modes) }
+                                .onSuccess { response -> toastMessage=response.optString("message","Tool access updated."); accountsLoaded=false; accountReloadTick++ }
+                                .onFailure { accountsError=it.message ?: "Hindi na-save ang tool access." }
                             accountsBusy=false
                         } }
                     )
