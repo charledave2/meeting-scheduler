@@ -1,4 +1,4 @@
-import { getRuntimeEnv } from "../../../db";
+import { getRuntimeEnv } from "../../../../db";
 import { assertSameOrigin, getChatGPTUser } from "../../../chatgpt-auth";
 
 async function ensureProfilePhotosTable() {
