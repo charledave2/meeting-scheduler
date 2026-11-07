@@ -1748,8 +1748,8 @@ private fun ParticipantsScreen(
     if(deleteTarget!=null) AlertDialog(onDismissRequest={deleteTarget=null},containerColor=AppSurface,shape=RoundedCornerShape(28.dp),title={Text("Delete participant?")},text={Text("Permanent delete removes ${deleteTarget?.name} and their assignment history. This cannot be undone.")},confirmButton={TextButton(onClick={deleteTarget?.let(onDelete);deleteTarget=null}){Text("Delete",color=MaterialTheme.colorScheme.error)}},dismissButton={TextButton(onClick={deleteTarget=null}){Text("Cancel",color=Forest)}})
 }
 
-private fun appointmentLabel(value: String) = when(value.lowercase()) { "elder" -> "Elder"; "ministerial" -> "Ministerial"; else -> "Publisher" }
-private fun serviceLabel(value: String) = if(value.lowercase()=="regular_pioneer") "Regular pioneer" else "Publisher"
+private fun appointmentLabel(value: String) = when(value.lowercase()) { "" -> "Select"; "elder" -> "Elder"; "ministerial" -> "Ministerial"; "publisher" -> "Publisher"; else -> "Publisher" }
+private fun serviceLabel(value: String) = when(value.lowercase()) { "" -> "Select"; "regular_pioneer" -> "Regular pioneer"; "none" -> "Publisher"; else -> "Publisher" }
 private fun genderLabel(value: String) = when(value.lowercase()) { "sister" -> "Sister"; "brother" -> "Brother"; else -> "Unspecified" }
 
 @Composable
