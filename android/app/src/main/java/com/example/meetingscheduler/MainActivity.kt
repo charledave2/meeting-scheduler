@@ -287,6 +287,9 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     val history = remember(store) { mutableStateListOf<SavedSchedule>().apply { addAll(store.loadHistory()) } }
     var participantsLoaded by rememberSaveable { mutableStateOf(false) }
     var participantsBusy by remember { mutableStateOf(false) }
+    var rotationStats by remember { mutableStateOf<Map<Int, ParticipantRotation>>(emptyMap()) }
+    var rotationBusy by remember { mutableStateOf(false) }
+    var rotationError by remember { mutableStateOf<String?>(null) }
     var remoteRows by remember { mutableStateOf<List<RemoteSchedule>>(emptyList()) }
     var editingRemoteId by rememberSaveable { mutableIntStateOf(0) }
     var suppressWeekLookup by remember { mutableStateOf(false) }
@@ -302,6 +305,24 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     val week = remember(weekStart) { runCatching { LocalDate.parse(weekStart) }.getOrDefault(LocalDate.of(2026,11,9)) }
     val weekLabel = remember(week) { week.format(DateTimeFormatter.ofPattern("MMM d")) + " – " + week.plusDays(6).format(DateTimeFormatter.ofPattern("MMM d, yyyy")) }
     val eligible = participants.filter { it.enabled }
+
+    LaunchedEffect(weekStart, signedIn, demoMode, participantsLoaded) {
+        if (signedIn && !demoMode && participantsLoaded) {
+            rotationBusy = true
+            rotationError = null
+            runCatching { api.participantRotation(weekStart) }
+                .onSuccess { stats -> rotationStats = stats.associateBy { it.memberId } }
+                .onFailure { error ->
+                    rotationStats = emptyMap()
+                    rotationError = error.message ?: "Hindi makuha ang participant rotation."
+                }
+            rotationBusy = false
+        } else {
+            rotationStats = emptyMap()
+            rotationBusy = false
+            rotationError = null
+        }
+    }
 
     LaunchedEffect(signedIn, demoMode, participantsLoaded) {
         if(signedIn && !demoMode && !participantsLoaded && !participantsBusy) {
@@ -518,7 +539,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     onNext = { current = Screen.ASSIGNMENTS }
                 )
                 Screen.ASSIGNMENTS -> AssignmentsScreen(
-                    modifier = scroll, parts = parts, eligible = eligible,
+                    modifier = scroll, parts = parts, eligible = eligible, rotation = rotationStats,
+                    rotationBusy = rotationBusy, rotationError = rotationError,
                     chairman=chairman, openingPrayer=openingPrayer, adviser=adviser, audienceGroup=audienceGroup,
                     onRole={ role, value -> when(role) { "chairman" -> chairman=value; "opening_prayer" -> openingPrayer=value; "adviser" -> adviser=value; else -> audienceGroup=value }; store.setDetail(role, value) },
                     isAdmin = signedIn && !demoMode && identityRole == "admin",
@@ -760,9 +782,17 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
 }
 
 @Composable
-private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligible: List<Participant>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, isAdmin:Boolean, onRole:(String,String)->Unit, onAssign: (Int,String,String) -> Unit, onSaveCloud: () -> Unit, onContinueExport: () -> Unit) {
+private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligible: List<Participant>, rotation: Map<Int, ParticipantRotation>, rotationBusy: Boolean, rotationError: String?, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, isAdmin:Boolean, onRole:(String,String)->Unit, onAssign: (Int,String,String) -> Unit, onSaveCloud: () -> Unit, onContinueExport: () -> Unit) {
     Column(modifier.verticalScroll(rememberScrollState()).padding(start=16.dp,end=16.dp,top=7.dp,bottom=16.dp), verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("Pumili ng participant para sa bawat bahagi ng pulong.", color=Muted, fontSize=12.sp, lineHeight=16.sp)
+        if (rotationBusy || rotationError != null) {
+            Text(
+                if (rotationBusy) "Kinukuha ang participant rotation para sa linggong ito…" else "Hindi makuha ang rotation data: $rotationError",
+                color = if (rotationError != null) MaterialTheme.colorScheme.error else Muted,
+                fontSize = 10.sp,
+                lineHeight = 14.sp
+            )
+        }
         Card(shape=RoundedCornerShape(18.dp), colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant), border=androidx.compose.foundation.BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
             Column(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=10.dp), verticalArrangement=Arrangement.spacedBy(2.dp)) {
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
@@ -770,12 +800,12 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
                     Text("Closing prayer · ${chairman.ifBlank { "Chairman" }}",color=Muted,fontSize=10.sp,maxLines=1)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    SlotPicker("Chairman",chairman,eligible.filter { it.isAppointedBrother() },Modifier.weight(1f)){onRole("chairman",it)}
-                    SlotPicker("Opening prayer",openingPrayer,eligible.filter { it.isBrother() && !it.unbaptized },Modifier.weight(1f)){onRole("opening_prayer",it)}
+                    SlotPicker("Chairman",chairman,eligible.filter { it.isAppointedBrother() },Modifier.weight(1f),rotation){onRole("chairman",it)}
+                    SlotPicker("Opening prayer",openingPrayer,eligible.filter { it.isBrother() && !it.unbaptized },Modifier.weight(1f),rotation){onRole("opening_prayer",it)}
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    SlotPicker("Adviser",adviser,eligible.filter { it.isAppointedBrother() },Modifier.weight(1f)){onRole("adviser",it)}
-                    SlotPicker("Audience group",audienceGroup,(1..9).map { Participant("Group $it") },Modifier.weight(1f)){onRole("audience_group",it)}
+                    SlotPicker("Adviser",adviser,eligible.filter { it.isAppointedBrother() },Modifier.weight(1f),rotation){onRole("adviser",it)}
+                    SlotPicker("Audience group",audienceGroup,(1..9).map { Participant("Group $it") },Modifier.weight(1f),rotation){onRole("audience_group",it)}
                 }
             }
         }
@@ -789,7 +819,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
                 Column(Modifier.fillMaxWidth().padding(top=6.dp)) {
                     parts.forEachIndexed { index, part ->
                         if(index>0) HorizontalDivider(Modifier.padding(vertical=6.dp), color=SurfaceContainer)
-                        AssignmentPicker(index, part, eligible) { slot, name -> onAssign(index,slot,name) }
+                        AssignmentPicker(index, part, eligible, rotation) { slot, name -> onAssign(index,slot,name) }
                     }
                 }
             }
@@ -821,7 +851,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
 }
 
 @Composable
-private fun AssignmentPicker(index: Int, part: Assignment, eligible: List<Participant>, onAssign: (String,String) -> Unit) {
+private fun AssignmentPicker(index: Int, part: Assignment, eligible: List<Participant>, rotation: Map<Int, ParticipantRotation>, onAssign: (String,String) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             val darkBadges = MaterialTheme.colorScheme.background == DarkPalette.background
@@ -840,32 +870,132 @@ private fun AssignmentPicker(index: Int, part: Assignment, eligible: List<Partic
         val qualified=part.section=="living" || (part.section=="treasures" && !bibleReading) || what
         val brothers=eligible.filter{it.isBrother() && !it.unbaptized}; val elders=brothers.filter{it.isAppointedBrother()}
         if(bibleStudy) {
-            Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) { SlotPicker("Conductor",part.person,elders,Modifier.weight(1f)){onAssign("main",it)}; SlotPicker("Reader",part.assistant,brothers,Modifier.weight(1f)){onAssign("assistant",it)} }
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) { SlotPicker("Conductor",part.person,elders,Modifier.weight(1f),rotation){onAssign("main",it)}; SlotPicker("Reader",part.assistant,brothers,Modifier.weight(1f),rotation){onAssign("assistant",it)} }
         } else if((part.section=="ministry"&&!what)||bibleReading) {
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                Column(Modifier.weight(1f)){SlotPicker("Main Hall",part.person,if(qualified) elders else if(bibleReading) brothers else eligible){onAssign("main",it)}; if(part.hasAssistant) SlotPicker("Assistant",part.assistant,eligible){onAssign("assistant",it)} }
-                Column(Modifier.weight(1f)){SlotPicker("Second Hall",part.secondaryAssignee,if(qualified) elders else if(bibleReading) brothers else eligible){onAssign("secondary",it)}; if(part.hasSecondaryAssistant) SlotPicker("Assistant",part.secondaryAssistant,eligible){onAssign("secondaryAssistant",it)} }
+                Column(Modifier.weight(1f)){SlotPicker("Main Hall",part.person,if(qualified) elders else if(bibleReading) brothers else eligible,rotation){onAssign("main",it)}; if(part.hasAssistant) SlotPicker("Assistant",part.assistant,eligible,rotation){onAssign("assistant",it)} }
+                Column(Modifier.weight(1f)){SlotPicker("Second Hall",part.secondaryAssignee,if(qualified) elders else if(bibleReading) brothers else eligible,rotation){onAssign("secondary",it)}; if(part.hasSecondaryAssistant) SlotPicker("Assistant",part.secondaryAssistant,eligible,rotation){onAssign("secondaryAssistant",it)} }
             }
         } else {
-            SlotPicker(if(qualified) "Qualified brother" else "Participant",part.person,if(qualified) elders else eligible){onAssign("main",it)}
+            SlotPicker(if(qualified) "Qualified brother" else "Participant",part.person,if(qualified) elders else eligible,rotation){onAssign("main",it)}
             if(part.hasAssistant&&!what) SlotPicker("Assistant",part.assistant,eligible){onAssign("assistant",it)}
         }
     }
 }
 
-@Composable private fun SlotPicker(label:String,value:String,choices:List<Participant>,modifier:Modifier=Modifier,onPick:(String)->Unit) {
+@Composable
+private fun SlotPicker(
+    label: String,
+    value: String,
+    choices: List<Participant>,
+    modifier: Modifier = Modifier,
+    rotation: Map<Int, ParticipantRotation> = emptyMap(),
+    onPick: (String) -> Unit
+) {
     var expanded by remember { mutableStateOf(false) }
-    Column(modifier.padding(top=3.dp)) {
-        Text(label,color=Muted,fontSize=10.sp,lineHeight=12.sp)
-        Box(Modifier.fillMaxWidth().padding(top=2.dp)) {
-            OutlinedButton(onClick={expanded=true},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(11.dp),contentPadding=PaddingValues(horizontal=10.dp,vertical=2.dp)) { Text(value.ifBlank{"Select"},Modifier.weight(1f),fontSize=11.sp,color=if(value.isBlank()) Muted else Ink,maxLines=1) }
-            DropdownMenu(expanded,{expanded=false},modifier=Modifier.heightIn(max=340.dp).background(MaterialTheme.colorScheme.surfaceVariant)) {
-                DropdownMenuItem(text={Text("Unassigned")},onClick={onPick("");expanded=false})
-                choices.forEach { p->DropdownMenuItem(text={Column{Text(p.name);Text(p.appointment,color=Muted,fontSize=10.sp)}},onClick={onPick(p.name);expanded=false}) }
+    var pending by remember { mutableStateOf<Participant?>(null) }
+    Column(modifier.padding(top = 3.dp)) {
+        Text(label, color = Muted, fontSize = 10.sp, lineHeight = 12.sp)
+        Box(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+            OutlinedButton(
+                onClick = { expanded = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(11.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+            ) {
+                Text(value.ifBlank { "Select" }, Modifier.weight(1f), fontSize = 11.sp, color = if (value.isBlank()) Muted else Ink, maxLines = 1)
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.heightIn(max = 340.dp).background(MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                DropdownMenuItem(text = { Text("Unassigned") }, onClick = { onPick(""); expanded = false })
+                choices.forEach { participant ->
+                    val stat = rotation[participant.id]
+                    DropdownMenuItem(
+                        text = {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(participant.name, color = Ink, fontSize = 13.sp, maxLines = 1)
+                                    Text(
+                                        buildString {
+                                            append(participant.appointment)
+                                            if (stat != null) {
+                                                append(" · Main ").append(stat.mainThisMonth)
+                                                append(" · Assist ").append(stat.assistantThisMonth)
+                                                append(" · ").append(stat.totalThisMonth).append(" this month")
+                                                if (!stat.eligible && !stat.exempt) stat.nextEligibleDate?.let { append(" · After ").append(rotationShortDate(it)) }
+                                            }
+                                        },
+                                        color = Muted,
+                                        fontSize = 9.sp,
+                                        lineHeight = 12.sp,
+                                        maxLines = 2
+                                    )
+                                }
+                                if (stat != null) RotationStatusTag(stat)
+                            }
+                        },
+                        onClick = {
+                            expanded = false
+                            if (stat != null && !stat.exempt && (stat.totalThisMonth > 0 || !stat.eligible)) pending = participant
+                            else onPick(participant.name)
+                        }
+                    )
+                }
             }
         }
     }
+    pending?.let { participant ->
+        val stat = rotation[participant.id]
+        AlertDialog(
+            onDismissRequest = { pending = null },
+            title = { Text("Recent assignment") },
+            text = {
+                val message = when {
+                    stat == null -> "Continue assigning ${participant.name}?"
+                    stat.totalThisMonth > 0 -> "${participant.name} has ${stat.totalThisMonth} assignment(s) this month. Main: ${stat.mainThisMonth}; assistant: ${stat.assistantThisMonth}. Suggested next turn: ${stat.nextEligibleDate?.let(::rotationShortDate) ?: "not set"}."
+                    else -> "${participant.name} is not yet eligible. Next eligible date: ${stat.nextEligibleDate?.let(::rotationShortDate) ?: "not set"}."
+                }
+                Text(message)
+            },
+            confirmButton = {
+                TextButton(onClick = { onPick(participant.name); pending = null }) { Text("Assign anyway") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pending = null }) { Text("Choose another") }
+            }
+        )
+    }
 }
+
+@Composable
+private fun RotationStatusTag(stat: ParticipantRotation) {
+    val label = when {
+        stat.exempt -> "Exempt"
+        stat.neverAssigned -> "Priority"
+        stat.recommended -> "Recommended"
+        stat.totalThisMonth > 0 -> "${stat.totalThisMonth} this month"
+        stat.eligible -> "Available"
+        else -> stat.nextEligibleDate?.let { "After ${rotationShortDate(it)}" } ?: "Wait"
+    }
+    val scheme = MaterialTheme.colorScheme
+    val (container, content) = when {
+        stat.exempt -> scheme.surfaceVariant to scheme.onSurfaceVariant
+        stat.neverAssigned -> scheme.tertiaryContainer to scheme.onTertiaryContainer
+        stat.recommended -> scheme.primaryContainer to scheme.onPrimaryContainer
+        stat.eligible -> scheme.secondaryContainer to scheme.onSecondaryContainer
+        else -> scheme.secondaryContainer to scheme.onSecondaryContainer
+    }
+    Surface(color = container, contentColor = content, shape = RoundedCornerShape(50)) {
+        Text(label, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 9.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    }
+}
+
+private fun rotationShortDate(value: String): String = runCatching {
+    LocalDate.parse(value).format(DateTimeFormatter.ofPattern("MMM d", Locale("en", "PH")))
+}.getOrDefault(value)
 
 @Composable
 private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, openingSong:String, closingSong:String, parts:List<Assignment>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, previewWebView:MutableState<WebView?>, onExportText:()->Unit, onPng:()->Unit) {
