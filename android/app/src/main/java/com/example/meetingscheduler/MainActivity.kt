@@ -67,7 +67,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
@@ -237,6 +239,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var identityRole by rememberSaveable { mutableStateOf("") }
     var workbookStatus by rememberSaveable { mutableStateOf("Naghahanap ng workbook para sa napiling linggo…") }
     var workbookBusy by remember { mutableStateOf(false) }
+    var workbookCaptureLog by remember { mutableStateOf(listOf("READY · waiting for the selected meeting week")) }
     var cloudStatus by rememberSaveable { mutableStateOf("Konektado sa website") }
     var participantAdmin by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(api) {
@@ -336,8 +339,9 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     suspend fun fetchWorkbookForSelectedWeek() {
         workbookBusy = true
         workbookStatus = "Kinukuha ang workbook para sa $weekLabel…"
+        workbookCaptureLog = listOf("$ capture-workbook --week $weekStart", "INIT · preparing a fresh workbook fetch")
         clearMeetingRoles(); parts.clear(); store.saveAssignments(emptyList())
-        runCatching { api.importForWeek(weekStart) }
+        runCatching { api.importForWeek(weekStart) { step -> withContext(Dispatchers.Main.immediate) { workbookCaptureLog = (workbookCaptureLog + step).takeLast(7) } } }
             .onSuccess { result ->
                 workbook = result.link
                 bible = result.meta.optString("reading", bible)
@@ -355,8 +359,10 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 persistDetails()
                 store.saveAssignments(parts.toList())
                 workbookStatus = "✓ ${result.parts.size} bahagi ang nakuha mula sa JW.ORG"
+                workbookCaptureLog = (workbookCaptureLog + "PARSED · ${result.parts.size} meeting parts" + "DONE · metadata and assignments saved locally").takeLast(7)
             }
             .onFailure {
+                workbookCaptureLog = (workbookCaptureLog + "ERROR · ${it.message ?: "workbook capture failed"}").takeLast(7)
                 workbookStatus = when {
                     it.message?.contains("format was not recognized", true) == true -> "Hindi mabasa ang workbook page para sa linggong ito. Subukan ulit."
                     it.message?.contains("No workbook", true) == true || it.message?.contains("Walang nailathalang", true) == true -> "Wala pang workbook na nailalathala para sa linggong ito."
@@ -507,10 +513,9 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     onClosingSong = { closingSong = it; persistDetails() },
                     onPickDate = { datePicker = true }, onImport = { authScope.launch { fetchWorkbookForSelectedWeek() } },
                     workbookStatus = if (demoMode) "Mag-sign in sa website account para awtomatikong kumuha ng workbook." else workbookStatus,
-                    workbookBusy = workbookBusy,
+                    workbookBusy = workbookBusy, workbookCaptureLog = workbookCaptureLog,
                     canContinue = !workbookBusy && (demoMode || participantsLoaded) && !participantsBusy,
-                    onSaveDraft = ::saveDraft,
-                    onSave = ::saveSchedule, onSaveCloud = ::saveToCloud, isAdmin = signedIn && !demoMode && identityRole=="admin", onNext = { current = Screen.ASSIGNMENTS }
+                    onNext = { current = Screen.ASSIGNMENTS }
                 )
                 Screen.ASSIGNMENTS -> AssignmentsScreen(
                     modifier = scroll, parts = parts, eligible = eligible,
@@ -688,7 +693,7 @@ private fun M3Card(content: @Composable ColumnScope.() -> Unit) {
 private fun Label(text: String) { Text(text.uppercase(), color = Muted, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.4.sp) }
 
 @Composable
-private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, canContinue:Boolean, onPickDate: () -> Unit, onImport: () -> Unit, onSaveDraft: () -> Unit, onSave: () -> Unit, onSaveCloud: () -> Unit, isAdmin: Boolean, onNext: () -> Unit) {
+private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
     PageColumn(modifier) {
         PageHeading("SCHEDULE BUILDER", "New schedule", "Pumili ng linggo. Kusang kukunin ang weekly program.")
         M3Card {
@@ -700,8 +705,7 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
                 }
             }
             OutlinedButton(onClick = onPickDate, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), shape = RoundedCornerShape(15.dp), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
-                Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(19.dp))
-                Text(weekLabel, modifier = Modifier.weight(1f).padding(start = 10.dp), color = Ink, fontWeight = FontWeight.SemiBold)
+                Text(weekLabel, modifier = Modifier.weight(1f), color = Ink, fontWeight = FontWeight.SemiBold)
                 Text("Change", color = Forest, fontSize = 12.sp)
             }
             OutlinedTextField(bible, onBible, label = { Text("Bible reading") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
@@ -723,15 +727,28 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
                 IconButton(onClick = onImport, enabled = !workbookBusy, modifier = Modifier.size(40.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(Icons.TwoTone.Refresh, contentDescription = "I-refresh ang weekly program", tint = Forest, modifier = Modifier.size(23.dp)) }
             }
             Text("Awtomatikong naghahanap batay sa napiling linggo.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
-            Surface(color = if (fetchError) MaterialTheme.colorScheme.error.copy(alpha = .08f) else MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().padding(top = 7.dp)) {
-                Text(workbookStatus.removePrefix("✓ "), color = if (fetchError) MaterialTheme.colorScheme.error else if (workbookStatus.startsWith("✓")) Forest else Muted, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.padding(12.dp))
-            }
-        }
-        if (isAdmin) {
-            OutlinedButton(onClick = onSaveCloud, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
-                Icon(Icons.TwoTone.CloudUpload, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Save to cloud")
+            Surface(
+                color = if (MaterialTheme.colorScheme.background == DarkPalette.background) Color(0xFF0D120E) else Color(0xFFE4ECE4),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (workbookBusy) "CAPTURE LOG · RUNNING" else "CAPTURE LOG", color = Forest, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.1.sp)
+                        if (workbookBusy) CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 1.5.dp, color = Forest)
+                    }
+                    workbookCaptureLog.takeLast(6).forEach { line ->
+                        Text(
+                            "› $line",
+                            color = if (line.startsWith("ERROR")) MaterialTheme.colorScheme.error else if (MaterialTheme.colorScheme.background == DarkPalette.background) Color(0xFFB8D7B5) else Color(0xFF2D5638),
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            maxLines = 2
+                        )
+                    }
+                    if (!workbookBusy) Text(workbookStatus.removePrefix("✓ "), color = if (fetchError) MaterialTheme.colorScheme.error else Muted, fontSize = 10.sp, lineHeight = 14.sp)
+                }
             }
         }
         Button(onClick = onNext, enabled=canContinue, modifier=Modifier.fillMaxWidth(), shape=RoundedCornerShape(18.dp), colors=ButtonDefaults.buttonColors(containerColor=Forest), contentPadding=PaddingValues(vertical=15.dp)) {
