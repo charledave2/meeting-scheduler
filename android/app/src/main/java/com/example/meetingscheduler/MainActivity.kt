@@ -1792,80 +1792,92 @@ private fun AccountsScreen(
     var selectedAction by remember { mutableStateOf("") }
     var temporaryPassword by remember { mutableStateOf("") }
     var selectedRole by remember { mutableStateOf("viewer") }
-    val filtered=accounts.filter { statusFilter=="all"||it.status==statusFilter }.sortedWith(compareBy<RemoteAccount>({if(it.role=="admin") 0 else 1},{when(it.status){"requested"->0;"active"->1;else->2}}, {it.displayName.lowercase()}))
-    fun beginAction(account:RemoteAccount,action:String){actionTarget=account;selectedAction=action;temporaryPassword="";selectedRole=account.role.ifBlank{"viewer"}}
-    PageColumn(modifier) {
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-            Column { Text("ADMINISTRATION",color=Forest,fontSize=10.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.3.sp);Text("Accounts & Access",fontSize=25.sp,fontWeight=FontWeight.Bold) }
-            TextButton(onClick=onRefresh,enabled=!loading){Text("Refresh",color=Forest)}
+    var requestMessage by remember { mutableStateOf<String?>(null) }
+    val filtered = accounts.filter { statusFilter == "all" || it.status == statusFilter }
+        .sortedWith(compareBy<RemoteAccount>({ if (it.role == "admin") 0 else 1 }, { when (it.status) { "requested" -> 0; "active" -> 1; else -> 2 } }, { it.displayName.lowercase() }))
+    fun beginAction(account: RemoteAccount, action: String) {
+        if (action == "view_request") {
+            requestMessage = account.requestNote
+            return
         }
-        Text("Review requests and manage website access.",color=Muted,fontSize=12.sp)
-        Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-            MetricCard("REQUESTED","${accounts.count{it.status=="requested"}}",Modifier.weight(1f))
-            MetricCard("ACTIVE","${accounts.count{it.status=="active"}}",Modifier.weight(1f))
-            MetricCard("DISABLED","${accounts.count{it.status=="disabled"}}",Modifier.weight(1f))
+        actionTarget = account
+        selectedAction = action
+        temporaryPassword = ""
+        selectedRole = account.role.ifBlank { "viewer" }
+    }
+    PageColumn(modifier) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column { Text("ADMINISTRATION", color = Forest, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.3.sp); Text("Accounts & Access", fontSize = 25.sp, fontWeight = FontWeight.Bold) }
+            IconButton(onClick = onRefresh, enabled = !loading, modifier = Modifier.size(40.dp)) {
+                if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest)
+                else Icon(Icons.TwoTone.Refresh, contentDescription = "Refresh accounts", tint = Forest)
+            }
+        }
+        Text("Review requests and manage website access.", color = Muted, fontSize = 12.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            MetricCard("REQUESTED", "${accounts.count { it.status == "requested" }}", Modifier.weight(1f))
+            MetricCard("ACTIVE", "${accounts.count { it.status == "active" }}", Modifier.weight(1f))
+            MetricCard("DISABLED", "${accounts.count { it.status == "disabled" }}", Modifier.weight(1f))
         }
         M3Card {
-            Text("STATUS",color=Muted,fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.sp)
-            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                listOf("all" to "All", "requested" to "Requested", "active" to "Active", "disabled" to "Disabled").forEach { (key,label) ->
-                    FilterChip(selected=statusFilter==key,onClick={statusFilter=key},label={Text(label,fontSize=10.sp,maxLines=1)},modifier=Modifier.weight(1f),shape=RoundedCornerShape(14.dp),colors=FilterChipDefaults.filterChipColors(selectedContainerColor=ForestContainer,selectedLabelColor=Forest))
+            Text("STATUS", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("all" to "All", "requested" to "Requested", "active" to "Active", "disabled" to "Disabled").forEach { (key, label) ->
+                    FilterChip(selected = statusFilter == key, onClick = { statusFilter = key }, label = { Text(label, fontSize = 10.sp, maxLines = 1) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp), colors = FilterChipDefaults.filterChipColors(selectedContainerColor = ForestContainer, selectedLabelColor = Forest))
                 }
             }
-            if(loading&&accounts.isEmpty()) Box(Modifier.fillMaxWidth().padding(22.dp),contentAlignment=Alignment.Center){CircularProgressIndicator(color=Forest,modifier=Modifier.size(24.dp),strokeWidth=2.dp)}
-            if(error!=null) Text(error,color=MaterialTheme.colorScheme.error,fontSize=12.sp,modifier=Modifier.padding(top=10.dp))
-            if(accounts.isEmpty()&&!loading&&error==null) Text("No accounts available. Sign in with the website admin account to manage access.",color=Muted,fontSize=12.sp,modifier=Modifier.padding(top=12.dp))
-            filtered.forEach { account ->
-                HorizontalDivider(Modifier.padding(vertical=3.dp),color=SurfaceContainer)
-                Column(Modifier.fillMaxWidth().padding(vertical=2.dp)) {
-                    Row(verticalAlignment=Alignment.CenterVertically) {
-                        Box(Modifier.size(34.dp).background(ForestContainer,CircleShape),contentAlignment=Alignment.Center){Text(account.displayName.split(" ").take(2).mapNotNull{it.firstOrNull()}.joinToString("").uppercase(),color=Forest,fontWeight=FontWeight.Bold,fontSize=10.sp)}
-                        Column(Modifier.weight(1f).padding(start=8.dp)) {
-                            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)) {
-                                Text(account.displayName.ifBlank{account.username},fontWeight=FontWeight.SemiBold,fontSize=12.sp,maxLines=1)
-                                when(account.role) {
-                                    "admin", "scheduler" -> AccountRoleBadge(account.role)
-                                }
-                            }
-                            Text("@${account.username} · ${account.role.replaceFirstChar{it.uppercase()}} · ${account.status.replaceFirstChar{it.uppercase()}}",color=Muted,fontSize=9.sp,maxLines=1)
-                            if(account.requestNote.isNotBlank()) Text(account.requestNote,color=Muted,fontSize=10.sp,maxLines=1)
-                        }
-                    val isSelf=account.username.equals(currentUsername,true)||account.role=="admin"
-                    Row(horizontalArrangement=Arrangement.End,verticalAlignment=Alignment.CenterVertically) {
-                        if(isSelf) Text("Admin",color=Muted,fontSize=9.sp,modifier=Modifier.padding(end=5.dp))
-                        else when(account.status) {
-                            "requested" -> { TextButton(onClick={beginAction(account,"decline")}){Text("Decline",color=Muted,fontSize=12.sp)}; FilledTonalButton(onClick={beginAction(account,"approve")},contentPadding=PaddingValues(horizontal=14.dp,vertical=6.dp)){Text("Approve",fontSize=12.sp)}; AccountOverflowMenu(account,::beginAction) }
-                            "active" -> {
-                                AccountOverflowMenu(account,::beginAction)
-                            }
-                            "disabled" -> { FilledTonalButton(onClick={beginAction(account,"enable")},contentPadding=PaddingValues(horizontal=14.dp,vertical=6.dp)){Text("Enable",fontSize=12.sp)}; AccountOverflowMenu(account,::beginAction) }
-                        }
+            if (loading && accounts.isEmpty()) Box(Modifier.fillMaxWidth().padding(22.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Forest, modifier = Modifier.size(24.dp), strokeWidth = 2.dp) }
+            if (error != null) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+            if (accounts.isEmpty() && !loading && error == null) Text("No accounts available. Sign in with the website admin account to manage access.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp))
+            filtered.forEachIndexed { index, account ->
+                if (index > 0) HorizontalDivider(Modifier.padding(vertical = 4.dp), color = SurfaceContainer)
+                Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(36.dp).background(ForestContainer, CircleShape), contentAlignment = Alignment.Center) {
+                        Text(account.displayName.split(" ").take(2).mapNotNull { it.firstOrNull() }.joinToString("").uppercase(), color = Forest, fontWeight = FontWeight.Bold, fontSize = 10.sp)
                     }
+                    Column(Modifier.weight(1f).padding(start = 9.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Name : ${account.displayName.ifBlank { account.username }}", fontWeight = FontWeight.SemiBold, fontSize = 11.sp, maxLines = 1)
+                        Text("Username : @${account.username}", color = Muted, fontSize = 10.sp, maxLines = 1)
+                        val roleText = when (account.role.lowercase()) { "admin" -> "Administrator"; "scheduler" -> "Scheduler"; "viewer" -> "Viewer"; else -> account.role.replaceFirstChar { it.uppercase() } }
+                        Text("Roles : $roleText", color = Muted, fontSize = 10.sp, maxLines = 1)
+                        val statusText = when (account.status.lowercase()) { "requested" -> "Access requested"; "active" -> "Active"; "inactive" -> "In Active"; "disabled" -> "Disabled"; else -> account.status.replaceFirstChar { it.uppercase() } }
+                        Text("Status : $statusText", color = if (account.status == "requested") MaterialTheme.colorScheme.error else Muted, fontSize = 10.sp, maxLines = 1)
+                    }
+                    val isSelf = account.username.equals(currentUsername, true) || account.role == "admin"
+                    if (isSelf) {
+                        Text(if (account.role == "admin") "Admin" else "You", color = Muted, fontSize = 9.sp, modifier = Modifier.padding(horizontal = 7.dp))
+                    } else {
+                        AccountOverflowMenu(account, ::beginAction)
                     }
                 }
             }
-            if(filtered.isEmpty()&&accounts.isNotEmpty()) Text("No accounts in this status.",color=Muted,fontSize=12.sp,modifier=Modifier.padding(vertical=10.dp))
+            if (filtered.isEmpty() && accounts.isNotEmpty()) Text("No accounts in this status.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(vertical = 10.dp))
         }
     }
-    if(actionTarget!=null) {
-        val needsPassword=selectedAction=="approve"||selectedAction=="reset"
-        val needsRole=selectedAction=="approve"||selectedAction=="change_role"
-        val confirmOnly=selectedAction=="decline"||selectedAction=="disable"||selectedAction=="enable"||selectedAction=="delete"
+    requestMessage?.let { message ->
+        AlertDialog(onDismissRequest = { requestMessage = null }, containerColor = AppSurface, shape = RoundedCornerShape(28.dp),
+            title = { Text("Access request message", fontWeight = FontWeight.Bold) },
+            text = { Text(message.ifBlank { "No message was included with this request." }, color = Muted, fontSize = 13.sp) },
+            confirmButton = { TextButton(onClick = { requestMessage = null }) { Text("Close", color = Forest) } })
+    }
+    if (actionTarget != null) {
+        val needsPassword = selectedAction == "approve" || selectedAction == "reset"
+        val needsRole = selectedAction == "approve" || selectedAction == "change_role"
+        val confirmOnly = selectedAction == "decline" || selectedAction == "disable" || selectedAction == "enable" || selectedAction == "delete"
         AlertDialog(
-            onDismissRequest={actionTarget=null},containerColor=AppSurface,shape=RoundedCornerShape(28.dp),
-            title={Text(when(selectedAction){"approve"->"Approve account";"reset"->"Reset password";"change_role"->"Change access role";"decline"->"Decline request?";"disable"->"Disable account?";"delete"->"Delete account permanently?";else->"Enable account?"},fontWeight=FontWeight.Bold)},
-            text={Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                Text("${actionTarget?.displayName} · @${actionTarget?.username}",color=Muted,fontSize=12.sp)
-                if(needsRole) ParticipantChoice("Role",selectedRole,listOf("viewer" to "Viewer","scheduler" to "Scheduler")){selectedRole=it}
-                if(needsPassword) OutlinedTextField(temporaryPassword,{temporaryPassword=it},label={Text("Temporary password")},singleLine=true,modifier=Modifier.fillMaxWidth())
-                if(confirmOnly) Text(when(selectedAction){"decline"->"This access request will be removed.";"disable"->"This account will lose access and be signed out.";"delete"->"This removes the login permanently and revokes its sessions. Saved schedule and audit records are retained.";else->"This account will regain website access."},color=Muted,fontSize=12.sp)
-            }},
-            confirmButton={TextButton(enabled=(!needsPassword||temporaryPassword.length>=10),onClick={actionTarget?.let{onAction(it,selectedAction,if(needsRole)selectedRole else "",temporaryPassword)};actionTarget=null}){Text(when(selectedAction){"approve"->"Approve";"reset"->"Set password";"decline"->"Decline";"disable"->"Disable";"enable"->"Enable";"delete"->"Delete";else->"Save role"},color=if(selectedAction=="disable"||selectedAction=="decline"||selectedAction=="delete")MaterialTheme.colorScheme.error else Forest)}},
-            dismissButton={TextButton(onClick={actionTarget=null}){Text("Cancel",color=Forest)}}
+            onDismissRequest = { actionTarget = null }, containerColor = AppSurface, shape = RoundedCornerShape(28.dp),
+            title = { Text(when (selectedAction) { "approve" -> "Approve account"; "reset" -> "Reset password"; "change_role" -> "Change access role"; "decline" -> "Decline request?"; "disable" -> "Disable account?"; "delete" -> "Delete account permanently?"; else -> "Enable account?" }, fontWeight = FontWeight.Bold) },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("${actionTarget?.displayName} · @${actionTarget?.username}", color = Muted, fontSize = 12.sp)
+                if (needsRole) ParticipantChoice("Role", selectedRole, listOf("viewer" to "Viewer", "scheduler" to "Scheduler")) { selectedRole = it }
+                if (needsPassword) OutlinedTextField(temporaryPassword, { temporaryPassword = it }, label = { Text("Temporary password") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                if (confirmOnly) Text(when (selectedAction) { "decline" -> "This access request will be removed."; "disable" -> "This account will lose access and be signed out."; "delete" -> "This removes the login permanently and revokes its sessions. Saved schedule and audit records are retained."; else -> "This account will regain website access." }, color = Muted, fontSize = 12.sp)
+            } },
+            confirmButton = { TextButton(enabled = (!needsPassword || temporaryPassword.length >= 10), onClick = { actionTarget?.let { onAction(it, selectedAction, if (needsRole) selectedRole else "", temporaryPassword) }; actionTarget = null }) { Text(when (selectedAction) { "approve" -> "Approve"; "reset" -> "Set password"; "decline" -> "Decline"; "disable" -> "Disable"; "enable" -> "Enable"; "delete" -> "Delete"; else -> "Save role" }, color = if (selectedAction == "disable" || selectedAction == "decline" || selectedAction == "delete") MaterialTheme.colorScheme.error else Forest) } },
+            dismissButton = { TextButton(onClick = { actionTarget = null }) { Text("Cancel", color = Forest) } }
         )
     }
 }
-
 @Composable
 private fun AccountRoleBadge(role:String) {
     Surface(shape=CircleShape,color=ForestContainer,modifier=Modifier.size(21.dp)) {
@@ -1877,20 +1889,33 @@ private fun AccountRoleBadge(role:String) {
 }
 
 @Composable
-private fun AccountOverflowMenu(account:RemoteAccount,onAction:(RemoteAccount,String)->Unit) {
-    var expanded by remember(account.id){mutableStateOf(false)}
+private fun AccountOverflowMenu(account: RemoteAccount, onAction: (RemoteAccount, String) -> Unit) {
+    var expanded by remember(account.id) { mutableStateOf(false) }
     Box {
-        IconButton(onClick={expanded=true},modifier=Modifier.size(36.dp)){Text("⋮",fontSize=20.sp,color=Forest)}
-        DropdownMenu(expanded=expanded,onDismissRequest={expanded=false},modifier=Modifier.background(AppSurface)) {
-            when(account.status) {
-                "active" -> {
-                    DropdownMenuItem(text={Text("Change role")},onClick={expanded=false;onAction(account,"change_role")})
-                    DropdownMenuItem(text={Text("Reset password")},onClick={expanded=false;onAction(account,"reset")})
-                    DropdownMenuItem(text={Text("Disable account")},onClick={expanded=false;onAction(account,"disable")})
-                    HorizontalDivider()
-                    DropdownMenuItem(text={Text("Delete permanently",color=MaterialTheme.colorScheme.error)},onClick={expanded=false;onAction(account,"delete")})
+        IconButton(onClick = { expanded = true }, modifier = Modifier.size(36.dp)) {
+            Box {
+                Text("⋮", fontSize = 20.sp, color = Forest)
+                if (account.status == "requested") Box(Modifier.align(Alignment.TopEnd).offset(x = 1.dp, y = 1.dp).size(8.dp).background(MaterialTheme.colorScheme.error, CircleShape))
+            }
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.background(AppSurface)) {
+            when (account.status) {
+                "requested" -> {
+                    DropdownMenuItem(text = { Text("View request message") }, onClick = { expanded = false; onAction(account, "view_request") })
+                    DropdownMenuItem(text = { Text("Approve request") }, onClick = { expanded = false; onAction(account, "approve") })
+                    DropdownMenuItem(text = { Text("Decline request", color = MaterialTheme.colorScheme.error) }, onClick = { expanded = false; onAction(account, "decline") })
                 }
-                else -> DropdownMenuItem(text={Text("Delete permanently",color=MaterialTheme.colorScheme.error)},onClick={expanded=false;onAction(account,"delete")})
+                "active" -> {
+                    DropdownMenuItem(text = { Text("Change role") }, onClick = { expanded = false; onAction(account, "change_role") })
+                    DropdownMenuItem(text = { Text("Reset password") }, onClick = { expanded = false; onAction(account, "reset") })
+                    DropdownMenuItem(text = { Text("Disable account") }, onClick = { expanded = false; onAction(account, "disable") })
+                    HorizontalDivider()
+                    DropdownMenuItem(text = { Text("Delete permanently", color = MaterialTheme.colorScheme.error) }, onClick = { expanded = false; onAction(account, "delete") })
+                }
+                else -> {
+                    DropdownMenuItem(text = { Text("Enable account") }, onClick = { expanded = false; onAction(account, "enable") })
+                    DropdownMenuItem(text = { Text("Delete permanently", color = MaterialTheme.colorScheme.error) }, onClick = { expanded = false; onAction(account, "delete") })
+                }
             }
         }
     }
