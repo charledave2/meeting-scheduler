@@ -422,7 +422,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             runCatching { api.members(includeInactive=true) }.onSuccess { response ->
                 participantAdmin=response.optBoolean("isAdmin",participantAdmin)
                 val rows=response.optJSONArray("members") ?: JSONArray(); participants.clear()
-                for(i in 0 until rows.length()) rows.optJSONObject(i)?.let { row -> participants.add(Participant(row.optString("name"),row.optString("appointment").ifBlank{"publisher"},row.optString("serviceStatus").ifBlank{"none"},row.optString("gender").ifBlank{"unspecified"},row.optBoolean("active",true),row.optInt("id"),row.optBoolean("unbaptized",false))) }
+                for(i in 0 until rows.length()) rows.optJSONObject(i)?.let { row -> participants.add(Participant(row.optString("name"),row.optString("appointment"),row.optString("serviceStatus"),row.optString("gender").ifBlank{"unspecified"},row.optBoolean("active",true),row.optInt("id"),row.optBoolean("unbaptized",false))) }
                 store.saveParticipants(participants.toList()); participantsLoaded=true; cloudStatus="Nakuha ang participants mula sa website"
             }.onFailure { cloudStatus="Hindi makuha ang participants: ${it.message ?: "server error"}"; participantsLoaded=true }
             participantsBusy=false
@@ -1676,7 +1676,7 @@ private fun ParticipantsScreen(
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
             Column { Text("CLOUD DATA",color=Forest,fontSize=10.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.3.sp);Text("Participants",fontSize=25.sp,fontWeight=FontWeight.Bold) }
             Row(verticalAlignment=Alignment.CenterVertically) {
-                TextButton(onClick=onRefresh,enabled=isAdmin){Text("Refresh",color=Forest,fontSize=12.sp)}
+                IconButton(onClick=onRefresh,enabled=isAdmin,modifier=Modifier.size(40.dp)){Icon(Icons.TwoTone.Refresh,contentDescription="Refresh participants",tint=if(isAdmin) Forest else Muted)}
                 FilledTonalButton(onClick={showAdd=true},contentPadding=PaddingValues(horizontal=14.dp,vertical=7.dp)){Text("＋ Add",fontSize=13.sp)}
             }
         }
@@ -1725,8 +1725,8 @@ private fun ParticipantsScreen(
         text={Column(verticalArrangement=Arrangement.spacedBy(9.dp)) {
             OutlinedTextField(editName,{editName=it},label={Text("Name")},singleLine=true,modifier=Modifier.fillMaxWidth())
             ParticipantChoice("Gender",editGender,listOf("brother" to "Brother","sister" to "Sister")){editGender=it}
-            ParticipantChoice("Appointment",editAppointment,listOf("publisher" to "Publisher","ministerial" to "Ministerial servant","elder" to "Elder"),enabled=!editUnbaptized){editAppointment=it;if(it!="publisher")editUnbaptized=false}
-            ParticipantChoice("Service status",editService,listOf("none" to "Publisher","regular_pioneer" to "Regular pioneer"),enabled=!editUnbaptized){editService=it;if(it=="regular_pioneer")editUnbaptized=false}
+            ParticipantChoice("Appointment",editAppointment,listOf("" to "Select","publisher" to "Publisher","ministerial" to "Ministerial servant","elder" to "Elder"),enabled=!editUnbaptized){editAppointment=it;if(it!="publisher")editUnbaptized=false}
+            ParticipantChoice("Service status",editService,listOf("" to "Select","none" to "Publisher","regular_pioneer" to "Regular pioneer"),enabled=!editUnbaptized){editService=it;if(it=="regular_pioneer")editUnbaptized=false}
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("Unbaptized",fontSize=14.sp);Switch(checked=editUnbaptized,onCheckedChange={editUnbaptized=it;if(it){editAppointment="publisher";editService="none"}},colors=SwitchDefaults.colors(checkedThumbColor=Color.White,checkedTrackColor=Forest))}
         }},
         confirmButton={TextButton(onClick={editing?.let{old->if(editName.isNotBlank())onEdit(old,old.copy(name=editName.trim(),gender=editGender,appointment=editAppointment,service=editService,unbaptized=editUnbaptized))};editing=null}){Text("Save",color=Forest)}},
