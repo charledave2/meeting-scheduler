@@ -7,6 +7,7 @@ on:
       - "android/**"
       - ".github/workflows/build-android-apk.yml"
       - "CHANGELOG.md"
+      - "android/RELEASE_SIGNING.md"
   workflow_dispatch:
 
 permissions:
@@ -36,27 +37,56 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.10.2"
+      - name: Read app version
+        id: meta
+        run: |
+          VERSION="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
-      - name: Upload APK
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: meeting-scheduler-android-v0.30.0-debug
+          name: meeting-scheduler-android-debug-v${{ steps.meta.outputs.version }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+      - name: Validate release signing secrets and decode keystore
+        if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release:')
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64" || { echo "::error::Missing ANDROID_KEYSTORE_BASE64 repository secret"; exit 1; }
+          test -n "$ANDROID_KEYSTORE_PASSWORD" || { echo "::error::Missing ANDROID_KEYSTORE_PASSWORD repository secret"; exit 1; }
+          test -n "$ANDROID_KEY_ALIAS" || { echo "::error::Missing ANDROID_KEY_ALIAS repository secret"; exit 1; }
+          test -n "$ANDROID_KEY_PASSWORD" || { echo "::error::Missing ANDROID_KEY_PASSWORD repository secret"; exit 1; }
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > app/release-keystore.jks
+          test -s app/release-keystore.jks || { echo "::error::Keystore decode failed"; exit 1; }
+      - name: Build signed release APK
+        if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release:')
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ github.workspace }}/android/app/release-keystore.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: gradle --no-daemon :app:assembleRelease
       - name: Package Android project source
         if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release:')
-        run: zip -rq ../meeting-scheduler-android-source.zip . -x "*/build/*" ".gradle/*" "*/.gradle/*"
+        run: zip -rq ../meeting-scheduler-android-source.zip . -x "*/build/*" ".gradle/*" "*/.gradle/*" "*/release-keystore.jks"
       - name: Publish GitHub Release
         if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release:')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
-          TAG="v$VERSION"
+          TAG="v${{ steps.meta.outputs.version }}"
           gh release create "$TAG" \
-            "app/build/outputs/apk/debug/app-debug.apk" \
+            "app/build/outputs/apk/release/app-release.apk" \
             "../meeting-scheduler-android-source.zip" \
             --title "Meeting Scheduler $TAG" \
             --notes-file ../CHANGELOG.md \
             --target "$GITHUB_SHA"
+      - name: Remove temporary signing key
+        if: always()
+        run: rm -f app/release-keystore.jks
