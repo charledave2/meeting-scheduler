@@ -852,10 +852,29 @@ private fun MeetingSplashScreen() {
 }
 
 @Composable
-private fun DemoLoginScreen(busy: Boolean, error: String?, onLogin: (String, String) -> Unit, onContinue: () -> Unit) {
+private fun LoginScreen(
+    busy: Boolean,
+    error: String?,
+    onLogin: (String, String) -> Unit,
+    onRequestAccess: suspend (String, String, String) -> Unit
+) {
     var username by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var showPassword by rememberSaveable { mutableStateOf(false) }
+    var requestOpen by remember { mutableStateOf(false) }
+    var requestSuccess by remember { mutableStateOf(false) }
+    var requestBusy by remember { mutableStateOf(false) }
+    var requestError by remember { mutableStateOf<String?>(null) }
+    var requestName by rememberSaveable { mutableStateOf("") }
+    var requestUsername by rememberSaveable { mutableStateOf("") }
+    var requestMessage by rememberSaveable { mutableStateOf("") }
+    val requestScope = rememberCoroutineScope()
+    LaunchedEffect(requestSuccess) {
+        if (requestSuccess) {
+            delay(1_900)
+            requestSuccess = false
+        }
+    }
     Surface(color = AppSurface, modifier = Modifier.fillMaxSize()) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val compact = maxHeight < 700.dp
@@ -872,65 +891,111 @@ private fun DemoLoginScreen(busy: Boolean, error: String?, onLogin: (String, Str
                 Text("Midweek meeting workspace", color = Muted, fontSize = 13.sp)
                 Spacer(Modifier.height(if (compact) 22.dp else 30.dp))
                 AnimatedVisibility(visible = true, enter = fadeIn(tween(520)) + slideInVertically(tween(520)) { it / 10 }) {
-                Card(
-                    shape = RoundedCornerShape(28.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(if (compact) 18.dp else 22.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
-                        Text("ACCOUNT ACCESS", color = Forest, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.6.sp)
-                        Text("Welcome back", fontSize = 27.sp, fontWeight = FontWeight.Bold)
-                        Text("Mag-sign in gamit ang account mo.", color = Muted, fontSize = 13.sp)
-                        OutlinedTextField(
-                            username,
-                            { username = it },
-                            label = { Text("Username") },
-                            leadingIcon = { Icon(Icons.TwoTone.Person, contentDescription = null, tint = Forest) },
-                            singleLine = true,
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            password,
-                            { password = it },
-                            label = { Text("Password") },
-                            leadingIcon = { Icon(Icons.TwoTone.Lock, contentDescription = null, tint = Forest) },
-                            singleLine = true,
-                            shape = RoundedCornerShape(16.dp),
-                            visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                            trailingIcon = {
-                                IconButton(onClick = { showPassword = !showPassword }) {
-                                    Icon(if (showPassword) Icons.TwoTone.VisibilityOff else Icons.TwoTone.Visibility, contentDescription = if (showPassword) "Hide password" else "Show password", tint = Forest)
+                    Card(
+                        shape = RoundedCornerShape(28.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(if (compact) 18.dp else 22.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
+                            Text("ACCOUNT ACCESS", color = Forest, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.6.sp)
+                            Text("Welcome back", fontSize = 27.sp, fontWeight = FontWeight.Bold)
+                            Text("Mag-sign in gamit ang account mo.", color = Muted, fontSize = 13.sp)
+                            OutlinedTextField(
+                                username,
+                                { username = it },
+                                label = { Text("Username") },
+                                leadingIcon = { Icon(Icons.TwoTone.Person, contentDescription = null, tint = Forest) },
+                                singleLine = true,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                password,
+                                { password = it },
+                                label = { Text("Password") },
+                                leadingIcon = { Icon(Icons.TwoTone.Lock, contentDescription = null, tint = Forest) },
+                                singleLine = true,
+                                shape = RoundedCornerShape(16.dp),
+                                visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    IconButton(onClick = { showPassword = !showPassword }) {
+                                        Icon(if (showPassword) Icons.TwoTone.VisibilityOff else Icons.TwoTone.Visibility, contentDescription = if (showPassword) "Hide password" else "Show password", tint = Forest)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            error?.let {
+                                Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Text(it, color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 12.sp, modifier = Modifier.padding(12.dp))
                                 }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        error?.let {
-                            Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-                                Text(it, color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 12.sp, modifier = Modifier.padding(12.dp))
+                            }
+                            Button(
+                                onClick = { onLogin(username, password) },
+                                enabled = !busy && username.isNotBlank() && password.isNotBlank(),
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                                shape = RoundedCornerShape(18.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Forest)
+                            ) {
+                                Text(if (busy) "Signing in…" else "Sign in", fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.width(8.dp))
+                                if (busy) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                                else Icon(Icons.TwoTone.ArrowForward, contentDescription = null, modifier = Modifier.size(19.dp))
+                            }
+                            HorizontalDivider(Modifier.padding(vertical = 2.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                                Text("Wala ka pang account?", color = Muted, fontSize = 12.sp)
+                                TextButton(onClick = { requestError = null; requestOpen = true }) {
+                                    Text("Request Access", color = Forest, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                }
                             }
                         }
-                        Button(
-                            onClick = { onLogin(username, password) },
-                            enabled = !busy && username.isNotBlank() && password.isNotBlank(),
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                            shape = RoundedCornerShape(18.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Forest)
-                        ) {
-                            Text(if (busy) "Signing in…" else "Sign in", fontWeight = FontWeight.SemiBold)
-                            Spacer(Modifier.width(8.dp))
-                            if (busy) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-                            else Icon(Icons.TwoTone.ArrowForward, contentDescription = null, modifier = Modifier.size(19.dp))
-                        }
-                        HorizontalDivider(Modifier.padding(vertical = 2.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                        OutlinedButton(onClick = onContinue, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = RoundedCornerShape(18.dp)) {
-                            Icon(Icons.TwoTone.Visibility, contentDescription = null, tint = Forest, modifier = Modifier.size(19.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Open demo workspace", color = Forest, fontWeight = FontWeight.SemiBold)
-                        }
-                        Text("Demo mode uses sample data only.", color = Muted, fontSize = 11.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
                     }
                 }
+            }
+        }
+    }
+    if (requestOpen) {
+        AlertDialog(
+            onDismissRequest = { if (!requestBusy) requestOpen = false },
+            containerColor = AppSurface,
+            shape = RoundedCornerShape(28.dp),
+            title = { Text("Request Access", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Ipadala ang iyong pangalan, username, at mensahe sa administrator.", color = Muted, fontSize = 12.sp)
+                    OutlinedTextField(requestName, { requestName = it; requestError = null }, label = { Text("Name") }, singleLine = true, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(requestUsername, { requestUsername = it; requestError = null }, label = { Text("Username") }, singleLine = true, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(requestMessage, { requestMessage = it; requestError = null }, label = { Text("Message for Administrator") }, minLines = 2, maxLines = 4, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
+                    requestError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !requestBusy && requestName.trim().length >= 2 && requestUsername.trim().length >= 3,
+                    onClick = {
+                        requestScope.launch {
+                            requestBusy = true
+                            requestError = null
+                            runCatching { onRequestAccess(requestName.trim(), requestUsername.trim(), requestMessage.trim()) }
+                                .onSuccess { requestOpen = false; requestSuccess = true }
+                                .onFailure { requestError = it.message ?: "Hindi naipadala ang request." }
+                            requestBusy = false
+                        }
+                    }
+                ) {
+                    if (requestBusy) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp, color = Forest)
+                    else Text("Send Request", color = Forest)
+                }
+            },
+            dismissButton = { TextButton(enabled = !requestBusy, onClick = { requestOpen = false }) { Text("Cancel", color = Muted) } }
+        )
+    }
+    if (requestSuccess) {
+        Dialog(onDismissRequest = { requestSuccess = false }) {
+            Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                Row(Modifier.padding(horizontal = 22.dp, vertical = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(Icons.TwoTone.CheckCircle, contentDescription = "Success", tint = Forest, modifier = Modifier.size(28.dp))
+                    Text("Success! wait for Administrator Approval.", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 }
             }
         }
