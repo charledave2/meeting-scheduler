@@ -6,6 +6,7 @@ on:
     paths:
       - "android/**"
       - ".github/workflows/build-android-apk.yml"
+      - "CHANGELOG.md"
   workflow_dispatch:
 
 permissions:
@@ -44,10 +45,10 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Package Android project source
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release:')
         run: zip -rq ../meeting-scheduler-android-source.zip . -x "*/build/*" ".gradle/*" "*/.gradle/*"
       - name: Publish GitHub Release
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release:')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
