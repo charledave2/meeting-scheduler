@@ -283,6 +283,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var identityUsername by rememberSaveable { mutableStateOf("") }
     var identityRole by rememberSaveable { mutableStateOf("") }
     var profilePhotoPath by rememberSaveable { mutableStateOf<String?>(null) }
+    var profilePhotoDataUrl by remember { mutableStateOf("") }
     var profileDialogOpen by remember { mutableStateOf(false) }
     var profileNameDraft by remember { mutableStateOf("") }
     var profileError by remember { mutableStateOf<String?>(null) }
@@ -294,7 +295,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     LaunchedEffect(api) {
         runCatching { api.currentUser() }.onSuccess {
             identityName = store.profileName(it.username, it.name); identityUsername = it.username
-            profilePhotoPath = store.profilePhoto(it.username); identityRole = it.role
+            profilePhotoPath = store.profilePhoto(it.username); profilePhotoDataUrl = it.photoDataUrl; identityRole = it.role
             if (it.mustChangePassword) passwordChangeRequired = true else signedIn = true
         }
         authReady = true
@@ -321,7 +322,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     runCatching { api.login(username, password) }
                         .onSuccess {
                             identityName = store.profileName(it.username, it.name); identityUsername = it.username
-                            profilePhotoPath = store.profilePhoto(it.username); identityRole = it.role
+                            profilePhotoPath = store.profilePhoto(it.username); profilePhotoDataUrl = it.photoDataUrl; identityRole = it.role
                             if (it.mustChangePassword) passwordChangeRequired = true else signedIn = true
                         }
                         .onFailure { loginError = it.message ?: "Hindi makapag-sign in." }
@@ -639,7 +640,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             ModalDrawerSheet(modifier = Modifier.widthIn(max = 340.dp), drawerContainerColor = AppSurface) {
                 Column(Modifier.fillMaxHeight().padding(horizontal = 14.dp, vertical = 18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 10.dp, bottom = 16.dp)) {
-                        Box(Modifier.size(48.dp).clip(CircleShape).clickable { profileNameDraft = identityName; profileError = null; profileDialogOpen = true }) { ProfileAvatar(identityName, profilePhotoPath, 48.dp) }
+                        Box(Modifier.size(48.dp).clip(CircleShape).clickable { profileNameDraft = identityName; profileError = null; profileDialogOpen = true }) { ProfileAvatar(identityName, profilePhotoPath, 48.dp, profilePhotoDataUrl) }
                         Spacer(Modifier.width(12.dp))
                         Column { Text("Meeting Scheduler", fontWeight = FontWeight.Bold, fontSize = 17.sp); Text("Midweek meeting workspace", color = Muted, fontSize = 12.sp) }
                     }
@@ -817,15 +818,35 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     }
     val profilePhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) authScope.launch {
-            runCatching {
+            profileError = null
+            val dataUrl = runCatching {
                 withContext(Dispatchers.IO) {
-                    val destination = File(context.filesDir, "profile-avatar")
-                    val input = context.contentResolver.openInputStream(uri) ?: error("Hindi mabasa ang napiling larawan.")
-                    input.use { source -> destination.outputStream().use { output -> source.copyTo(output) } }
-                    destination.absolutePath
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+                    var sample = 1
+                    while (maxOf(bounds.outWidth, bounds.outHeight).coerceAtLeast(1) / sample > 720) sample *= 2
+                    val options = BitmapFactory.Options().apply { inSampleSize = sample }
+                    val decoded = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+                        ?: error("Hindi mabasa ang napiling larawan.")
+                    val scale = minOf(1f, 512f / maxOf(decoded.width, decoded.height).coerceAtLeast(1))
+                    val bitmap = if (scale < 1f) Bitmap.createScaledBitmap(decoded, (decoded.width * scale).toInt().coerceAtLeast(1), (decoded.height * scale).toInt().coerceAtLeast(1), true) else decoded
+                    val output = ByteArrayOutputStream()
+                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, 78, output)) { "Hindi ma-compress ang larawan." }
+                    val encoded = Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+                    check(encoded.length <= 600_000) { "Masyadong malaki ang larawan. Pumili ng mas maliit." }
+                    "data:image/jpeg;base64,$encoded"
                 }
-            }.onSuccess { path -> profilePhotoPath = path; store.saveProfilePhoto(identityUsername, path) }
-                .onFailure { profileError = it.message ?: "Hindi ma-save ang larawan." }
+            }.getOrElse { error ->
+                profileError = error.message ?: "Hindi maihanda ang larawan."
+                null
+            }
+            if (dataUrl != null) runCatching { api.uploadOwnProfilePhoto(dataUrl) }
+                .onSuccess {
+                    profilePhotoDataUrl = dataUrl
+                    profilePhotoPath = null
+                    toastMessage = "Na-save sa cloud ang profile photo."
+                }
+                .onFailure { profileError = it.message ?: "Hindi na-save sa cloud ang profile photo." }
         }
     }
     if (homePreviewWeek != null) {
@@ -860,11 +881,11 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             title = { Text("Edit Profile", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    ProfileAvatar(identityName, profilePhotoPath, 76.dp)
+                    ProfileAvatar(identityName, profilePhotoPath, 76.dp, profilePhotoDataUrl)
                     OutlinedButton(onClick = { profilePhotoPicker.launch(arrayOf("image/*")) }, shape = RoundedCornerShape(18.dp)) {
                         Icon(Icons.TwoTone.AddAPhoto, contentDescription = null, tint = Forest, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(7.dp))
-                        Text(if (profilePhotoPath.isNullOrBlank()) "Add Photo" else "Change Photo", color = Forest)
+                        Text(if (profilePhotoPath.isNullOrBlank() && profilePhotoDataUrl.isBlank()) "Add Photo" else "Change Photo", color = Forest)
                     }
                     OutlinedTextField(
                         value = profileNameDraft,
@@ -874,7 +895,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Text("Naka-save ang pangalan at larawan sa device na ito.", color = Muted, fontSize = 11.sp)
+                    Text("Naka-save sa cloud ang profile photo. Sa device na ito naman naka-save ang pangalan.", color = Muted, fontSize = 11.sp)
                     profileError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 11.sp) }
                 }
             },
@@ -1139,8 +1160,17 @@ private fun LoginScreen(
 }
 
 @Composable
-private fun ProfileAvatar(name: String, photoPath: String?, size: androidx.compose.ui.unit.Dp) {
-    val bitmap = remember(photoPath) { photoPath?.let { runCatching { BitmapFactory.decodeFile(it)?.asImageBitmap() }.getOrNull() } }
+private fun ProfileAvatar(name: String, photoPath: String?, size: androidx.compose.ui.unit.Dp, photoDataUrl: String = "") {
+    val bitmap = remember(photoPath, photoDataUrl) {
+        val encoded = photoDataUrl.substringAfter("base64,", "").takeIf { it.isNotBlank() }
+        val cloudBitmap = encoded?.let { value ->
+            runCatching {
+                val bytes = Base64.decode(value, Base64.DEFAULT)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+            }.getOrNull()
+        }
+        cloudBitmap ?: photoPath?.let { runCatching { BitmapFactory.decodeFile(it)?.asImageBitmap() }.getOrNull() }
+    }
     if (bitmap != null) {
         Image(bitmap, contentDescription = "Profile photo", contentScale = ContentScale.Crop, modifier = Modifier.size(size).clip(CircleShape))
     } else {
