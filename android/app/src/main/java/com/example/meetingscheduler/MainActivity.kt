@@ -282,6 +282,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var identityName by rememberSaveable { mutableStateOf("") }
     var identityUsername by rememberSaveable { mutableStateOf("") }
     var identityRole by rememberSaveable { mutableStateOf("") }
+    var identityToolAccess by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var profilePhotoPath by rememberSaveable { mutableStateOf<String?>(null) }
     var profilePhotoDataUrl by remember { mutableStateOf("") }
     var profileDialogOpen by remember { mutableStateOf(false) }
@@ -295,7 +296,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     LaunchedEffect(api) {
         runCatching { api.currentUser() }.onSuccess {
             identityName = store.profileName(it.username, it.name); identityUsername = it.username
-            profilePhotoPath = store.profilePhoto(it.username); profilePhotoDataUrl = it.photoDataUrl; identityRole = it.role
+            profilePhotoPath = store.profilePhoto(it.username); profilePhotoDataUrl = it.photoDataUrl; identityRole = it.role; identityToolAccess = it.toolAccess; identityToolAccess = it.toolAccess
             if (it.mustChangePassword) passwordChangeRequired = true else signedIn = true
         }
         authReady = true
@@ -338,7 +339,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     LaunchedEffect(drawerState.isOpen) {
         if (drawerState.isOpen) runCatching { api.currentUser() }
-            .onSuccess { profilePhotoDataUrl = it.photoDataUrl }
+            .onSuccess { profilePhotoDataUrl = it.photoDataUrl; identityToolAccess = it.toolAccess }
     }
     val scope = rememberCoroutineScope()
     var weekStart by rememberSaveable { mutableStateOf(store.detail("week", LocalDate.of(2026, 11, 9).toString())) }
@@ -384,12 +385,27 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     val week = remember(weekStart) { runCatching { LocalDate.parse(weekStart) }.getOrDefault(LocalDate.of(2026,11,9)) }
     val weekLabel = remember(week) { week.format(DateTimeFormatter.ofPattern("MMM d")) + " – " + week.plusDays(6).format(DateTimeFormatter.ofPattern("MMM d, yyyy")) }
     val eligible = participants.filter { it.enabled }
-    fun canAccess(screen: Screen): Boolean = when (identityRole.lowercase()) {
-        "admin", "administrator" -> true
-        "scheduler" -> screen != Screen.PARTICIPANTS && screen != Screen.ACCOUNTS
-        "viewer" -> screen == Screen.HOME
-        else -> false
+    fun toolKey(screen: Screen): String = when (screen) {
+        Screen.HOME -> "home"
+        Screen.DETAILS -> "workbook"
+        Screen.ASSIGNMENTS -> "assignments"
+        Screen.PREVIEW -> "preview"
+        Screen.PARTICIPANTS -> "participants"
+        Screen.HISTORY -> "history"
+        Screen.ACCOUNTS -> "accounts"
     }
+    fun toolMode(screen: Screen): String {
+        if (identityRole.equals("admin", true) || identityRole.equals("administrator", true)) return "edit"
+        val key = toolKey(screen)
+        if (key == "accounts") return "hidden"
+        val defaults = if (identityRole.equals("scheduler", true)) mapOf(
+            "home" to "view", "workbook" to "edit", "assignments" to "edit",
+            "preview" to "edit", "participants" to "hidden", "history" to "view"
+        ) else mapOf("home" to "view", "workbook" to "hidden", "assignments" to "hidden", "preview" to "hidden", "participants" to "hidden", "history" to "hidden")
+        return identityToolAccess[key] ?: defaults[key] ?: "hidden"
+    }
+    fun canAccess(screen: Screen): Boolean = if (screen == Screen.ACCOUNTS) identityRole.equals("admin", true) else toolMode(screen) != "hidden"
+    fun canEdit(screen: Screen): Boolean = identityRole.equals("admin", true) || (identityRole.equals("scheduler", true) && toolMode(screen) == "edit")
     fun navigateTo(screen: Screen) {
         if (canAccess(screen)) current = screen
         else {
@@ -398,6 +414,10 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 "Please Don't Spam, Just Message the Administrator for Access." to true
             else "Your Account Doesn't Have Access to This Tool." to false
         }
+    }
+
+    LaunchedEffect(signedIn, identityToolAccess, identityRole) {
+        if (signedIn && !canAccess(current)) current = Screen.values().firstOrNull { canAccess(it) } ?: Screen.HOME
     }
 
     LaunchedEffect(current, signedIn, homeLoaded) {
@@ -430,7 +450,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     }
 
     LaunchedEffect(signedIn, participantsLoaded) {
-        if(signedIn && !participantsLoaded && !participantsBusy) {
+        if(signedIn && !participantsLoaded && !participantsBusy && (canAccess(Screen.PARTICIPANTS) || canAccess(Screen.ASSIGNMENTS))) {
             participantsBusy=true
             runCatching { api.members(includeInactive=true) }.onSuccess { response ->
                 participantAdmin=response.optBoolean("isAdmin",participantAdmin)
@@ -513,7 +533,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         workbookStatus="✓ Na-load ang saved cloud schedule"
         if(navigate) current=if(edit) Screen.DETAILS else Screen.PREVIEW
     }
-    LaunchedEffect(weekStart, signedIn, weekLoadNonce) {
+    LaunchedEffect(weekStart, signedIn, weekLoadNonce, identityToolAccess) {
         if (suppressWeekLookup) { suppressWeekLookup=false; return@LaunchedEffect }
         if (remoteScheduleLoadedWeek==weekStart) return@LaunchedEffect
         if (signedIn) {
