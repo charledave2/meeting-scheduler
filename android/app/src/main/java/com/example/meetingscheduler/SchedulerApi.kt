@@ -18,10 +18,10 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 
-internal data class ApiIdentity(val name: String, val username: String, val role: String, val mustChangePassword: Boolean, val photoDataUrl: String = "")
+internal data class ApiIdentity(val name: String, val username: String, val role: String, val mustChangePassword: Boolean, val photoDataUrl: String = "", val toolAccess: Map<String, String> = emptyMap())
 internal data class WorkbookImport(val link: String, val meta: JSONObject, val parts: List<JSONObject>)
 internal data class RemoteSchedule(val id: Int, val weekLabel: String, val reading: String, val updatedAt: String)
-internal data class RemoteAccount(val id: Int, val displayName: String, val username: String, val status: String, val role: String, val createdAt: String, val requestNote: String, val photoDataUrl: String = "")
+internal data class RemoteAccount(val id: Int, val displayName: String, val username: String, val status: String, val role: String, val createdAt: String, val requestNote: String, val photoDataUrl: String = "", val toolAccess: Map<String, String> = emptyMap())
 internal data class ParticipantRotation(
     val memberId: Int, val mainThisMonth: Int, val assistantThisMonth: Int, val totalThisMonth: Int,
     val lastAssignmentDate: String?, val nextEligibleDate: String?, val eligible: Boolean, val exempt: Boolean,
@@ -127,8 +127,13 @@ internal class SchedulerApi(context: Context) {
     suspend fun accounts(): List<RemoteAccount> = withContext(Dispatchers.IO) {
         val rows = request("/api/accounts", "GET", null).optJSONArray("accounts") ?: JSONArray()
         (0 until rows.length()).mapNotNull { i -> rows.optJSONObject(i)?.let { row ->
-            RemoteAccount(row.optInt("id"), row.optString("displayName"), row.optString("username"), row.optString("status"), row.optString("role", "viewer"), row.optString("createdAt"), row.optString("requestNote"), row.optString("photoDataUrl"))
+            RemoteAccount(row.optInt("id"), row.optString("displayName"), row.optString("username"), row.optString("status"), row.optString("role", "viewer"), row.optString("createdAt"), row.optString("requestNote"), row.optString("photoDataUrl"), row.optJSONObject("toolAccess")?.let { access -> buildMap { access.keys().forEach { key -> put(key, access.optString(key, "hidden")) } } } ?: emptyMap())
         } }
+    }
+
+    suspend fun updateAccountToolAccess(id: Int, toolAccess: Map<String, String>): JSONObject = withContext(Dispatchers.IO) {
+        val access = JSONObject().apply { toolAccess.forEach { (key, value) -> put(key, value) } }
+        request("/api/accounts", "PATCH", JSONObject().put("id", id).put("action", "update_tool_access").put("toolAccess", access))
     }
 
     suspend fun uploadAccountPhoto(id: Int, photoDataUrl: String): JSONObject = withContext(Dispatchers.IO) {
@@ -146,7 +151,8 @@ internal class SchedulerApi(context: Context) {
     private fun meBlocking(): ApiIdentity {
         val data = request("/api/auth/me", "GET", null)
         val user = data.optJSONObject("user") ?: throw IllegalStateException("Hindi mabasa ang account.")
-        return ApiIdentity(user.optString("displayName"), user.optString("username"), user.optString("role"), user.optBoolean("mustChangePassword"), user.optString("photoDataUrl"))
+        val access = user.optJSONObject("toolAccess")?.let { values -> buildMap { values.keys().forEach { key -> put(key, values.optString(key, "hidden")) } } } ?: emptyMap()
+        return ApiIdentity(user.optString("displayName"), user.optString("username"), user.optString("role"), user.optBoolean("mustChangePassword"), user.optString("photoDataUrl"), access)
     }
 
     suspend fun uploadOwnProfilePhoto(photoDataUrl: String) = withContext(Dispatchers.IO) {
