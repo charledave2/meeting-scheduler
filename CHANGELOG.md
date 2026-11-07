@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.35.1 — 2026-11-07
+
+- Build GitHub releases as APKs signed with the stable Android release keystore.
+- Keep debug APKs as separate test artifacts.
+- Document release keystore creation and GitHub Actions secret setup.
+
 ## v0.35.0 — 2026-11-07
 
 - Show each account's cloud-stored photo in the profile image at the top of the burger menu.
