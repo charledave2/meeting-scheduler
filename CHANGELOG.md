@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.36.0 — 2026-11-07
+
+- Added per-account tool visibility and permission controls for Scheduler and Viewer accounts.
+- Administrators can set each tool to Hidden, View only, or Edit; Viewers are always limited to read-only access.
+- Hidden tools are removed from the navigation menu, and view-only screens disable editing and export actions.
+- Applied the per-account access rules to workbook import, participant viewing/editing, and schedule API access.
+- Published the signed APK and Android source archive as GitHub Release assets.
+
+
 ## v0.35.1 — 2026-11-07
 
 - Build GitHub releases as APKs signed with the stable Android release keystore.
