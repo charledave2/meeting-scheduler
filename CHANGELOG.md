@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.35.0 — 2026-11-07
+
+- Show cloud-stored account photos in the signed-in user's burger-menu profile image.
+- Let each signed-in user upload or replace their own profile photo to the shared Cloudflare D1 photo store.
+- Added an authenticated `/api/auth/me` photo read and upload endpoint.
+- Published the APK and Android source archive as GitHub Release assets.
+
 ## v0.34.0 — 2026-11-07
 
 - Removed circular fills from the Participants Add and Sort icons while preserving matching 40 dp touch targets.
