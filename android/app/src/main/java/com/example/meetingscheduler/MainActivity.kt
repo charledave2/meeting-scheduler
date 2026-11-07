@@ -2041,7 +2041,8 @@ private fun scheduleStartDate(label:String, updatedAt:String=""): LocalDate? = r
 private fun AccountsScreen(
     modifier: Modifier, accounts: List<RemoteAccount>, loading: Boolean, error: String?, currentUsername: String,
     onRefresh: () -> Unit, onUploadPhoto: (RemoteAccount) -> Unit,
-    onAction: (RemoteAccount, String, String, String) -> Unit
+    onAction: (RemoteAccount, String, String, String) -> Unit,
+    onUpdateToolAccess: (RemoteAccount, Map<String, String>) -> Unit
 ) {
     var selectedAccount by remember { mutableStateOf<RemoteAccount?>(null) }
     var actionTarget by remember { mutableStateOf<RemoteAccount?>(null) }
@@ -2101,7 +2102,7 @@ private fun AccountsScreen(
         val isSelf = account.username.equals(currentUsername, true) || account.role == "admin"
         Dialog(onDismissRequest = { selectedAccount = null }) {
             Surface(color = AppSurface, shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.padding(20.dp).heightIn(max = 660.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         AccountPhotoAvatar(account, 64.dp)
                         Column(Modifier.weight(1f).padding(start = 12.dp)) {
@@ -2125,6 +2126,47 @@ private fun AccountsScreen(
                         Icon(Icons.TwoTone.AddAPhoto, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(if (account.photoDataUrl.isBlank()) "Upload account photo" else "Change account photo", color = Forest, fontSize = 12.sp)
+                    }
+                    if (!isSelf && account.status != "requested" && account.role != "admin") {
+                        val toolLabels = listOf(
+                            "home" to "Home Page", "workbook" to "Workbook", "assignments" to "Assignments",
+                            "preview" to "Preview & Export", "participants" to "Participants", "history" to "Schedule History"
+                        )
+                        var toolAccessDraft by remember(account.id, account.toolAccess) { mutableStateOf(account.toolAccess) }
+                        HorizontalDivider(color = SurfaceContainer)
+                        Text("Tool access", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(
+                            if (account.role == "viewer") "Viewer access is always read-only." else "Set each tool to hidden, view only, or edit.",
+                            color = Muted, fontSize = 11.sp
+                        )
+                        toolLabels.forEach { (key, label) ->
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    val modes = if (account.role == "viewer") listOf("hidden" to "Hidden", "view" to "View") else listOf("hidden" to "Hidden", "view" to "View", "edit" to "Edit")
+                                    modes.forEach { (mode, caption) ->
+                                        FilterChip(
+                                            selected = toolAccessDraft[key] == mode,
+                                            onClick = { toolAccessDraft = toolAccessDraft + (key to mode) },
+                                            label = { Text(caption, fontSize = 9.sp, maxLines = 1) },
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(13.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        Button(
+                            onClick = { onUpdateToolAccess(account, toolAccessDraft) },
+                            enabled = toolAccessDraft != account.toolAccess,
+                            modifier = Modifier.fillMaxWidth().height(42.dp),
+                            shape = RoundedCornerShape(15.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Forest)
+                        ) {
+                            Icon(Icons.TwoTone.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(7.dp))
+                            Text("Save tool access", fontSize = 12.sp)
+                        }
                     }
                     if (!isSelf) {
                         HorizontalDivider(color = SurfaceContainer)
