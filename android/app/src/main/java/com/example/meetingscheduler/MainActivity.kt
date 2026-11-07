@@ -1419,7 +1419,7 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
 }
 
 @Composable
-private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligible: List<Participant>, rotation: Map<Int, ParticipantRotation>, rotationBusy: Boolean, rotationError: String?, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, isAdmin:Boolean, onRole:(String,String)->Unit, onAssign: (Int,String,String) -> Unit, onSaveCloud: () -> Unit, onContinueExport: () -> Unit) {
+private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligible: List<Participant>, rotation: Map<Int, ParticipantRotation>, rotationBusy: Boolean, rotationError: String?, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, isAdmin:Boolean, readOnly:Boolean, canContinueExport:Boolean, onRole:(String,String)->Unit, onAssign: (Int,String,String) -> Unit, onSaveCloud: () -> Unit, onContinueExport: () -> Unit) {
     Column(modifier.verticalScroll(rememberScrollState()).padding(start=16.dp,end=16.dp,top=7.dp,bottom=16.dp), verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("Pumili ng participant para sa bawat bahagi ng pulong.", color=Muted, fontSize=12.sp, lineHeight=16.sp)
         if (rotationBusy || rotationError != null) {
@@ -1437,12 +1437,12 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
                     Text("Closing prayer · ${chairman.ifBlank { "Chairman" }}",color=Muted,fontSize=10.sp,maxLines=1)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    SlotPicker("Chairman",chairman,eligible.filter { it.isAppointedBrother() },Modifier.weight(1f),rotation){onRole("chairman",it)}
-                    SlotPicker("Opening prayer",openingPrayer,eligible.filter { it.isBrother() && !it.unbaptized },Modifier.weight(1f),rotation){onRole("opening_prayer",it)}
+                    SlotPicker("Chairman",chairman,eligible.filter { it.isAppointedBrother() },Modifier.weight(1f),rotation,enabled=!readOnly){onRole("chairman",it)}
+                    SlotPicker("Opening prayer",openingPrayer,eligible.filter { it.isBrother() && !it.unbaptized },Modifier.weight(1f),rotation,enabled=!readOnly){onRole("opening_prayer",it)}
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    SlotPicker("Adviser",adviser,eligible.filter { it.isAppointedBrother() },Modifier.weight(1f),rotation){onRole("adviser",it)}
-                    SlotPicker("Audience group",audienceGroup,(1..9).map { Participant("Group $it") },Modifier.weight(1f),rotation){onRole("audience_group",it)}
+                    SlotPicker("Adviser",adviser,eligible.filter { it.isAppointedBrother() },Modifier.weight(1f),rotation,enabled=!readOnly){onRole("adviser",it)}
+                    SlotPicker("Audience group",audienceGroup,(1..9).map { Participant("Group $it") },Modifier.weight(1f),rotation,enabled=!readOnly){onRole("audience_group",it)}
                 }
             }
         }
@@ -1456,7 +1456,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
                 Column(Modifier.fillMaxWidth().padding(top=6.dp)) {
                     parts.forEachIndexed { index, part ->
                         if(index>0) HorizontalDivider(Modifier.padding(vertical=6.dp), color=SurfaceContainer)
-                        AssignmentPicker(index, part, eligible, rotation) { slot, name -> onAssign(index,slot,name) }
+                        AssignmentPicker(index, part, eligible, rotation, readOnly) { slot, name -> onAssign(index,slot,name) }
                     }
                 }
             }
@@ -1488,7 +1488,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
 }
 
 @Composable
-private fun AssignmentPicker(index: Int, part: Assignment, eligible: List<Participant>, rotation: Map<Int, ParticipantRotation>, onAssign: (String,String) -> Unit) {
+private fun AssignmentPicker(index: Int, part: Assignment, eligible: List<Participant>, rotation: Map<Int, ParticipantRotation>, readOnly:Boolean, onAssign: (String,String) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             val darkBadges = MaterialTheme.colorScheme.background == DarkPalette.background
@@ -1507,14 +1507,14 @@ private fun AssignmentPicker(index: Int, part: Assignment, eligible: List<Partic
         val qualified=part.section=="living" || (part.section=="treasures" && !bibleReading) || what
         val brothers=eligible.filter{it.isBrother() && !it.unbaptized}; val elders=brothers.filter{it.isAppointedBrother()}
         if(bibleStudy) {
-            Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) { SlotPicker("Conductor",part.person,elders,Modifier.weight(1f),rotation){onAssign("main",it)}; SlotPicker("Reader",part.assistant,brothers,Modifier.weight(1f),rotation){onAssign("assistant",it)} }
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) { SlotPicker("Conductor",part.person,elders,Modifier.weight(1f),rotation,enabled=!readOnly){onAssign("main",it)}; SlotPicker("Reader",part.assistant,brothers,Modifier.weight(1f),rotation,enabled=!readOnly){onAssign("assistant",it)} }
         } else if((part.section=="ministry"&&!what)||bibleReading) {
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                Column(Modifier.weight(1f)){SlotPicker("Main Hall",part.person,if(qualified) elders else if(bibleReading) brothers else eligible,rotation=rotation){onAssign("main",it)}; if(part.hasAssistant) SlotPicker("Assistant",part.assistant,eligible,rotation=rotation){onAssign("assistant",it)} }
-                Column(Modifier.weight(1f)){SlotPicker("Second Hall",part.secondaryAssignee,if(qualified) elders else if(bibleReading) brothers else eligible,rotation=rotation){onAssign("secondary",it)}; if(part.hasSecondaryAssistant) SlotPicker("Assistant",part.secondaryAssistant,eligible,rotation=rotation){onAssign("secondaryAssistant",it)} }
+                Column(Modifier.weight(1f)){SlotPicker("Main Hall",part.person,if(qualified) elders else if(bibleReading) brothers else eligible,rotation=rotation,enabled=!readOnly){onAssign("main",it)}; if(part.hasAssistant) SlotPicker("Assistant",part.assistant,eligible,rotation=rotation,enabled=!readOnly){onAssign("assistant",it)} }
+                Column(Modifier.weight(1f)){SlotPicker("Second Hall",part.secondaryAssignee,if(qualified) elders else if(bibleReading) brothers else eligible,rotation=rotation,enabled=!readOnly){onAssign("secondary",it)}; if(part.hasSecondaryAssistant) SlotPicker("Assistant",part.secondaryAssistant,eligible,rotation=rotation,enabled=!readOnly){onAssign("secondaryAssistant",it)} }
             }
         } else {
-            SlotPicker(if(qualified) "Qualified brother" else "Participant",part.person,if(qualified) elders else eligible,rotation=rotation){onAssign("main",it)}
+            SlotPicker(if(qualified) "Qualified brother" else "Participant",part.person,if(qualified) elders else eligible,rotation=rotation,enabled=!readOnly){onAssign("main",it)}
             if(part.hasAssistant&&!what) SlotPicker("Assistant",part.assistant,eligible,rotation=rotation){onAssign("assistant",it)}
         }
     }
@@ -1547,7 +1547,7 @@ private fun SlotPicker(
                 onDismissRequest = { expanded = false },
                 modifier = Modifier.heightIn(max = 340.dp).background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
-                DropdownMenuItem(text = { Text("Unassigned") }, onClick = { onPick(""); expanded = false })
+                DropdownMenuItem(text = { Text("Unassigned") }, enabled=enabled, onClick = { onPick(""); expanded = false })
                 val orderedChoices = choices.sortedWith(
                     compareBy<Participant> { participantRotationRank(rotation[it.id]) }
                         .thenBy { it.name.lowercase(Locale.ROOT) }
@@ -1879,8 +1879,8 @@ private fun ParticipantsScreen(
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
             Column { Text("CLOUD DATA",color=Forest,fontSize=10.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.3.sp);Text("Participants",fontSize=25.sp,fontWeight=FontWeight.Bold) }
             Row(verticalAlignment=Alignment.CenterVertically) {
-                IconButton(onClick=onRefresh,enabled=isAdmin,modifier=Modifier.size(40.dp)){Icon(Icons.TwoTone.Refresh,contentDescription="Refresh participants",tint=if(isAdmin) Forest else Muted,modifier=Modifier.size(20.dp))}
-                IconButton(onClick={showAdd=true},modifier=Modifier.size(40.dp)){Icon(Icons.TwoTone.PersonAdd,contentDescription="Add participant",tint=Forest,modifier=Modifier.size(22.dp))}
+                IconButton(onClick=onRefresh,modifier=Modifier.size(40.dp)){Icon(Icons.TwoTone.Refresh,contentDescription="Refresh participants",tint=Forest,modifier=Modifier.size(20.dp))}
+                if(canEdit) IconButton(onClick={showAdd=true},modifier=Modifier.size(40.dp)){Icon(Icons.TwoTone.PersonAdd,contentDescription="Add participant",tint=Forest,modifier=Modifier.size(22.dp))}
             }
         }
         Text("${participants.size} participants · ${filtered.size} shown",color=Muted,fontSize=12.sp)
@@ -1894,7 +1894,7 @@ private fun ParticipantsScreen(
                     itemsIndexed(filtered,key={_,entry->if(entry.value.id>0)entry.value.id.toLong() else entry.index.toLong()}) { _,entry ->
                         val (index,p)=entry
                         HorizontalDivider(color=SurfaceContainer)
-                        Row(Modifier.fillMaxWidth().clickable { beginEdit(p) }.padding(vertical=7.dp),verticalAlignment=Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().then(if(canEdit) Modifier.clickable { beginEdit(p) } else Modifier).padding(vertical=7.dp),verticalAlignment=Alignment.CenterVertically) {
                             Box(Modifier.size(38.dp).background(ForestContainer,CircleShape),contentAlignment=Alignment.Center){Text(p.name.split(" ").take(2).mapNotNull{it.firstOrNull()}.joinToString("").uppercase(),color=Forest,fontWeight=FontWeight.Bold,fontSize=11.sp)}
                             Column(Modifier.weight(1f).padding(start=10.dp)) {
                                 Text(p.name,fontWeight=FontWeight.SemiBold,fontSize=13.sp,maxLines=1)
@@ -1904,7 +1904,7 @@ private fun ParticipantsScreen(
                                     color=Muted,fontSize=10.sp,maxLines=1
                                 )
                             }
-                            IconButton(onClick={beginEdit(p)},modifier=Modifier.size(40.dp)){Icon(Icons.TwoTone.Edit,contentDescription="Edit participant",tint=Forest,modifier=Modifier.size(20.dp))}
+                            if(canEdit) IconButton(onClick={beginEdit(p)},modifier=Modifier.size(40.dp)){Icon(Icons.TwoTone.Edit,contentDescription="Edit participant",tint=Forest,modifier=Modifier.size(20.dp))}
                             if(isAdmin) {
                                 var menu by remember(p.id){mutableStateOf(false)}
                                 Box {
@@ -1922,8 +1922,8 @@ private fun ParticipantsScreen(
             }
         }
     }
-    if(showAdd) AlertDialog(onDismissRequest={showAdd=false},containerColor=AppSurface,shape=RoundedCornerShape(28.dp),title={Text("Add participant")},text={OutlinedTextField(newName,{newName=it},label={Text("Full name")},singleLine=true)},confirmButton={TextButton(onClick={if(newName.isNotBlank())onAdd(newName.trim());newName="";showAdd=false}){Text("Add",color=Forest)}},dismissButton={TextButton(onClick={showAdd=false}){Text("Cancel",color=Forest)}})
-    if(editing!=null) AlertDialog(
+    if(showAdd && canEdit) AlertDialog(onDismissRequest={showAdd=false},containerColor=AppSurface,shape=RoundedCornerShape(28.dp),title={Text("Add participant")},text={OutlinedTextField(newName,{newName=it},label={Text("Full name")},singleLine=true)},confirmButton={TextButton(onClick={if(newName.isNotBlank())onAdd(newName.trim());newName="";showAdd=false}){Text("Add",color=Forest)}},dismissButton={TextButton(onClick={showAdd=false}){Text("Cancel",color=Forest)}})
+    if(editing!=null && canEdit) AlertDialog(
         onDismissRequest={editing=null},containerColor=AppSurface,shape=RoundedCornerShape(28.dp),title={Text("Edit participant",fontWeight=FontWeight.Bold)},
         text={Column(verticalArrangement=Arrangement.spacedBy(9.dp)) {
             OutlinedTextField(editName,{editName=it},label={Text("Name")},singleLine=true,modifier=Modifier.fillMaxWidth())
