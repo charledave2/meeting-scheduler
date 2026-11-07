@@ -745,12 +745,19 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     closingSong = closingSong, parts = parts, chairman=chairman, openingPrayer=openingPrayer,
                     adviser=adviser, audienceGroup=audienceGroup, previewWebView=officialPreviewWebView,
                     onExportText = {
-                        val text = buildString {
-                            append("Meeting schedule · ").append(weekLabel).append("\nBible reading: ").append(bible).append("\n")
-                            parts.forEach { append(it.title).append(": ").append(it.person.ifBlank { "—" }).append("\n") }
+                        val text = buildOfficialScheduleText(weekStart, bible, openingSong, closingSong, parts, chairman, openingPrayer, adviser, audienceGroup)
+                        val file = File(context.cacheDir, "meeting-schedule-${weekStart}.txt")
+                        file.writeText(text, Charsets.UTF_8)
+                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+                        val intent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            putExtra(Intent.EXTRA_SUBJECT, "Meeting schedule · $weekLabel")
+                            putExtra(Intent.EXTRA_TEXT, "Iskedyul ng Pulong ng Gitnang Sanlinggo · $weekLabel")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            clipData = android.content.ClipData.newUri(context.contentResolver, "Meeting schedule text", uri)
                         }
-                        val intent = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }
-                        context.startActivity(Intent.createChooser(intent, "Export schedule text"))
+                        context.startActivity(Intent.createChooser(intent, "Share schedule text"))
                     }, onPng = ::shareSchedulePng
                 )
                 Screen.PARTICIPANTS -> {
@@ -1614,6 +1621,89 @@ private fun OfficialScheduleWebPreview(html:String,previewWebView:MutableState<W
     }},modifier=modifier.height(pageHeight),update={view->previewWebView.value=view;if(view.tag!=html){view.tag=html;view.loadDataWithBaseURL("file:///android_asset/",html,"text/html","UTF-8",null)}})
 }
 
+private fun buildOfficialScheduleText(
+    weekStart: String, bible: String, openingSong: String, closingSong: String, parts: List<Assignment>,
+    chairman: String, openingPrayer: String, adviser: String, audienceGroup: String
+): String {
+    val start = runCatching { LocalDate.parse(weekStart) }.getOrDefault(LocalDate.now())
+    val end = start.plusDays(6)
+    val months = listOf("Enero", "Pebrero", "Marso", "Abril", "Mayo", "Hunyo", "Hulyo", "Agosto", "Setyembre", "Oktubre", "Nobyembre", "Disyembre")
+    val weekText = if (start.month == end.month) "${months[start.monthValue - 1]} ${start.dayOfMonth}–${end.dayOfMonth}" else "${months[start.monthValue - 1]} ${start.dayOfMonth}–${months[end.monthValue - 1]} ${end.dayOfMonth}"
+    fun minutes(time: String): Int {
+        val fields = time.split(":")
+        return if (fields.size == 2) (fields[0].toIntOrNull() ?: 0) * 60 + (fields[1].toIntOrNull() ?: 0) else 0
+    }
+    fun clock(value: Int): String {
+        val hour = (value / 60) % 12
+        return "${if (hour == 0) 12 else hour}:${(value % 60).toString().padStart(2, '0')}"
+    }
+    fun durationMinutes(value: String) = Regex("(\\d+)").find(value)?.value?.toIntOrNull() ?: 0
+    fun isBibleReading(part: Assignment) = part.title.contains("pagbabasa ng bibliya", true)
+    fun isBibleStudy(part: Assignment) = part.title.contains("pag-aaral ng kongregasyon sa bibliya", true)
+    fun isWhat(part: Assignment) = part.title.contains("ano ang sasabihin mo", true)
+    fun isDual(part: Assignment) = (part.section == "ministry" && !isWhat(part)) || isBibleReading(part)
+    fun sectionTitle(section: String) = when (section) {
+        "ministry" -> "MAGING MAHUSAY SA MINISTERYO"
+        "living" -> "PAMUMUHAY BILANG KRISTIYANO"
+        else -> "KAYAMANAN MULA SA SALITA NG DIYOS"
+    }
+    val firstMinute = parts.firstOrNull()?.time?.let(::minutes) ?: 366
+    val last = parts.lastOrNull()
+    val lastEnd = last?.let { minutes(it.time) + durationMinutes(it.duration) } ?: 457
+    val grouped = parts.groupBy { it.section.ifBlank { "treasures" } }
+    val order = listOf("treasures", "ministry", "living")
+    return buildString {
+        appendLine("ISKEDYUL NG PULONG NG GITNANG SANLINGGO")
+        appendLine("$weekText | ${bible.uppercase()}")
+        appendLine()
+        appendLine("${clock(firstMinute - 6)}  •  Awit $openingSong at Panalangin")
+        appendLine("       Panalangin : ${openingPrayer.ifBlank { "—" }}")
+        appendLine("${clock(firstMinute - 1)}  •  Pambungad na Mga Komento (1 min.)")
+        appendLine("       Chairman : ${chairman.ifBlank { "—" }}")
+        appendLine("       Second Hall Adviser : ${adviser.ifBlank { "—" }} / ${audienceGroup.ifBlank { "Group —" }}")
+        appendLine()
+        order.forEach { section ->
+            val rows = grouped[section].orEmpty()
+            if (rows.isNotEmpty()) {
+                appendLine(sectionTitle(section))
+                rows.forEachIndexed { index, part ->
+                    val number = part.id.takeIf { it > 0 } ?: index + 1
+                    val title = part.title.replaceFirst(Regex("^\\s*\\d+\\.\\s*"), "").trim()
+                    val heading = buildString {
+                        append(part.time.ifBlank { "—" }).append("  •  ").append(number).append(". ").append(title)
+                        if (part.duration.isNotBlank()) append(" (").append(part.duration).append(")")
+                    }
+                    appendLine(heading)
+                    if (part.detail.isNotBlank()) appendLine("       ${part.detail}")
+                    when {
+                        isBibleStudy(part) -> {
+                            appendLine("       Conductor : ${part.person.ifBlank { "—" }}")
+                            appendLine("       Reader : ${part.assistant.ifBlank { "—" }}")
+                        }
+                        isDual(part) -> {
+                            appendLine("       Main Hall : ${part.person.ifBlank { "—" }}")
+                            if (part.assistant.isNotBlank()) appendLine("       Assistant : ${part.assistant}")
+                            appendLine("       Second Hall : ${part.secondaryAssignee.ifBlank { "—" }}")
+                            if (part.secondaryAssistant.isNotBlank()) appendLine("       Assistant : ${part.secondaryAssistant}")
+                        }
+                        else -> {
+                            val qualified = part.section == "living" || (part.section == "treasures" && !isBibleReading(part)) || isWhat(part)
+                            appendLine("       ${if (qualified) "Qualified brother" else "Participant"} : ${part.person.ifBlank { "—" }}")
+                            if (part.assistant.isNotBlank()) appendLine("       Assistant : ${part.assistant}")
+                        }
+                    }
+                    appendLine()
+                }
+            }
+        }
+        appendLine("${clock(lastEnd)}  •  Pangwakas na Komento (3 min.)")
+        appendLine("${clock(lastEnd + 3)}  •  Awit $closingSong at Panalangin")
+        appendLine("       Panalangin : ${chairman.ifBlank { "—" }}")
+        appendLine()
+        appendLine("Nabuo sa Meeting Scheduler")
+    }
+}
+
 private fun buildOfficialScheduleHtml(weekStart:String,bible:String,openingSong:String,closingSong:String,parts:List<Assignment>,chairman:String,openingPrayer:String,adviser:String,audienceGroup:String):String {
     val start=runCatching{LocalDate.parse(weekStart)}.getOrDefault(LocalDate.now())
     val end=start.plusDays(6)
@@ -1719,7 +1809,7 @@ private fun ParticipantsScreen(
             Column { Text("CLOUD DATA",color=Forest,fontSize=10.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.3.sp);Text("Participants",fontSize=25.sp,fontWeight=FontWeight.Bold) }
             Row(verticalAlignment=Alignment.CenterVertically) {
                 IconButton(onClick=onRefresh,enabled=isAdmin,modifier=Modifier.size(40.dp)){Icon(Icons.TwoTone.Refresh,contentDescription="Refresh participants",tint=if(isAdmin) Forest else Muted,modifier=Modifier.size(20.dp))}
-                IconButton(onClick={showAdd=true},modifier=Modifier.size(40.dp).clip(CircleShape).background(ForestContainer)){Icon(Icons.TwoTone.PersonAdd,contentDescription="Add participant",tint=Forest,modifier=Modifier.size(20.dp))}
+                IconButton(onClick={showAdd=true},modifier=Modifier.size(40.dp)){Icon(Icons.TwoTone.PersonAdd,contentDescription="Add participant",tint=Forest,modifier=Modifier.size(22.dp))}
             }
         }
         Text("${participants.size} participants · ${filtered.size} shown",color=Muted,fontSize=12.sp)
@@ -1727,7 +1817,7 @@ private fun ParticipantsScreen(
             Column(Modifier.fillMaxSize().padding(14.dp)) {
                 Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(query,{query=it},placeholder={Text("Search participant")},singleLine=true,shape=RoundedCornerShape(18.dp),modifier=Modifier.weight(1f),textStyle=MaterialTheme.typography.bodyMedium)
-                    IconButton(onClick={showFilters=true},modifier=Modifier.size(40.dp).clip(CircleShape).background(ForestContainer)){Icon(Icons.TwoTone.Sort,contentDescription="Filter and sort participants",tint=Forest,modifier=Modifier.size(20.dp))}
+                    IconButton(onClick={showFilters=true},modifier=Modifier.size(40.dp)){Icon(Icons.TwoTone.Sort,contentDescription="Filter and sort participants",tint=Forest,modifier=Modifier.size(22.dp))}
                 }
                 LazyColumn(Modifier.weight(1f).fillMaxWidth(),contentPadding=PaddingValues(top=6.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
                     itemsIndexed(filtered,key={_,entry->if(entry.value.id>0)entry.value.id.toLong() else entry.index.toLong()}) { _,entry ->
