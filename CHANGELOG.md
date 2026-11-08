@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.37.3 — 2026-11-09
+
+- Kept the preview header and export controls outside the scrolling region.
+- Let the schedule WebView use the remaining screen height and handle its own vertical scrolling in portrait and landscape.
+
 ## v0.37.2 — 2026-11-08
 
 - Fixed the clipped schedule preview by giving it a screen-sized viewport with its own working vertical scroll, in portrait and landscape.
