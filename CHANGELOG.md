@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.37.4 — 2026-11-09
+
+- Limited the independently scrolling preview viewport to landscape mode.
+- Restored the original portrait preview height, preserving PNG export dimensions and image quality.
+
 ## v0.37.3 — 2026-11-09
 
 - Kept the preview header and export controls outside the scrolling region.
