@@ -98,7 +98,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.text.font.FontWeight
@@ -194,7 +196,7 @@ private enum class Screen(val title: String, val section: String) {
     PREVIEW("Preview & Export", "SCHEDULE TOOLS"),
     PARTICIPANTS("Participants", "CONGREGATION"),
     HISTORY("Schedule History", "CONGREGATION"),
-    ACCOUNTS("Accounts & Access", "ADMINISTRATION")
+    ACCOUNTS("Account & Settings", "ACCOUNT")
 }
 
 private class LocalWorkspaceStore(context: Context) {
@@ -207,6 +209,9 @@ private class LocalWorkspaceStore(context: Context) {
     var darkMode: Boolean
         get() = prefs.getBoolean("dark_mode", true)
         set(value) { prefs.edit().putBoolean("dark_mode", value).apply() }
+    var appFontScale: Float
+        get() = prefs.getFloat("app_font_scale", 1f).coerceIn(0.85f, 1.35f)
+        set(value) { prefs.edit().putFloat("app_font_scale", value.coerceIn(0.85f, 1.35f)).apply() }
     fun detail(key: String, fallback: String) = prefs.getString("detail_$key", fallback) ?: fallback
     fun setDetail(key: String, value: String) { prefs.edit().putString("detail_$key", value).apply() }
     fun saveDetails(week: String, bible: String, opening: String, closing: String, workbook: String) {
@@ -253,22 +258,32 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
     val context = LocalContext.current
     val store = remember(context) { LocalWorkspaceStore(context) }
     var darkMode by rememberSaveable { mutableStateOf(store.darkMode) }
+    var appFontScale by rememberSaveable { mutableFloatStateOf(store.appFontScale) }
     val scheme = if (darkMode) DarkPalette else LightPalette
+    val systemDensity = LocalDensity.current
     SideEffect {
         window.statusBarColor = scheme.background.toArgb()
         window.navigationBarColor = scheme.background.toArgb()
         window.decorView.systemUiVisibility = if (darkMode) 0 else (View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR)
     }
-    MaterialTheme(colorScheme = scheme, shapes = Shapes(
-        small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(26.dp)
-    )) {
-        MeetingSchedulerApp(darkMode = darkMode, onToggleTheme = { darkMode = !darkMode; store.darkMode = darkMode }, store = store)
+    CompositionLocalProvider(LocalDensity provides systemDensity.copy(fontScale = systemDensity.fontScale * appFontScale)) {
+        MaterialTheme(colorScheme = scheme, shapes = Shapes(
+            small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(26.dp)
+        )) {
+            MeetingSchedulerApp(
+                darkMode = darkMode,
+                onToggleTheme = { darkMode = !darkMode; store.darkMode = darkMode },
+                store = store,
+                fontScale = appFontScale,
+                onFontScaleChange = { appFontScale = it.coerceIn(0.85f, 1.35f); store.appFontScale = appFontScale }
+            )
+        }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, store: LocalWorkspaceStore) {
+private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, store: LocalWorkspaceStore, fontScale: Float, onFontScaleChange: (Float) -> Unit) {
     val context = LocalContext.current
     val api = remember(context) { SchedulerApi(context) }
     val authScope = rememberCoroutineScope()
@@ -405,7 +420,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         ) else mapOf("home" to "view", "workbook" to "hidden", "assignments" to "hidden", "preview" to "hidden", "participants" to "hidden", "history" to "hidden")
         return identityToolAccess[key] ?: defaults[key] ?: "hidden"
     }
-    fun canAccess(screen: Screen): Boolean = if (screen == Screen.ACCOUNTS) identityRole.equals("admin", true) else toolMode(screen) != "hidden"
+    fun canAccess(screen: Screen): Boolean = if (screen == Screen.ACCOUNTS) signedIn else toolMode(screen) != "hidden"
     fun canEdit(screen: Screen): Boolean = identityRole.equals("admin", true) || (identityRole.equals("scheduler", true) && toolMode(screen) == "edit")
     fun navigateTo(screen: Screen) {
         if (canAccess(screen)) current = screen
@@ -662,7 +677,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet(modifier = Modifier.widthIn(max = 340.dp), drawerContainerColor = AppSurface) {
+            ModalDrawerSheet(modifier = Modifier.widthIn(max = 340.dp), drawerContainerColor = AppSurface, windowInsets = WindowInsets.safeDrawing) {
                 Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 10.dp, bottom = 12.dp)) {
                         Box(Modifier.size(48.dp).clip(CircleShape).clickable { profileNameDraft = identityName; profileError = null; profileDialogOpen = true }) { ProfileAvatar(identityName, profilePhotoPath, 48.dp, profilePhotoDataUrl) }
@@ -688,10 +703,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                             if (canAccess(Screen.PARTICIPANTS)) DrawerEntry(Icons.TwoTone.Groups, Screen.PARTICIPANTS, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
                             if (canAccess(Screen.HISTORY)) DrawerEntry(Icons.TwoTone.History, Screen.HISTORY, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
                         }
-                        if (identityRole.equals("admin", true)) {
-                            DrawerSection("ADMINISTRATION")
-                            DrawerEntry(Icons.TwoTone.ManageAccounts, Screen.ACCOUNTS, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                        }
+                        DrawerSection("ACCOUNT")
+                        DrawerEntry(Icons.TwoTone.ManageAccounts, Screen.ACCOUNTS, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
                     }
                     Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp)) {
                         HorizontalDivider(color = SurfaceContainer, modifier = Modifier.padding(bottom = 6.dp))
@@ -737,7 +750,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = AppSurface)
                 )
             },
-            snackbarHost = { SnackbarHost(hostState = remember { SnackbarHostState() }) }
+            snackbarHost = { SnackbarHost(hostState = remember { SnackbarHostState() }) },
+            contentWindowInsets = WindowInsets.safeDrawing
         ) { insets ->
             val scroll = Modifier.fillMaxSize().padding(insets)
             AnimatedContent(
@@ -831,7 +845,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 }
                 Screen.ACCOUNTS -> {
                     LaunchedEffect(current, signedIn, accountsLoaded, accountReloadTick) {
-                        if(current==Screen.ACCOUNTS && signedIn && !accountsLoaded && !accountsBusy) {
+                        if(current==Screen.ACCOUNTS && signedIn && identityRole.equals("admin", true) && !accountsLoaded && !accountsBusy) {
                             accountsBusy=true; accountsError=null
                             try {
                                 runCatching { api.accounts() }.onSuccess { remoteAccounts=it;accountsLoaded=true }
@@ -841,7 +855,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     }
                     AccountsScreen(
                         modifier=scroll, accounts=remoteAccounts, loading=accountsBusy, error=accountsError,
-                        currentUsername=identityUsername,
+                        currentUsername=identityUsername, isAdmin=identityRole.equals("admin", true),
+                        fontScale=fontScale, onFontScaleChange=onFontScaleChange,
                         onRefresh={accountsLoaded=false;accountReloadTick++},
                         onUploadPhoto={ account -> accountPhotoTarget=account; accountPhotoPicker.launch("image/*") },
                         onAction={ account,action,role,password -> authScope.launch {
@@ -899,7 +914,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     }
     if (homePreviewWeek != null) {
         Dialog(onDismissRequest = { homePreviewWeek = null; homePreviewHtml = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-            Surface(modifier = Modifier.fillMaxWidth(0.94f).fillMaxHeight(0.84f), shape = RoundedCornerShape(24.dp), color = AppSurface) {
+            Surface(modifier = Modifier.fillMaxWidth(0.94f).fillMaxHeight(0.84f).windowInsetsPadding(WindowInsets.safeDrawing), shape = RoundedCornerShape(24.dp), color = AppSurface) {
                 Column(Modifier.fillMaxSize().padding(14.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(homePreviewWeek ?: "Schedule preview", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
@@ -1693,14 +1708,39 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
 
 @Composable
 private fun OfficialScheduleWebPreview(html:String,previewWebView:MutableState<WebView?>,modifier:Modifier=Modifier,onPageRendered:()->Unit) {
-    var pageHeight by remember(html){mutableStateOf(560.dp)}
-    AndroidView(factory={context->WebView(context).apply{
-        setLayerType(View.LAYER_TYPE_SOFTWARE,null);setBackgroundColor(android.graphics.Color.WHITE);settings.javaScriptEnabled=true
-        tag=html
-        webViewClient=object:WebViewClient(){override fun onPageFinished(view:WebView,url:String?){view.evaluateJavascript("document.body.getBoundingClientRect().height.toString()") { raw->pageHeight=((raw.trim('"').toFloatOrNull()?:560f)+4f).dp;onPageRendered() }}}
-        previewWebView.value=this
-        loadDataWithBaseURL("file:///android_asset/",html,"text/html","UTF-8",null)
-    }},modifier=modifier.height(pageHeight),update={view->previewWebView.value=view;if(view.tag!=html){view.tag=html;view.loadDataWithBaseURL("file:///android_asset/",html,"text/html","UTF-8",null)}})
+    val density = LocalDensity.current.density
+    var measuredWidthPx by remember { mutableIntStateOf(0) }
+    var pageHeight by remember(html) { mutableStateOf(560.dp) }
+    AndroidView(
+        factory = { context -> WebView(context).apply {
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            setBackgroundColor(android.graphics.Color.WHITE)
+            settings.javaScriptEnabled = true
+            settings.loadsImagesAutomatically = true
+            tag = ""
+            webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView, url: String?) {
+                    view.evaluateJavascript("document.documentElement.scrollHeight.toString()") { raw ->
+                        val pixels = raw.trim('"').toFloatOrNull() ?: 560f
+                        pageHeight = (pixels / density).coerceIn(320f, 1800f).dp
+                        onPageRendered()
+                    }
+                }
+            }
+            previewWebView.value = this
+        } },
+        modifier = modifier.fillMaxWidth().heightIn(min = 320.dp).onSizeChanged { size ->
+            if (size.width > 0 && size.width != measuredWidthPx) measuredWidthPx = size.width
+        }.height(pageHeight),
+        update = { view ->
+            previewWebView.value = view
+            val contentKey = "$html#$measuredWidthPx"
+            if (measuredWidthPx > 0 && view.tag != contentKey) {
+                view.tag = contentKey
+                view.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "UTF-8", null)
+            }
+        }
+    )
 }
 
 private fun buildOfficialScheduleText(
@@ -2089,6 +2129,7 @@ private fun scheduleStartDate(label:String, updatedAt:String=""): LocalDate? = r
 @Composable
 private fun AccountsScreen(
     modifier: Modifier, accounts: List<RemoteAccount>, loading: Boolean, error: String?, currentUsername: String,
+    isAdmin: Boolean, fontScale: Float, onFontScaleChange: (Float) -> Unit,
     onRefresh: () -> Unit, onUploadPhoto: (RemoteAccount) -> Unit,
     onAction: (RemoteAccount, String, String, String) -> Unit,
     onUpdateToolAccess: (RemoteAccount, Map<String, String>) -> Unit
@@ -2108,14 +2149,27 @@ private fun AccountsScreen(
     }
     PageColumn(modifier) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column { Text("ADMINISTRATION", color = Forest, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.3.sp); Text("Accounts & Access", fontSize = 25.sp, fontWeight = FontWeight.Bold) }
-            IconButton(onClick = onRefresh, enabled = !loading, modifier = Modifier.size(40.dp)) {
+            Column { Text(if (isAdmin) "ACCOUNT & ADMINISTRATION" else "ACCOUNT", color = Forest, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.3.sp); Text("Account & Settings", fontSize = 25.sp, fontWeight = FontWeight.Bold) }
+            if (isAdmin) IconButton(onClick = onRefresh, enabled = !loading, modifier = Modifier.size(40.dp)) {
                 if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest)
                 else Icon(Icons.TwoTone.Refresh, contentDescription = "Refresh accounts", tint = Forest, modifier = Modifier.size(20.dp))
             }
         }
-        Text("Tap an account photo to view details and actions.", color = Muted, fontSize = 12.sp)
+        Text(if (isAdmin) "Manage accounts and your app preferences." else "Manage your profile and app preferences.", color = Muted, fontSize = 12.sp)
         M3Card {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.TwoTone.ManageAccounts, contentDescription = null, tint = Forest, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(9.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("App font size", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text("${(fontScale * 100).toInt()}%", color = Muted, fontSize = 12.sp)
+                }
+                TextButton(onClick = { onFontScaleChange(1f) }, enabled = fontScale != 1f) { Text("Reset", color = Forest) }
+            }
+            Slider(value = fontScale, onValueChange = onFontScaleChange, valueRange = 0.85f..1.35f, steps = 9)
+            Text("Applies across the app and is saved on this device.", color = Muted, fontSize = 11.sp)
+        }
+        if (isAdmin) M3Card {
             if (loading && accounts.isEmpty()) Box(Modifier.fillMaxWidth().padding(22.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Forest, modifier = Modifier.size(24.dp), strokeWidth = 2.dp) }
             if (error != null) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
             if (accounts.isEmpty() && !loading && error == null) Text("No accounts available.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp))
