@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.36.1 — 2026-11-08
+
+- Kept the navigation drawer usable in landscape by making its tool list scroll independently from the fixed theme and sign-out controls.
+- Prevented activity recreation during orientation and screen-size changes, preserving the current page and signed-in session instead of returning to the splash screen.
+- Published the signed APK and Android source archive as GitHub Release assets.
+
+
 ## v0.36.0 — 2026-11-07
 
 - Added per-account tool visibility and permission controls for Scheduler and Viewer accounts.
