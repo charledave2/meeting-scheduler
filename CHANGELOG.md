@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.37.2 — 2026-11-08
+
+- Fixed the clipped schedule preview by giving it a screen-sized viewport with its own working vertical scroll, in portrait and landscape.
+- Kept the export controls visible above the independently scrolling schedule preview.
+- Published the signed APK and Android source archive as GitHub Release assets.
+
 ## v0.37.1 — 2026-11-08
 
 - Fixed the schedule preview in landscape: the embedded page now reloads and recalculates its height when the available width changes.
