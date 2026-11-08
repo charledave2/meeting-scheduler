@@ -1,8 +1,9 @@
 # Changelog
 
-## v0.37.0 — 2026-11-08
+## v0.37.1 — 2026-11-08
 
 - Fixed the schedule preview in landscape: the embedded page now reloads and recalculates its height when the available width changes.
+- Corrected Compose font scale initialization for the current Android build setup.
 - Applied safe drawing insets so app content and the navigation drawer stay clear of display cutouts, status bars, navigation bars, and curved screen edges.
 - Renamed Accounts & Access to Account & Settings and added a persistent app-wide font size setting.
 - Published the signed APK and Android source archive as GitHub Release assets.
