@@ -273,7 +273,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     val api = remember(context) { SchedulerApi(context) }
     val authScope = rememberCoroutineScope()
     var signedIn by rememberSaveable { mutableStateOf(false) }
-    var authReady by remember { mutableStateOf(false) }
+    var authReady by rememberSaveable { mutableStateOf(false) }
     var loginBusy by remember { mutableStateOf(false) }
     var loginError by remember { mutableStateOf<String?>(null) }
     var passwordChangeRequired by rememberSaveable { mutableStateOf(false) }
@@ -663,35 +663,38 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet(modifier = Modifier.widthIn(max = 340.dp), drawerContainerColor = AppSurface) {
-                Column(Modifier.fillMaxHeight().padding(horizontal = 14.dp, vertical = 18.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 10.dp, bottom = 16.dp)) {
+                Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 10.dp, bottom = 12.dp)) {
                         Box(Modifier.size(48.dp).clip(CircleShape).clickable { profileNameDraft = identityName; profileError = null; profileDialogOpen = true }) { ProfileAvatar(identityName, profilePhotoPath, 48.dp, profilePhotoDataUrl) }
                         Spacer(Modifier.width(12.dp))
                         Column { Text("Meeting Scheduler", fontWeight = FontWeight.Bold, fontSize = 17.sp); Text("Midweek meeting workspace", color = Muted, fontSize = 12.sp) }
                     }
                     HorizontalDivider(color = SurfaceContainer)
-                    if (canAccess(Screen.HOME)) {
-                        DrawerSection("OVERVIEW")
-                        DrawerEntry(Icons.TwoTone.Home, Screen.HOME, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
+                    Column(
+                        Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(top = 4.dp)
+                    ) {
+                        if (canAccess(Screen.HOME)) {
+                            DrawerSection("OVERVIEW")
+                            DrawerEntry(Icons.TwoTone.Home, Screen.HOME, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
+                        }
+                        if (listOf(Screen.DETAILS, Screen.ASSIGNMENTS, Screen.PREVIEW).any(::canAccess)) {
+                            DrawerSection("SCHEDULE TOOLS")
+                            if (canAccess(Screen.DETAILS)) DrawerEntry(Icons.TwoTone.CalendarMonth, Screen.DETAILS, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
+                            if (canAccess(Screen.ASSIGNMENTS)) DrawerEntry(Icons.TwoTone.Assignment, Screen.ASSIGNMENTS, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
+                            if (canAccess(Screen.PREVIEW)) DrawerEntry(Icons.TwoTone.Preview, Screen.PREVIEW, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
+                        }
+                        if (canAccess(Screen.PARTICIPANTS) || canAccess(Screen.HISTORY)) {
+                            DrawerSection("CONGREGATION")
+                            if (canAccess(Screen.PARTICIPANTS)) DrawerEntry(Icons.TwoTone.Groups, Screen.PARTICIPANTS, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
+                            if (canAccess(Screen.HISTORY)) DrawerEntry(Icons.TwoTone.History, Screen.HISTORY, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
+                        }
+                        if (identityRole.equals("admin", true)) {
+                            DrawerSection("ADMINISTRATION")
+                            DrawerEntry(Icons.TwoTone.ManageAccounts, Screen.ACCOUNTS, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
+                        }
                     }
-                    if (listOf(Screen.DETAILS, Screen.ASSIGNMENTS, Screen.PREVIEW).any(::canAccess)) {
-                        DrawerSection("SCHEDULE TOOLS")
-                        if (canAccess(Screen.DETAILS)) DrawerEntry(Icons.TwoTone.CalendarMonth, Screen.DETAILS, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                        if (canAccess(Screen.ASSIGNMENTS)) DrawerEntry(Icons.TwoTone.Assignment, Screen.ASSIGNMENTS, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                        if (canAccess(Screen.PREVIEW)) DrawerEntry(Icons.TwoTone.Preview, Screen.PREVIEW, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                    }
-                    if (canAccess(Screen.PARTICIPANTS) || canAccess(Screen.HISTORY)) {
-                        DrawerSection("CONGREGATION")
-                        if (canAccess(Screen.PARTICIPANTS)) DrawerEntry(Icons.TwoTone.Groups, Screen.PARTICIPANTS, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                        if (canAccess(Screen.HISTORY)) DrawerEntry(Icons.TwoTone.History, Screen.HISTORY, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                    }
-                    if (identityRole.equals("admin", true)) {
-                        DrawerSection("ADMINISTRATION")
-                        DrawerEntry(Icons.TwoTone.ManageAccounts, Screen.ACCOUNTS, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                    }
-                    Spacer(Modifier.weight(1f))
-                    HorizontalDivider(color = SurfaceContainer, modifier = Modifier.padding(bottom = 8.dp))
-                    Column(Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 4.dp), horizontalAlignment = Alignment.Start) {
+                    Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp)) {
+                        HorizontalDivider(color = SurfaceContainer, modifier = Modifier.padding(bottom = 6.dp))
                         TextButton(onClick = onToggleTheme, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
                             Icon(if (darkMode) Icons.TwoTone.LightMode else Icons.TwoTone.DarkMode, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(8.dp))
