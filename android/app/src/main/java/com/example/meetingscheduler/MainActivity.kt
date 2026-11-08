@@ -1682,9 +1682,12 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
         buildOfficialScheduleHtml(weekStart,bible,openingSong,closingSong,parts,chairman,openingPrayer,adviser,audienceGroup)
     }
     var previewReady by remember(html){mutableStateOf(false)}
-    val configuration = LocalConfiguration.current
-    val previewHeight = (configuration.screenHeightDp * 0.64f).coerceIn(240f, 700f).dp
-    PageColumn(modifier) {
+    // Keep the controls fixed and give the WebView the remaining viewport height.
+    // A page-level verticalScroll here competed with WebView touch scrolling.
+    Column(
+        modifier=modifier.fillMaxSize().padding(horizontal=18.dp, vertical=12.dp),
+        verticalArrangement=Arrangement.spacedBy(12.dp)
+    ) {
         PageHeading("SCHEDULE TOOLS", "Preview & Export", "Official meeting schedule · tugma ang preview at PNG output.")
         if (allowExport) Row(modifier=Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
             FilledTonalButton(
@@ -1706,7 +1709,7 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
         }
         Surface(
             color=Color.White, contentColor=Color(0xFF171717), shape=RoundedCornerShape(6.dp), shadowElevation=4.dp,
-            modifier=Modifier.fillMaxWidth().height(previewHeight)
+            modifier=Modifier.weight(1f).fillMaxWidth()
         ) {
             OfficialScheduleWebPreview(html,previewWebView,Modifier.fillMaxSize()){previewReady=true}
         }
