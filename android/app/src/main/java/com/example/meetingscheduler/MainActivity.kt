@@ -1012,13 +1012,11 @@ private fun MeetingSplashScreen() {
             verticalArrangement = Arrangement.Center
         ) {
             AnimatedVisibility(visible = reveal, enter = fadeIn(tween(500)) + scaleIn(tween(500))) {
-                Box(
-                    Modifier.size(104.dp).background(Color(0xFF304536), RoundedCornerShape(32.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Color(0xFFDDE9D9), modifier = Modifier.size(58.dp))
-                    Icon(Icons.TwoTone.CheckCircle, contentDescription = null, tint = Color(0xFFD2AB36), modifier = Modifier.align(Alignment.BottomEnd).padding(17.dp).size(24.dp))
-                }
+                Image(
+                    painter = androidx.compose.ui.res.painterResource(com.example.meetingscheduler.R.drawable.ic_meeting_scheduler),
+                    contentDescription = null,
+                    modifier = Modifier.size(120.dp)
+                )
             }
             Spacer(Modifier.height(20.dp))
             AnimatedVisibility(visible = reveal, enter = fadeIn(tween(420, delayMillis = 120)) + slideInVertically(tween(420, delayMillis = 120)) { it / 5 }) {
@@ -1079,9 +1077,11 @@ private fun LoginScreen(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Box(Modifier.size(if (compact) 58.dp else 68.dp).background(ForestContainer, RoundedCornerShape(22.dp)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(if (compact) 31.dp else 36.dp))
-                }
+                Image(
+                    painter = androidx.compose.ui.res.painterResource(com.example.meetingscheduler.R.drawable.ic_meeting_scheduler),
+                    contentDescription = "Meeting Scheduler",
+                    modifier = Modifier.size(if (compact) 62.dp else 72.dp)
+                )
                 Spacer(Modifier.height(13.dp))
                 Text("Meeting Scheduler", fontWeight = FontWeight.Bold, fontSize = 23.sp)
                 Text("Midweek meeting workspace", color = Muted, fontSize = 13.sp)
