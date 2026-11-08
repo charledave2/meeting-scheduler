@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.meetingscheduler"
         minSdk = 24
         targetSdk = 35
-        versionCode = 42
-        versionName = "0.37.1"
+        versionCode = 43
+        versionName = "0.37.2"
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
