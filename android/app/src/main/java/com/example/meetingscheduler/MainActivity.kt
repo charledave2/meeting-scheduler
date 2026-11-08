@@ -1682,12 +1682,9 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
         buildOfficialScheduleHtml(weekStart,bible,openingSong,closingSong,parts,chairman,openingPrayer,adviser,audienceGroup)
     }
     var previewReady by remember(html){mutableStateOf(false)}
-    // Keep the controls fixed and give the WebView the remaining viewport height.
-    // A page-level verticalScroll here competed with WebView touch scrolling.
-    Column(
-        modifier=modifier.fillMaxSize().padding(horizontal=18.dp, vertical=12.dp),
-        verticalArrangement=Arrangement.spacedBy(12.dp)
-    ) {
+    val landscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val previewHeight = (LocalConfiguration.current.screenHeightDp * 0.64f).coerceIn(240f, 700f).dp
+    val content: @Composable ColumnScope.() -> Unit = {
         PageHeading("SCHEDULE TOOLS", "Preview & Export", "Official meeting schedule · tugma ang preview at PNG output.")
         if (allowExport) Row(modifier=Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
             FilledTonalButton(
@@ -1709,10 +1706,15 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
         }
         Surface(
             color=Color.White, contentColor=Color(0xFF171717), shape=RoundedCornerShape(6.dp), shadowElevation=4.dp,
-            modifier=Modifier.weight(1f).fillMaxWidth()
+            modifier=if (landscape) Modifier.weight(1f).fillMaxWidth() else Modifier.fillMaxWidth().height(previewHeight)
         ) {
             OfficialScheduleWebPreview(html,previewWebView,Modifier.fillMaxSize()){previewReady=true}
         }
+    }
+    if (landscape) {
+        Column(modifier.fillMaxSize().padding(horizontal=18.dp, vertical=12.dp), verticalArrangement=Arrangement.spacedBy(12.dp), content=content)
+    } else {
+        PageColumn(modifier, content)
     }
 }
 
