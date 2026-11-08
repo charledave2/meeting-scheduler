@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.37.5 — 2026-11-09
+
+- Applied the first forest-green calendar icon concept to the Android launcher, splash animation, and sign-in page.
+
 ## v0.37.4 — 2026-11-09
 
 - Limited the independently scrolling preview viewport to landscape mode.
