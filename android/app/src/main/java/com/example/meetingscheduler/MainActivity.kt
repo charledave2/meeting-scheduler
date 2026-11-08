@@ -1681,6 +1681,8 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
         buildOfficialScheduleHtml(weekStart,bible,openingSong,closingSong,parts,chairman,openingPrayer,adviser,audienceGroup)
     }
     var previewReady by remember(html){mutableStateOf(false)}
+    val configuration = LocalConfiguration.current
+    val previewHeight = (configuration.screenHeightDp * 0.64f).coerceIn(240f, 700f).dp
     PageColumn(modifier) {
         PageHeading("SCHEDULE TOOLS", "Preview & Export", "Official meeting schedule · tugma ang preview at PNG output.")
         if (allowExport) Row(modifier=Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -1701,43 +1703,46 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
                 Text("Export text",fontSize=13.sp,maxLines=1)
             }
         }
-        Surface(color=Color.White,contentColor=Color(0xFF171717),shape=RoundedCornerShape(6.dp),shadowElevation=4.dp,modifier=Modifier.fillMaxWidth()) {
-            OfficialScheduleWebPreview(html,previewWebView,Modifier.fillMaxWidth()){previewReady=true}
+        Surface(
+            color=Color.White, contentColor=Color(0xFF171717), shape=RoundedCornerShape(6.dp), shadowElevation=4.dp,
+            modifier=Modifier.fillMaxWidth().height(previewHeight)
+        ) {
+            OfficialScheduleWebPreview(html,previewWebView,Modifier.fillMaxSize()){previewReady=true}
         }
     }
 }
 
 @Composable
 private fun OfficialScheduleWebPreview(html:String,previewWebView:MutableState<WebView?>,modifier:Modifier=Modifier,onPageRendered:()->Unit) {
-    val density = LocalDensity.current.density
     var measuredWidthPx by remember { mutableIntStateOf(0) }
-    var pageHeight by remember(html) { mutableStateOf(560.dp) }
     AndroidView(
         factory = { context -> WebView(context).apply {
             setLayerType(View.LAYER_TYPE_HARDWARE, null)
             setBackgroundColor(android.graphics.Color.WHITE)
             settings.javaScriptEnabled = true
             settings.loadsImagesAutomatically = true
+            isVerticalScrollBarEnabled = true
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             tag = ""
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String?) {
-                    view.evaluateJavascript("document.documentElement.scrollHeight.toString()") { raw ->
-                        val pixels = raw.trim('"').toFloatOrNull() ?: 560f
-                        pageHeight = (pixels / density).coerceIn(320f, 1800f).dp
-                        onPageRendered()
-                    }
+                    view.postVisualStateCallback(System.nanoTime(), object : WebView.VisualStateCallback() {
+                        override fun onComplete(requestId: Long) { onPageRendered() }
+                    })
                 }
             }
             previewWebView.value = this
         } },
-        modifier = modifier.fillMaxWidth().heightIn(min = 320.dp).onSizeChanged { size ->
+        modifier = modifier.fillMaxWidth().onSizeChanged { size ->
             if (size.width > 0 && size.width != measuredWidthPx) measuredWidthPx = size.width
-        }.height(pageHeight),
+        },
         update = { view ->
             previewWebView.value = view
             val contentKey = "$html#$measuredWidthPx"
             if (measuredWidthPx > 0 && view.tag != contentKey) {
                 view.tag = contentKey
+                view.scrollTo(0, 0)
                 view.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "UTF-8", null)
             }
         }
