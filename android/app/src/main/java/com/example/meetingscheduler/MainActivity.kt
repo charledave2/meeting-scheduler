@@ -959,23 +959,40 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         }
     }
     if (homePreviewWeek != null) {
+        val configuration = LocalConfiguration.current
+        val schedulePreviewHeight = (configuration.screenHeightDp * 0.64f).coerceIn(240f, 700f).dp
         Dialog(onDismissRequest = { homePreviewWeek = null; homePreviewHtml = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-            Surface(modifier = Modifier.fillMaxWidth(0.94f).fillMaxHeight(0.84f).windowInsetsPadding(WindowInsets.safeDrawing), shape = RoundedCornerShape(24.dp), color = AppSurface) {
-                Column(Modifier.fillMaxSize().padding(14.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp)
+                    .heightIn(max = (configuration.screenHeightDp * 0.92f).dp),
+                shape = RoundedCornerShape(24.dp),
+                color = AppSurface
+            ) {
+                Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 14.dp, end = 6.dp, top = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(homePreviewWeek ?: "Schedule preview", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { homePreviewWeek = null; homePreviewHtml = null }) { Icon(Icons.TwoTone.Close, contentDescription = "Close preview", tint = Forest) }
+                        IconButton(onClick = { homePreviewWeek = null; homePreviewHtml = null }) {
+                            Icon(Icons.TwoTone.Close, contentDescription = "Close preview", tint = Forest)
+                        }
                     }
                     Spacer(Modifier.height(8.dp))
                     if (homePreviewLoading || homePreviewHtml == null) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Forest) }
+                        Box(Modifier.fillMaxWidth().height(schedulePreviewHeight), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = Forest)
+                        }
                     } else {
                         key(homePreviewHtml) {
-                            AndroidView(factory = { viewContext -> WebView(viewContext).apply {
-                                setBackgroundColor(android.graphics.Color.WHITE)
-                                settings.javaScriptEnabled = true
-                                loadDataWithBaseURL("file:///android_asset/", homePreviewHtml ?: "", "text/HTML", "UTF-8", null)
-                            } }, modifier = Modifier.fillMaxSize())
+                            AndroidView(
+                                factory = { viewContext -> WebView(viewContext).apply {
+                                    setBackgroundColor(android.graphics.Color.WHITE)
+                                    settings.javaScriptEnabled = true
+                                    loadDataWithBaseURL("file:///android_asset/", homePreviewHtml ?: "", "text/HTML", "UTF-8", null)
+                                } },
+                                modifier = Modifier.fillMaxWidth().height(schedulePreviewHeight)
+                            )
                         }
                     }
                 }
@@ -2292,39 +2309,85 @@ private fun AccountsScreen(
                             "preview" to "Preview & Export", "participants" to "Participants", "history" to "Schedule History"
                         )
                         var toolAccessDraft by remember(account.id, account.toolAccess) { mutableStateOf(account.toolAccess) }
-                        HorizontalDivider(color = SurfaceContainer)
-                        Text("Tool access", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Text(
-                            if (account.role == "viewer") "Viewer access is always read-only." else "Set each tool to hidden, view only, or edit.",
-                            color = Muted, fontSize = 11.sp
-                        )
-                        toolLabels.forEach { (key, label) ->
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    val modes = if (account.role == "viewer") listOf("hidden" to "Hidden", "view" to "View") else listOf("hidden" to "Hidden", "view" to "View", "edit" to "Edit")
-                                    modes.forEach { (mode, caption) ->
-                                        FilterChip(
-                                            selected = toolAccessDraft[key] == mode,
-                                            onClick = { toolAccessDraft = toolAccessDraft + (key to mode) },
-                                            label = { Text(caption, fontSize = 9.sp, maxLines = 1) },
-                                            modifier = Modifier.weight(1f),
-                                            shape = RoundedCornerShape(13.dp)
-                                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(11.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(color = ForestContainer, shape = RoundedCornerShape(12.dp), modifier = Modifier.size(38.dp)) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.TwoTone.ManageAccounts, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp))
+                                    }
+                                }
+                                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                                    Text("Tool access", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                    Text(
+                                        if (account.role == "viewer") "Always read-only" else "Choose what this account can do",
+                                        color = Muted, fontSize = 11.sp
+                                    )
+                                }
+                            }
+                            Surface(
+                                color = SurfaceContainer.copy(alpha = 0.32f),
+                                shape = RoundedCornerShape(20.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                            ) {
+                                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    toolLabels.forEachIndexed { index, (key, label) ->
+                                        val icon = when (key) {
+                                            "home" -> Icons.TwoTone.Home
+                                            "workbook" -> Icons.TwoTone.CalendarMonth
+                                            "assignments" -> Icons.TwoTone.Assignment
+                                            "preview" -> Icons.TwoTone.Preview
+                                            "participants" -> Icons.TwoTone.Groups
+                                            else -> Icons.TwoTone.History
+                                        }
+                                        val selectedMode = toolAccessDraft[key]
+                                        Surface(
+                                            color = AppSurface.copy(alpha = 0.78f),
+                                            shape = RoundedCornerShape(15.dp),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+                                        ) {
+                                            Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Icon(icon, contentDescription = null, tint = Forest, modifier = Modifier.size(19.dp))
+                                                    Text(label, modifier = Modifier.weight(1f).padding(start = 8.dp), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                                    Text(
+                                                        when (selectedMode) { "hidden" -> "Hidden"; "view" -> "View"; "edit" -> "Edit"; else -> "Not set" },
+                                                        color = if (selectedMode == null) Muted else Forest,
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                }
+                                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    val modes = if (account.role == "viewer") listOf("hidden" to "Hidden", "view" to "View") else listOf("hidden" to "Hidden", "view" to "View", "edit" to "Edit")
+                                                    modes.forEach { (mode, caption) ->
+                                                        FilterChip(
+                                                            selected = selectedMode == mode,
+                                                            onClick = { toolAccessDraft = toolAccessDraft + (key to mode) },
+                                                            label = { Text(caption, fontSize = 10.sp, maxLines = 1) },
+                                                            modifier = Modifier.weight(1f).heightIn(min = 36.dp),
+                                                            shape = RoundedCornerShape(12.dp),
+                                                            leadingIcon = if (selectedMode == mode) ({
+                                                                Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                            }) else null
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if (index < toolLabels.lastIndex) Spacer(Modifier.height(1.dp))
                                     }
                                 }
                             }
-                        }
-                        Button(
-                            onClick = { onUpdateToolAccess(account, toolAccessDraft) },
-                            enabled = toolAccessDraft != account.toolAccess,
-                            modifier = Modifier.fillMaxWidth().height(42.dp),
-                            shape = RoundedCornerShape(15.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Forest)
-                        ) {
-                            Icon(Icons.TwoTone.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(7.dp))
-                            Text("Save tool access", fontSize = 12.sp)
+                            Button(
+                                onClick = { onUpdateToolAccess(account, toolAccessDraft) },
+                                enabled = toolAccessDraft != account.toolAccess,
+                                modifier = Modifier.fillMaxWidth().height(46.dp),
+                                shape = RoundedCornerShape(15.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Forest)
+                            ) {
+                                Icon(Icons.TwoTone.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Save access settings", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
                         }
                     }
                     if (!isSelf) {
