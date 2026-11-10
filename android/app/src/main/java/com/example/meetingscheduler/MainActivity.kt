@@ -396,7 +396,7 @@ private fun AppUpdatePrompt() {
             title = { Text("May bagong update", fontWeight = FontWeight.SemiBold) },
             text = {
                 Column(Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.48f).dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Meeting Scheduler ${available.version} ay handa nang i-update.", color = Ink)
+                    Text("JW Meeting Scheduler ${available.version} ay handa nang i-update.", color = Ink)
                     if (notes.isNotEmpty()) {
                         Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                             Text("Mga bagong pagbabago", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -925,11 +925,11 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 10.dp, bottom = 12.dp)) {
                         Image(
                             painter = androidx.compose.ui.res.painterResource(R.drawable.ic_meeting_scheduler),
-                            contentDescription = "Meeting Scheduler",
+                            contentDescription = "JW Meeting Scheduler",
                             modifier = Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))
                         )
                         Spacer(Modifier.width(12.dp))
-                        Column { Text("Meeting Scheduler", fontWeight = FontWeight.Bold, fontSize = 17.sp); Text("Midweek meeting workspace", color = Muted, fontSize = 12.sp) }
+                        Column { Text("JW Meeting Scheduler", fontWeight = FontWeight.Bold, fontSize = 17.sp); Text("Midweek meeting workspace", color = Muted, fontSize = 12.sp) }
                     }
                     HorizontalDivider(color = SurfaceContainer)
                     Column(
@@ -966,20 +966,27 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                             horizontalAlignment = Alignment.Start,
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            ProfileAvatar(identityName, profilePhotoPath, 54.dp, profilePhotoDataUrl)
-                            Text(
-                                when (identityRole.lowercase(Locale.ROOT)) {
-                                    "admin", "administrator" -> "ADMINISTRATOR"
-                                    "scheduler" -> "SCHEDULER"
-                                    "viewer" -> "VIEWER"
-                                    else -> identityRole.uppercase(Locale.ROOT)
-                                },
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Start,
-                                color = Forest,
-                                fontSize = 12.sp,
-                                letterSpacing = 0.6.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Column(
+                                modifier = Modifier.width(IntrinsicSize.Max),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                ProfileAvatar(identityName, profilePhotoPath, 54.dp, profilePhotoDataUrl)
+                                Text(
+                                    when (identityRole.lowercase(Locale.ROOT)) {
+                                        "admin", "administrator" -> "ADMINISTRATOR"
+                                        "scheduler" -> "SCHEDULER"
+                                        "viewer" -> "VIEWER"
+                                        else -> identityRole.uppercase(Locale.ROOT)
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    color = Forest,
+                                    fontSize = 12.sp,
+                                    letterSpacing = 0.6.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }
@@ -1416,7 +1423,7 @@ private fun MeetingSplashScreen() {
             ) {
                 Image(
                     painter = androidx.compose.ui.res.painterResource(R.drawable.ic_meeting_scheduler),
-                    contentDescription = "Meeting Scheduler",
+                    contentDescription = "JW Meeting Scheduler",
                     modifier = Modifier.size(if (compact) 76.dp else 112.dp)
                 )
             }
@@ -1426,7 +1433,7 @@ private fun MeetingSplashScreen() {
                 enter = fadeIn(tween(380, delayMillis = 140)) + slideInVertically(tween(440, delayMillis = 140)) { it / 4 }
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Meeting Scheduler", color = Color(0xFFF6F0D8), fontSize = if (compact) 20.sp else 23.sp, fontWeight = FontWeight.Bold)
+                    Text("JW Meeting Scheduler", color = Color(0xFFF6F0D8), fontSize = if (compact) 20.sp else 23.sp, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                     Spacer(Modifier.height(5.dp))
                     Text("Midweek meeting workspace", color = Color(0xFFB8D7AF), fontSize = 12.sp)
                 }
@@ -1484,11 +1491,11 @@ private fun LoginScreen(
             ) {
                 Image(
                     painter = androidx.compose.ui.res.painterResource(com.example.meetingscheduler.R.drawable.ic_meeting_scheduler),
-                    contentDescription = "Meeting Scheduler",
+                    contentDescription = "JW Meeting Scheduler",
                     modifier = Modifier.size(if (compact) 62.dp else 72.dp)
                 )
                 Spacer(Modifier.height(13.dp))
-                Text("Meeting Scheduler", fontWeight = FontWeight.Bold, fontSize = 23.sp)
+                Text("JW Meeting Scheduler", fontWeight = FontWeight.Bold, fontSize = 23.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 Text("Midweek meeting workspace", color = Muted, fontSize = 13.sp)
                 Spacer(Modifier.height(if (compact) 22.dp else 30.dp))
                 AnimatedVisibility(visible = true, enter = fadeIn(tween(520)) + slideInVertically(tween(520)) { it / 10 }) {
@@ -2384,7 +2391,7 @@ private fun buildOfficialScheduleText(
         appendLine("${clock(lastEnd + 3)}  •  Awit $closingSong at Panalangin")
         appendLine("       Panalangin : ${chairman.ifBlank { "—" }}")
         appendLine()
-        appendLine("Nabuo sa Meeting Scheduler")
+        appendLine("Nabuo sa JW Meeting Scheduler")
     }
 }
 
@@ -2443,7 +2450,7 @@ private fun buildOfficialScheduleHtml(weekStart:String,bible:String,openingSong:
         }
         append("<div class=\"footer\"><div class=\"toprow\"><div class=\"time\">").append(clock(lastEnd)).append("</div><div><span class=\"bullet\">●</span>Pangwakas na Komento (3 min.)</div><div></div></div>")
         append("<div class=\"toprow\"><div class=\"time\">").append(clock(closeSongTime)).append("</div><div><span class=\"bullet\">●</span>Awit ").append(closingSong.htmlSafe()).append(" at Panalangin</div><div class=\"role\"><strong>Panalangin :</strong> ").append(chairman.ifBlank{"—"}.htmlSafe()).append("</div></div></div>")
-        append("<div class=\"footnote\">Nabuo sa Meeting Scheduler</div></body></html>")
+        append("<div class=\"footnote\">Nabuo sa JW Meeting Scheduler</div></body></html>")
     }
     return html
 }

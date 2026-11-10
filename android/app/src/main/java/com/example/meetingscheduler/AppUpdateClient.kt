@@ -53,7 +53,7 @@ internal object AppUpdateClient {
         val uri = Uri.parse(apkUrl)
         require(uri.scheme == "https" && uri.host == "github.com" && uri.path.orEmpty().startsWith("/charledave2/meeting-scheduler/releases/download/") && uri.path.orEmpty().endsWith("/app-release.apk")) { "Hindi valid ang APK download link." }
         val request = DownloadManager.Request(uri)
-            .setTitle("Meeting Scheduler update")
+            .setTitle("JW Meeting Scheduler update")
             .setDescription("Dina-download ang bagong bersyon…")
             .setMimeType("application/vnd.android.package-archive")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)

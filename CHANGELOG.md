@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.41.0 — 2026-11-10
+
+- Renamed the Android app to JW Meeting Scheduler across launcher, drawer, splash, login, update notifications and export branding.
+- Centered role labels beneath the profile photo using a shared content width while keeping the shortcut on the left.
+
+
 ## v0.40.2 — 2026-11-10
 
 - Emphasized all drawer account roles with bold uppercase labels aligned beneath the profile photo.

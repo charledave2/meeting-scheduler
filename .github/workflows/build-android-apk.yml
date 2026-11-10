@@ -91,7 +91,7 @@ jobs:
           gh release create "$TAG" \
             "app/build/outputs/apk/release/app-release.apk" \
             "../meeting-scheduler-android-source.zip" \
-            --title "Meeting Scheduler $TAG" \
+            --title "JW Meeting Scheduler $TAG" \
             --notes-file ../CHANGELOG.md \
             --target "$GITHUB_SHA"
       - name: Remove temporary signing key
