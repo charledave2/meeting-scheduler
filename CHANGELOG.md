@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.37.9 — 2026-11-10
+
+- Styled the date picker’s Cancel and Select actions with the forest-green palette in both themes.
+- Reduced the assignment search field height and visual weight.
+- Hid brothers already assigned elsewhere in the schedule from other participant choices while keeping each field’s current selection visible.
+- Added compact Active and Disabled icon badges to account photos, matching the Administrator badge style.
+
+
 ## v0.37.8 — 2026-11-10
 
 - Added a compact, searchable participant picker anchored to each assignment field.

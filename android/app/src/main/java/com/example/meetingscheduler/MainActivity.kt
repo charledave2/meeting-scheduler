@@ -86,6 +86,7 @@ import androidx.compose.material.icons.twotone.PersonAdd
 import androidx.compose.material.icons.twotone.Sort
 import androidx.compose.material.icons.twotone.AdminPanelSettings
 import androidx.compose.material.icons.twotone.Search
+import androidx.compose.material.icons.twotone.Block
 import androidx.compose.material.icons.twotone.SystemUpdateAlt
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.*
@@ -1137,18 +1138,32 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         DatePickerDialog(
             onDismissRequest = { datePicker = false },
             confirmButton = {
-                TextButton(onClick = {
-                    pickerState.selectedDateMillis?.let {
-                        remoteScheduleLoadedWeek = ""; editingRemoteId = 0
-                        val selectedWeek = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
-                            .with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)).toString()
-                        weekStart = selectedWeek
-                        store.saveDetails(selectedWeek, bible, openingSong, closingSong, workbook)
-                    }
-                    datePicker = false
-                }) { Text("Select", color = Forest) }
+                Button(
+                    onClick = {
+                        pickerState.selectedDateMillis?.let {
+                            remoteScheduleLoadedWeek = ""; editingRemoteId = 0
+                            val selectedWeek = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
+                                .with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)).toString()
+                            weekStart = selectedWeek
+                            store.saveDetails(selectedWeek, bible, openingSong, closingSong, workbook)
+                        }
+                        datePicker = false
+                    },
+                    shape = RoundedCornerShape(50),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Forest,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) { Text("Select") }
             },
-            dismissButton = { TextButton(onClick = { datePicker = false }) { Text("Cancel", color = Forest) } },
+            dismissButton = {
+                TextButton(
+                    onClick = { datePicker = false },
+                    shape = RoundedCornerShape(50),
+                    colors = ButtonDefaults.textButtonColors(containerColor = ForestContainer, contentColor = Forest)
+                ) { Text("Cancel") }
+            },
+            colors = DatePickerDefaults.colors(containerColor = AppSurface)
         ) {
             DatePicker(
                 state = pickerState,
@@ -1632,6 +1647,18 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
 
 @Composable
 private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligible: List<Participant>, rotation: Map<Int, ParticipantRotation>, rotationBusy: Boolean, rotationError: String?, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, isAdmin:Boolean, readOnly:Boolean, canContinueExport:Boolean, onRole:(String,String)->Unit, onAssign: (Int,String,String) -> Unit, onSaveCloud: () -> Unit, onContinueExport: () -> Unit) {
+    val selectedNames = remember(parts, chairman, openingPrayer, adviser) {
+        buildSet {
+            listOf(chairman, openingPrayer, adviser).forEach { name ->
+                name.trim().takeIf { it.isNotEmpty() }?.let { add(it.lowercase(Locale.ROOT)) }
+            }
+            parts.forEach { part ->
+                listOf(part.person, part.assistant, part.secondaryAssignee, part.secondaryAssistant).forEach { name ->
+                    name.trim().takeIf { it.isNotEmpty() }?.let { add(it.lowercase(Locale.ROOT)) }
+                }
+            }
+        }
+    }
     Column(modifier.verticalScroll(rememberScrollState()).padding(start=16.dp,end=16.dp,top=7.dp,bottom=16.dp), verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("Pumili ng participant para sa bawat bahagi ng pulong.", color=Muted, fontSize=12.sp, lineHeight=16.sp)
         if (rotationBusy || rotationError != null) {
@@ -1649,11 +1676,11 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
                     Text("Closing prayer · ${chairman.ifBlank { "Chairman" }}",color=Muted,fontSize=10.sp,maxLines=1)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    SlotPicker("Chairman",chairman,eligible.filter { it.isAppointedBrother() },Modifier.weight(1f),rotation,enabled=!readOnly){onRole("chairman",it)}
-                    SlotPicker("Opening prayer",openingPrayer,eligible.filter { it.isBrother() && !it.unbaptized },Modifier.weight(1f),rotation,enabled=!readOnly){onRole("opening_prayer",it)}
+                    SlotPicker("Chairman",chairman,eligible.filter { it.isAppointedBrother() },Modifier.weight(1f),rotation,enabled=!readOnly,excludedNames=selectedNames){onRole("chairman",it)}
+                    SlotPicker("Opening prayer",openingPrayer,eligible.filter { it.isBrother() && !it.unbaptized },Modifier.weight(1f),rotation,enabled=!readOnly,excludedNames=selectedNames){onRole("opening_prayer",it)}
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    SlotPicker("Adviser",adviser,eligible.filter { it.isAppointedBrother() },Modifier.weight(1f),rotation,enabled=!readOnly){onRole("adviser",it)}
+                    SlotPicker("Adviser",adviser,eligible.filter { it.isAppointedBrother() },Modifier.weight(1f),rotation,enabled=!readOnly,excludedNames=selectedNames){onRole("adviser",it)}
                     SlotPicker("Audience group",audienceGroup,(1..9).map { Participant("Group $it") },Modifier.weight(1f),rotation,enabled=!readOnly){onRole("audience_group",it)}
                 }
             }
@@ -1668,7 +1695,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
                 Column(Modifier.fillMaxWidth().padding(top=6.dp)) {
                     parts.forEachIndexed { index, part ->
                         if(index>0) HorizontalDivider(Modifier.padding(vertical=6.dp), color=SurfaceContainer)
-                        AssignmentPicker(index, part, eligible, rotation, readOnly) { slot, name -> onAssign(index,slot,name) }
+                        AssignmentPicker(index, part, eligible, rotation, readOnly, selectedNames) { slot, name -> onAssign(index,slot,name) }
                     }
                 }
             }
@@ -1700,7 +1727,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
 }
 
 @Composable
-private fun AssignmentPicker(index: Int, part: Assignment, eligible: List<Participant>, rotation: Map<Int, ParticipantRotation>, readOnly:Boolean, onAssign: (String,String) -> Unit) {
+private fun AssignmentPicker(index: Int, part: Assignment, eligible: List<Participant>, rotation: Map<Int, ParticipantRotation>, readOnly:Boolean, excludedNames: Set<String> = emptySet(), onAssign: (String,String) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             val darkBadges = MaterialTheme.colorScheme.background == DarkPalette.background
@@ -1719,15 +1746,15 @@ private fun AssignmentPicker(index: Int, part: Assignment, eligible: List<Partic
         val qualified=part.section=="living" || (part.section=="treasures" && !bibleReading) || what
         val brothers=eligible.filter{it.isBrother() && !it.unbaptized}; val elders=brothers.filter{it.isAppointedBrother()}
         if(bibleStudy) {
-            Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) { SlotPicker("Conductor",part.person,elders,Modifier.weight(1f),rotation,enabled=!readOnly){onAssign("main",it)}; SlotPicker("Reader",part.assistant,brothers,Modifier.weight(1f),rotation,enabled=!readOnly){onAssign("assistant",it)} }
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) { SlotPicker("Conductor",part.person,elders,Modifier.weight(1f),rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("main",it)}; SlotPicker("Reader",part.assistant,brothers,Modifier.weight(1f),rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("assistant",it)} }
         } else if((part.section=="ministry"&&!what)||bibleReading) {
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                Column(Modifier.weight(1f)){SlotPicker("Main Hall",part.person,if(qualified) elders else if(bibleReading) brothers else eligible,rotation=rotation,enabled=!readOnly){onAssign("main",it)}; if(part.hasAssistant) SlotPicker("Assistant",part.assistant,eligible,rotation=rotation,enabled=!readOnly){onAssign("assistant",it)} }
-                Column(Modifier.weight(1f)){SlotPicker("Second Hall",part.secondaryAssignee,if(qualified) elders else if(bibleReading) brothers else eligible,rotation=rotation,enabled=!readOnly){onAssign("secondary",it)}; if(part.hasSecondaryAssistant) SlotPicker("Assistant",part.secondaryAssistant,eligible,rotation=rotation,enabled=!readOnly){onAssign("secondaryAssistant",it)} }
+                Column(Modifier.weight(1f)){SlotPicker("Main Hall",part.person,if(qualified) elders else if(bibleReading) brothers else eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("main",it)}; if(part.hasAssistant) SlotPicker("Assistant",part.assistant,eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("assistant",it)} }
+                Column(Modifier.weight(1f)){SlotPicker("Second Hall",part.secondaryAssignee,if(qualified) elders else if(bibleReading) brothers else eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("secondary",it)}; if(part.hasSecondaryAssistant) SlotPicker("Assistant",part.secondaryAssistant,eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("secondaryAssistant",it)} }
             }
         } else {
-            SlotPicker(if(qualified) "Qualified brother" else "Participant",part.person,if(qualified) elders else eligible,rotation=rotation,enabled=!readOnly){onAssign("main",it)}
-            if(part.hasAssistant&&!what) SlotPicker("Assistant",part.assistant,eligible,rotation=rotation,enabled=!readOnly){onAssign("assistant",it)}
+            SlotPicker(if(qualified) "Qualified brother" else "Participant",part.person,if(qualified) elders else eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("main",it)}
+            if(part.hasAssistant&&!what) SlotPicker("Assistant",part.assistant,eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("assistant",it)}
         }
     }
 }
@@ -1740,6 +1767,7 @@ private fun SlotPicker(
     modifier: Modifier = Modifier,
     rotation: Map<Int, ParticipantRotation> = emptyMap(),
     enabled: Boolean = true,
+    excludedNames: Set<String> = emptySet(),
     onPick: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -1764,15 +1792,38 @@ private fun SlotPicker(
                     .heightIn(max = 380.dp)
                     .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
-                    placeholder = { Text(if (choices.isNotEmpty() && choices.all { it.isAppointedBrother() }) "Search qualified brother" else "Search participant", fontSize = 12.sp) },
-                    leadingIcon = { Icon(Icons.TwoTone.Search, contentDescription = null, modifier = Modifier.size(19.dp), tint = Forest) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(13.dp)
-                )
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp).height(42.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Row(
+                        Modifier.fillMaxSize().padding(horizontal = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.TwoTone.Search, contentDescription = null, modifier = Modifier.size(17.dp), tint = Forest)
+                        androidx.compose.foundation.text.BasicTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodySmall.copy(color = Ink, fontSize = 12.sp),
+                            decorationBox = { innerTextField ->
+                                Box {
+                                    if (searchQuery.isBlank()) Text(
+                                        if (choices.isNotEmpty() && choices.all { it.isAppointedBrother() }) "Search qualified brother" else "Search participant",
+                                        color = Muted,
+                                        fontSize = 12.sp,
+                                        maxLines = 1
+                                    )
+                                    innerTextField()
+                                }
+                            }
+                        )
+                    }
+                }
                 DropdownMenuItem(
                     text = { Text("Unassigned", fontSize = 13.sp) },
                     enabled = enabled,
@@ -1782,7 +1833,11 @@ private fun SlotPicker(
                     compareBy<Participant> { participantRotationRank(rotation[it.id]) }
                         .thenBy { it.name.lowercase(Locale.ROOT) }
                 )
-                val filteredChoices = orderedChoices.filter { it.name.contains(searchQuery.trim(), ignoreCase = true) }
+                val currentName = value.trim().lowercase(Locale.ROOT)
+                val filteredChoices = orderedChoices.filter {
+                    val key = it.name.trim().lowercase(Locale.ROOT)
+                    (key !in excludedNames || key == currentName) && it.name.contains(searchQuery.trim(), ignoreCase = true)
+                }
                 if (filteredChoices.isEmpty()) {
                     DropdownMenuItem(
                         text = { Text("Walang kapatid na tumutugma.", color = Muted, fontSize = 12.sp) },
@@ -2418,22 +2473,23 @@ private fun AccountsScreen(
                                     Surface(Modifier.align(Alignment.BottomEnd).size(24.dp), shape = CircleShape, color = ForestContainer, border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
                                         Box(contentAlignment = Alignment.Center) { Icon(Icons.TwoTone.AdminPanelSettings, contentDescription = "Administrator", tint = Forest, modifier = Modifier.size(15.dp)) }
                                     }
-                                }
-                            }
-                            if (!account.role.equals("admin", true) && account.status.lowercase() in setOf("active", "disabled")) {
-                                val active = account.status.equals("active", true)
-                                Surface(
-                                    color = if (active) ForestContainer else MaterialTheme.colorScheme.errorContainer,
-                                    shape = RoundedCornerShape(50),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, if (active) Forest.copy(alpha = 0.22f) else MaterialTheme.colorScheme.error.copy(alpha = 0.24f))
-                                ) {
-                                    Text(
-                                        if (active) "Active" else "Disabled",
-                                        color = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
-                                    )
+                                } else if (account.status.equals("active", true) || account.status.equals("disabled", true)) {
+                                    val active = account.status.equals("active", true)
+                                    Surface(
+                                        Modifier.align(Alignment.BottomEnd).size(24.dp),
+                                        shape = CircleShape,
+                                        color = if (active) ForestContainer else MaterialTheme.colorScheme.errorContainer,
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                if (active) Icons.TwoTone.CheckCircle else Icons.TwoTone.Block,
+                                                contentDescription = if (active) "Active" else "Disabled",
+                                                tint = if (active) Forest else MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
