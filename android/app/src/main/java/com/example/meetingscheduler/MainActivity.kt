@@ -184,6 +184,61 @@ private data class Assignment(
     val assistant: String = "", val secondaryAssignee: String = "", val secondaryAssistant: String = "",
     val hasAssistant: Boolean = false, val hasSecondary: Boolean = false, val hasSecondaryAssistant: Boolean = false
 )
+private fun deduplicateAssignmentParticipants(parts: List<Assignment>): List<Assignment> {
+    val assigned = mutableSetOf<String>()
+    fun keepFirst(name: String): String {
+        val key = name.trim().lowercase(Locale.ROOT)
+        if (key.isBlank()) return name
+        return if (assigned.add(key)) name else ""
+    }
+    return parts.map { part ->
+        part.copy(
+            person = keepFirst(part.person),
+            assistant = keepFirst(part.assistant),
+            secondaryAssignee = keepFirst(part.secondaryAssignee),
+            secondaryAssistant = keepFirst(part.secondaryAssistant)
+        )
+    }
+}
+
+private fun assignParticipantToOneSlot(parts: MutableList<Assignment>, partIndex: Int, slot: String, name: String) {
+    if (partIndex !in parts.indices) return
+    if (name.isNotBlank()) {
+        parts.indices.forEach { index ->
+            val part = parts[index]
+            fun keep(field: String): Boolean = index == partIndex && slot == field
+            fun clearDuplicate(value: String, field: String): String =
+                if (!keep(field) && value.trim().equals(name.trim(), ignoreCase = true)) "" else value
+            parts[index] = part.copy(
+                person = clearDuplicate(part.person, "main"),
+                assistant = clearDuplicate(part.assistant, "assistant"),
+                secondaryAssignee = clearDuplicate(part.secondaryAssignee, "secondary"),
+                secondaryAssistant = clearDuplicate(part.secondaryAssistant, "secondaryAssistant")
+            )
+        }
+    }
+    val part = parts[partIndex]
+    parts[partIndex] = when (slot) {
+        "assistant" -> part.copy(assistant = name)
+        "secondary" -> part.copy(secondaryAssignee = name)
+        "secondaryAssistant" -> part.copy(secondaryAssistant = name)
+        else -> part.copy(person = name)
+    }
+}
+
+private fun Assignment.withoutParticipant(name: String): Assignment {
+    if (name.isBlank()) return this
+    fun clear(value: String): String =
+        if (value.trim().equals(name.trim(), ignoreCase = true)) "" else value
+    return copy(
+        person = clear(person),
+        assistant = clear(assistant),
+        secondaryAssignee = clear(secondaryAssignee),
+        secondaryAssistant = clear(secondaryAssistant)
+    )
+}
+
+
 private data class SavedSchedule(
     val week: String,
     val reading: String,
@@ -513,7 +568,14 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var adviser by rememberSaveable { mutableStateOf(store.detail("adviser", "")) }
     var audienceGroup by rememberSaveable { mutableStateOf(store.detail("audience_group", "")) }
     val participants = remember(store) { mutableStateListOf<Participant>().apply { addAll(store.loadParticipants()) } }
-    val parts = remember(store) { mutableStateListOf<Assignment>().apply { addAll(store.loadAssignments()) } }
+    val storedAssignments = remember(store) { store.loadAssignments() }
+    val parts = remember(store) {
+        mutableStateListOf<Assignment>().apply { addAll(deduplicateAssignmentParticipants(storedAssignments)) }
+    }
+    LaunchedEffect(storedAssignments) {
+        val unique = deduplicateAssignmentParticipants(storedAssignments)
+        if (unique != storedAssignments) store.saveAssignments(unique)
+    }
     val history = remember(store) { mutableStateListOf<SavedSchedule>().apply { addAll(store.loadHistory()) } }
     var participantsLoaded by rememberSaveable { mutableStateOf(false) }
     var participantsBusy by remember { mutableStateOf(false) }
@@ -662,6 +724,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                         hasAssistant=part.has("assistant"), hasSecondary=part.has("secondaryAssignee"), hasSecondaryAssistant=part.has("secondaryAssistant")
                     ))
                 }
+                val unique = deduplicateAssignmentParticipants(parts.toList())
+                parts.clear(); parts.addAll(unique)
                 persistDetails()
                 store.saveAssignments(parts.toList())
                 workbookStatus = "✓ ${result.parts.size} bahagi ang nakuha mula sa JW.ORG"
@@ -688,7 +752,9 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         workbook=row.optString("sourceUrl",workbook)
         chairman=meta.optString("chairman",""); openingPrayer=meta.optString("openingPrayer",""); adviser=meta.optString("adviser",""); audienceGroup=meta.optString("audienceGroup","")
         store.setDetail("chairman",chairman); store.setDetail("opening_prayer",openingPrayer); store.setDetail("adviser",adviser); store.setDetail("audience_group",audienceGroup)
-        parts.clear(); for(i in 0 until raw.length()) raw.optJSONObject(i)?.let { parts.add(it.toAssignment()) }
+        parts.clear()
+        val loadedParts = (0 until raw.length()).mapNotNull { raw.optJSONObject(it)?.toAssignment() }
+        parts.addAll(deduplicateAssignmentParticipants(loadedParts))
         editingRemoteId=remote.id; persistDetails(); store.saveAssignments(parts.toList())
         workbookStatus="✓ Na-load ang saved cloud schedule"
         if(navigate) current=if(edit) Screen.DETAILS else Screen.PREVIEW
@@ -742,7 +808,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         if (item.weekStart.isNotBlank()) weekStart = item.weekStart
         bible = item.reading; openingSong = item.openingSong; closingSong = item.closingSong
         chairman=item.chairman; openingPrayer=item.openingPrayer; adviser=item.adviser; audienceGroup=item.audienceGroup
-        if (item.assignments.isNotEmpty()) { parts.clear(); parts.addAll(item.assignments); store.saveAssignments(parts.toList()) }
+        if (item.assignments.isNotEmpty()) { val unique=deduplicateAssignmentParticipants(item.assignments); parts.clear(); parts.addAll(unique); store.saveAssignments(unique) }
         persistDetails(); current = Screen.DETAILS; toastMessage = "Na-open ang saved schedule"
     }
     fun duplicateSaved(item: SavedSchedule) {
@@ -750,7 +816,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         weekStart = sourceDate.plusWeeks(1).toString()
         bible = item.reading; openingSong = item.openingSong; closingSong = item.closingSong
         chairman=item.chairman; openingPrayer=item.openingPrayer; adviser=item.adviser; audienceGroup=item.audienceGroup
-        if (item.assignments.isNotEmpty()) { parts.clear(); parts.addAll(item.assignments); store.saveAssignments(parts.toList()) }
+        if (item.assignments.isNotEmpty()) { val unique=deduplicateAssignmentParticipants(item.assignments); parts.clear(); parts.addAll(unique); store.saveAssignments(unique) }
         persistDetails(); current = Screen.DETAILS; toastMessage = "Naduplicate para sa susunod na linggo"
     }
     fun loadRemoteSchedule(remote: RemoteSchedule, edit: Boolean) { authScope.launch {
@@ -933,9 +999,33 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     modifier = scroll, parts = parts, eligible = eligible, rotation = rotationStats,
                     rotationBusy = rotationBusy, rotationError = rotationError,
                     chairman=chairman, openingPrayer=openingPrayer, adviser=adviser, audienceGroup=audienceGroup,
-                    onRole={ role, value -> when(role) { "chairman" -> chairman=value; "opening_prayer" -> openingPrayer=value; "adviser" -> adviser=value; else -> audienceGroup=value }; store.setDetail(role, value) },
+                    onRole = { role, value ->
+                        if (role != "audience_group" && value.isNotBlank()) {
+                            parts.indices.forEach { index -> parts[index] = parts[index].withoutParticipant(value) }
+                            store.saveAssignments(parts.toList())
+                            if (role != "chairman" && chairman.equals(value, true)) { chairman = ""; store.setDetail("chairman", "") }
+                            if (role != "opening_prayer" && openingPrayer.equals(value, true)) { openingPrayer = ""; store.setDetail("opening_prayer", "") }
+                            if (role != "adviser" && adviser.equals(value, true)) { adviser = ""; store.setDetail("adviser", "") }
+                        }
+                        when (role) {
+                            "chairman" -> chairman = value
+                            "opening_prayer" -> openingPrayer = value
+                            "adviser" -> adviser = value
+                            else -> audienceGroup = value
+                        }
+                        store.setDetail(role, value)
+                    },
                     isAdmin = signedIn && identityRole == "admin", readOnly = !canEdit(Screen.ASSIGNMENTS), canContinueExport = canAccess(Screen.PREVIEW),
-                    onAssign = { index, slot, name -> parts[index] = when(slot) { "assistant" -> parts[index].copy(assistant=name); "secondary" -> parts[index].copy(secondaryAssignee=name); "secondaryAssistant" -> parts[index].copy(secondaryAssistant=name); else -> parts[index].copy(person=name) }; store.saveAssignments(parts.toList()) },
+                    onAssign = { index, slot, name ->
+                        if (name.isNotBlank()) {
+                            parts.indices.forEach { i -> parts[i] = parts[i].withoutParticipant(name) }
+                            if (chairman.equals(name, true)) { chairman = ""; store.setDetail("chairman", "") }
+                            if (openingPrayer.equals(name, true)) { openingPrayer = ""; store.setDetail("opening_prayer", "") }
+                            if (adviser.equals(name, true)) { adviser = ""; store.setDetail("adviser", "") }
+                        }
+                        assignParticipantToOneSlot(parts, index, slot, name)
+                        store.saveAssignments(parts.toList())
+                    },
                     onSaveCloud = ::saveToCloud, onContinueExport = { navigateTo(Screen.PREVIEW) }
                 )
                 Screen.PREVIEW -> PreviewScreen(

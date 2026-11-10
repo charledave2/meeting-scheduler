@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.38.0 — 2026-11-10
+
+- Prevented a participant from occupying multiple assignment slots in the same schedule.
+- Removed legacy duplicate assignments when local and cloud schedules are loaded, then saved the cleaned assignments.
+
+
 ## v0.37.9 — 2026-11-10
 
 - Styled the date picker’s Cancel and Select actions with the forest-green palette in both themes.
