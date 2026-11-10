@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.38.1 — 2026-11-10
+
+- Refreshed assignment choices immediately after each selection so a chosen participant disappears from other slots.
+- Rechecked for available app updates whenever the app starts or returns to the foreground; dismissing the prompt is temporary.
+
+
 ## v0.38.0 — 2026-11-10
 
 - Prevented a participant from occupying multiple assignment slots in the same schedule.

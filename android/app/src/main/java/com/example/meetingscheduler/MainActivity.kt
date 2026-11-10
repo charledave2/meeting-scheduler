@@ -18,6 +18,8 @@ import android.os.Bundle
 import android.view.View
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -324,10 +326,26 @@ private fun AppUpdatePrompt() {
     var downloadError by remember { mutableStateOf<String?>(null) }
     var installPermissionMissing by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        update = runCatching {
-            withContext(Dispatchers.IO) { AppUpdateClient.checkForUpdate(BuildConfig.VERSION_NAME) }
-        }.getOrNull()
+    val updateCheckScope = rememberCoroutineScope()
+    val activity = context as? MainActivity
+    DisposableEffect(activity) {
+        var checkJob: kotlinx.coroutines.Job? = null
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) {
+                checkJob?.cancel()
+                checkJob = updateCheckScope.launch {
+                    val latest = runCatching {
+                        withContext(Dispatchers.IO) { AppUpdateClient.checkForUpdate(BuildConfig.VERSION_NAME) }
+                    }.getOrNull()
+                    if (latest != null) update = latest
+                }
+            }
+        }
+        activity?.lifecycle?.addObserver(observer)
+        onDispose {
+            checkJob?.cancel()
+            activity?.lifecycle?.removeObserver(observer)
+        }
     }
 
     LaunchedEffect(downloadId) {
@@ -1737,15 +1755,13 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
 
 @Composable
 private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligible: List<Participant>, rotation: Map<Int, ParticipantRotation>, rotationBusy: Boolean, rotationError: String?, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, isAdmin:Boolean, readOnly:Boolean, canContinueExport:Boolean, onRole:(String,String)->Unit, onAssign: (Int,String,String) -> Unit, onSaveCloud: () -> Unit, onContinueExport: () -> Unit) {
-    val selectedNames = remember(parts, chairman, openingPrayer, adviser) {
-        buildSet {
-            listOf(chairman, openingPrayer, adviser).forEach { name ->
+    val selectedNames = buildSet {
+        listOf(chairman, openingPrayer, adviser).forEach { name ->
+            name.trim().takeIf { it.isNotEmpty() }?.let { add(it.lowercase(Locale.ROOT)) }
+        }
+        parts.forEach { part ->
+            listOf(part.person, part.assistant, part.secondaryAssignee, part.secondaryAssistant).forEach { name ->
                 name.trim().takeIf { it.isNotEmpty() }?.let { add(it.lowercase(Locale.ROOT)) }
-            }
-            parts.forEach { part ->
-                listOf(part.person, part.assistant, part.secondaryAssignee, part.secondaryAssistant).forEach { name ->
-                    name.trim().takeIf { it.isNotEmpty() }?.let { add(it.lowercase(Locale.ROOT)) }
-                }
             }
         }
     }
