@@ -5,7 +5,7 @@ import { assertSameOrigin, createSession, getChatGPTUser, hashPassword, sessionC
 
 export async function POST(request: Request) {
   if (!assertSameOrigin(request)) return Response.json({ error: "Invalid request." }, { status: 403 });
-  const user = await getChatGPTUser(); if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await getChatGPTUser({ allowPasswordChange: true }); if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const body = await request.json() as { currentPassword?: string; newPassword?: string };
   if (!validPassword(body.newPassword || "")) return Response.json({ error: "Use at least 10 characters." }, { status: 400 });
   const db = getDb(); const [account] = await db.select().from(authAccounts).where(eq(authAccounts.id, user.accountId)).limit(1);
@@ -16,3 +16,4 @@ export async function POST(request: Request) {
   const session = await createSession(user.accountId);
   return Response.json({ ok: true }, { headers: { "set-cookie": sessionCookie(session.token, session.expiresAt), "cache-control": "no-store" } });
 }
+

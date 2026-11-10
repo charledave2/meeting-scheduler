@@ -11,7 +11,7 @@ async function ensureProfilePhotosTable() {
 
 // Mobile clients use this route to fetch the signed-in user's cloud profile photo.
 export async function GET() {
-  const user = await getChatGPTUser();
+  const user = await getChatGPTUser({ allowPasswordChange: true });
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const database = await ensureProfilePhotosTable();
   const row = await database.prepare("SELECT photo_data_url FROM account_profile_photos WHERE account_id = ?")
@@ -42,3 +42,4 @@ export async function PATCH(request: Request) {
     .bind(user.accountId, photoDataUrl).run();
   return Response.json({ ok: true, message: "Profile photo saved to cloud." });
 }
+

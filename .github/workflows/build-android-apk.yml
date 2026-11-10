@@ -44,6 +44,8 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
+      - name: Android lint security and compatibility checks
+        run: gradle --no-daemon :app:lintDebug
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -90,3 +92,4 @@ jobs:
       - name: Remove temporary signing key
         if: always()
         run: rm -f app/release-keystore.jks
+

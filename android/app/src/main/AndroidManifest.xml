@@ -2,11 +2,11 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <application android:theme="@style/AppTheme" android:label="Meeting Scheduler" android:icon="@drawable/ic_meeting_scheduler" android:roundIcon="@drawable/ic_meeting_scheduler" android:usesCleartextTraffic="false">
+    <application android:allowBackup="false" android:fullBackupContent="false" android:theme="@style/AppTheme" android:label="Meeting Scheduler" android:icon="@drawable/ic_meeting_scheduler" android:roundIcon="@drawable/ic_meeting_scheduler" android:usesCleartextTraffic="false">
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.files" android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
-        <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden">
+        <activity android:name=".MainActivity" android:windowSoftInputMode="adjustResize" android:exported="true" android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -14,3 +14,4 @@
         </activity>
     </application>
 </manifest>
+

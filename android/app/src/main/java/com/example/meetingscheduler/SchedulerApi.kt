@@ -208,17 +208,29 @@ internal class SchedulerApi(context: Context) {
         return (direct + fallback).distinct().take(6)
     }
 
-    fun signOut() { vault.clear() }
+    fun signOut(): String? {
+        val oldSession = vault.read()
+        vault.clear()
+        return oldSession
+    }
 
-    private fun request(path: String, method: String, body: JSONObject?, authorized: Boolean = true, captureCookie: Boolean = false): JSONObject {
+    suspend fun revokeSession(oldSession: String?) = withContext(Dispatchers.IO) {
+        if (oldSession != null) runCatching {
+            request("/api/auth/logout", "POST", null, authorized = false, sessionOverride = oldSession)
+        }
+        Unit
+    }
+
+    private fun request(path: String, method: String, body: JSONObject?, authorized: Boolean = true, captureCookie: Boolean = false, sessionOverride: String? = null): JSONObject {
         val connection = (URL(base + path).openConnection() as HttpURLConnection).apply {
+            instanceFollowRedirects = false
             requestMethod = method
             connectTimeout = 18_000
             readTimeout = 25_000
             setRequestProperty("Accept", "application/json")
             if (method != "GET") setRequestProperty("Origin", base)
             if (body != null) { doOutput = true; setRequestProperty("Content-Type", "application/json; charset=utf-8") }
-            if (authorized) vault.read()?.let { setRequestProperty("Cookie", it) }
+            (sessionOverride ?: if (authorized) vault.read() else null)?.let { setRequestProperty("Cookie", it) }
         }
         try {
             if (body != null) connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
@@ -288,3 +300,4 @@ private class SessionVault(context: Context) {
         }
     }
 }
+

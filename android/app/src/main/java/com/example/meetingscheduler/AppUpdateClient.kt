@@ -37,7 +37,7 @@ internal object AppUpdateClient {
                 .mapNotNull { assets.optJSONObject(it) }
                 .firstOrNull { it.optString("name") == APK_NAME }
                 ?.optString("browser_download_url")
-                ?.takeIf { it.startsWith("https://github.com/") }
+                ?.takeIf { it.startsWith("https://github.com/charledave2/meeting-scheduler/releases/download/") && it.endsWith("/app-release.apk") }
                 ?: return@withContext null
             val notes = release.optString("body").lineSequence()
                 .filter { it.isNotBlank() }
@@ -51,13 +51,13 @@ internal object AppUpdateClient {
 
     fun download(context: Context, apkUrl: String): Long {
         val uri = Uri.parse(apkUrl)
-        require(uri.scheme == "https" && uri.host == "github.com") { "Hindi valid ang APK download link." }
+        require(uri.scheme == "https" && uri.host == "github.com" && uri.path.orEmpty().startsWith("/charledave2/meeting-scheduler/releases/download/") && uri.path.orEmpty().endsWith("/app-release.apk")) { "Hindi valid ang APK download link." }
         val request = DownloadManager.Request(uri)
             .setTitle("Meeting Scheduler update")
             .setDescription("Dina-download ang bagong bersyon…")
             .setMimeType("application/vnd.android.package-archive")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, APK_NAME)
+            .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, "meeting-update-${System.currentTimeMillis()}.apk")
         val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         return manager.enqueue(request)
     }
@@ -109,3 +109,4 @@ internal object AppUpdateClient {
         return 0
     }
 }
+

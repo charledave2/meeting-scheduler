@@ -96,6 +96,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
@@ -139,7 +140,13 @@ private val DarkPalette = darkColorScheme(
     surfaceVariant = Color(0xFF20241E), onSurface = Color(0xFFE5E9E0),
     onSurfaceVariant = Color(0xFFB7BEB3), outline = Color(0xFF687064),
     outlineVariant = Color(0xFF3A4139), error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005)
+    onError = Color(0xFF690005),
+    surfaceTint = Color(0xFFA8C3A4),
+    surfaceDim = Color(0xFF10150F), surfaceBright = Color(0xFF353B33),
+    surfaceContainerLowest = Color(0xFF10150F), surfaceContainerLow = Color(0xFF191F18),
+    surfaceContainer = Color(0xFF20271F), surfaceContainerHigh = Color(0xFF293127),
+    surfaceContainerHighest = Color(0xFF343C32),
+    inverseSurface = Color(0xFFE5E9E0), inverseOnSurface = Color(0xFF20241E), inversePrimary = Color(0xFF28634D)
 )
 private val LightPalette = lightColorScheme(
     primary = Color(0xFF28634D), onPrimary = Color.White,
@@ -151,7 +158,13 @@ private val LightPalette = lightColorScheme(
     background = Color(0xFFF7F8F2), surface = Color(0xFFF7F8F2),
     surfaceVariant = Color(0xFFEBEFE8), onSurface = Color(0xFF191D1A),
     onSurfaceVariant = Color(0xFF535D53), outline = Color(0xFF7A837B),
-    outlineVariant = Color(0xFFC1C9C0)
+    outlineVariant = Color(0xFFC1C9C0),
+    surfaceTint = Color(0xFF28634D),
+    surfaceDim = Color(0xFFD8DED5), surfaceBright = Color(0xFFF7F8F2),
+    surfaceContainerLowest = Color.White, surfaceContainerLow = Color(0xFFF1F4EC),
+    surfaceContainer = Color(0xFFEBEFE8), surfaceContainerHigh = Color(0xFFE5EAE1),
+    surfaceContainerHighest = Color(0xFFDDE4D9),
+    inverseSurface = Color(0xFF293127), inverseOnSurface = Color(0xFFF1F4EC), inversePrimary = Color(0xFFA8C3A4)
 )
 
 private val Forest @Composable get() = MaterialTheme.colorScheme.primary
@@ -382,7 +395,7 @@ private fun AppUpdatePrompt() {
             },
             title = { Text("May bagong update", fontWeight = FontWeight.SemiBold) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.48f).dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Meeting Scheduler ${available.version} ay handa nang i-update.", color = Ink)
                     if (notes.isNotEmpty()) {
                         Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -799,6 +812,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         val html = buildOfficialScheduleHtml(weekStart, bible, openingSong, closingSong, parts.toList(), chairman, openingPrayer, adviser, audienceGroup)
         val web = WebView(context)
         web.webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest): Boolean = true
             override fun onPageFinished(view: WebView, url: String?) {
                 val manager = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
                 manager.print("Meeting schedule", view.createPrintDocumentAdapter("Meeting schedule"), android.print.PrintAttributes.Builder().build())
@@ -813,7 +827,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             renderer.post {
                 val bitmap=Bitmap.createBitmap(renderer.width,renderer.height,Bitmap.Config.ARGB_8888)
                 renderer.draw(Canvas(bitmap))
-                val file=File(context.cacheDir,"meeting-schedule.png")
+                val file=File(File(context.cacheDir,"exports").apply { mkdirs() },"meeting-schedule.png")
                 FileOutputStream(file).use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)}
                 bitmap.recycle()
                 val uri=FileProvider.getUriForFile(context,"${context.packageName}.files",file)
@@ -906,7 +920,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet(modifier = Modifier.widthIn(max = 340.dp), drawerContainerColor = AppSurface, windowInsets = WindowInsets.safeDrawing) {
-                Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 12.dp)) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 10.dp, bottom = 12.dp)) {
                         Box(Modifier.size(48.dp).clip(CircleShape).clickable { profileNameDraft = identityName; profileError = null; profileDialogOpen = true }) { ProfileAvatar(identityName, profilePhotoPath, 48.dp, profilePhotoDataUrl) }
                         Spacer(Modifier.width(12.dp))
@@ -914,7 +928,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     }
                     HorizontalDivider(color = SurfaceContainer)
                     Column(
-                        Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(top = 4.dp)
+                        Modifier.fillMaxWidth().padding(top = 4.dp)
                     ) {
                         if (canAccess(Screen.HOME)) {
                             DrawerSection("OVERVIEW")
@@ -942,7 +956,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                             Text(if (darkMode) "Light Mode" else "Dark Mode", color = Forest, fontSize = 13.sp)
                         }
                         TextButton(onClick = {
-                            api.signOut()
+                            val oldSession = api.signOut()
+                            authScope.launch { api.revokeSession(oldSession) }
                             signedIn = false
                             identityName = ""
                             identityUsername = ""
@@ -1052,7 +1067,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     adviser=adviser, audienceGroup=audienceGroup, previewWebView=officialPreviewWebView, allowExport=canEdit(Screen.PREVIEW),
                     onExportText = {
                         val text = buildOfficialScheduleText(weekStart, bible, openingSong, closingSong, parts, chairman, openingPrayer, adviser, audienceGroup)
-                        val file = File(context.cacheDir, "meeting-schedule-${weekStart}.txt")
+                        val file = File(File(context.cacheDir, "exports").apply { mkdirs() }, "meeting-schedule-${weekStart}.txt")
                         file.writeText(text, Charsets.UTF_8)
                         val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
                         val intent = Intent(Intent.ACTION_SEND).apply {
@@ -1195,6 +1210,10 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                                 factory = { viewContext -> WebView(viewContext).apply {
                                     setBackgroundColor(android.graphics.Color.WHITE)
                                     settings.javaScriptEnabled = true
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
+            settings.blockNetworkLoads = true
+            settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
                                     loadDataWithBaseURL("file:///android_asset/", homePreviewHtml ?: "", "text/HTML", "UTF-8", null)
                                 } },
                                 modifier = Modifier.fillMaxWidth().height(schedulePreviewHeight)
@@ -1380,7 +1399,7 @@ private fun LoginScreen(
         }
     }
     Surface(color = AppSurface, modifier = Modifier.fillMaxSize()) {
-        BoxWithConstraints(Modifier.fillMaxSize()) {
+        BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
             val compact = maxHeight < 700.dp
             Column(
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = if (compact) 18.dp else 28.dp),
@@ -1438,7 +1457,7 @@ private fun LoginScreen(
                             Button(
                                 onClick = { onLogin(username, password) },
                                 enabled = !busy && username.isNotBlank() && password.isNotBlank(),
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                                modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth().heightIn(min = 50.dp),
                                 shape = RoundedCornerShape(18.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Forest)
                             ) {
@@ -1534,18 +1553,40 @@ private fun LoginScreen(
     }
 }
 
+private val avatarCache = object : android.util.LruCache<String, ImageBitmap>(8 * 1024 * 1024) {
+    override fun sizeOf(key: String, value: ImageBitmap): Int = value.width * value.height * 4
+}
+
 @Composable
-private fun ProfileAvatar(name: String, photoPath: String?, size: androidx.compose.ui.unit.Dp, photoDataUrl: String = "") {
-    val bitmap = remember(photoPath, photoDataUrl) {
-        val encoded = photoDataUrl.substringAfter("base64,", "").takeIf { it.isNotBlank() }
-        val cloudBitmap = encoded?.let { value ->
+private fun rememberAvatarBitmap(dataUrl: String, photoPath: String? = null): ImageBitmap? {
+    val bitmap by produceState<ImageBitmap?>(null, dataUrl, photoPath) {
+        value = withContext(Dispatchers.IO) {
+            val cacheKey = dataUrl.takeIf { it.isNotBlank() }?.let {
+                Base64.encodeToString(java.security.MessageDigest.getInstance("SHA-256").digest(it.toByteArray()), Base64.NO_WRAP)
+            }
+            if (cacheKey != null) avatarCache.get(cacheKey)?.let { return@withContext it }
             runCatching {
-                val bytes = Base64.decode(value, Base64.DEFAULT)
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                if (dataUrl.length > 800_000) return@runCatching null
+                val bytes = dataUrl.substringAfter("base64,", "").takeIf { it.isNotBlank() }
+                    ?.let { Base64.decode(it, Base64.DEFAULT) }
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                if (bytes != null) BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                else if (photoPath != null) BitmapFactory.decodeFile(photoPath, bounds)
+                var sample = 1
+                while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 256) sample *= 2
+                val options = BitmapFactory.Options().apply { inSampleSize = sample }
+                val decoded = if (bytes != null) BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                    else photoPath?.let { BitmapFactory.decodeFile(it, options) }
+                decoded?.asImageBitmap()?.also { if (cacheKey != null) avatarCache.put(cacheKey, it) }
             }.getOrNull()
         }
-        cloudBitmap ?: photoPath?.let { runCatching { BitmapFactory.decodeFile(it)?.asImageBitmap() }.getOrNull() }
     }
+    return bitmap
+}
+
+@Composable
+private fun ProfileAvatar(name: String, photoPath: String?, size: androidx.compose.ui.unit.Dp, photoDataUrl: String = "") {
+    val bitmap = rememberAvatarBitmap(photoDataUrl, photoPath)
     if (bitmap != null) {
         Image(bitmap, contentDescription = "Profile photo", contentScale = ContentScale.Crop, modifier = Modifier.size(size).clip(CircleShape))
     } else {
@@ -1894,8 +1935,8 @@ private fun SlotPicker(
             DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false; searchQuery = "" },
-                modifier = Modifier.widthIn(min = 250.dp, max = 320.dp)
-                    .heightIn(max = 380.dp)
+                modifier = Modifier.widthIn(min = 200.dp, max = minOf(320, LocalConfiguration.current.screenWidthDp - 32).coerceAtLeast(200).dp)
+                    .heightIn(max = minOf(380, (LocalConfiguration.current.screenHeightDp * 0.65f).toInt()).dp)
                     .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Surface(
@@ -2099,21 +2140,27 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
 
 @Composable
 private fun OfficialScheduleWebPreview(html:String,previewWebView:MutableState<WebView?>,modifier:Modifier=Modifier,onPageRendered:()->Unit) {
+    val pageRendered by rememberUpdatedState(onPageRendered)
     var measuredWidthPx by remember { mutableIntStateOf(0) }
     AndroidView(
         factory = { context -> WebView(context).apply {
             setLayerType(View.LAYER_TYPE_HARDWARE, null)
             setBackgroundColor(android.graphics.Color.WHITE)
             settings.javaScriptEnabled = true
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
+            settings.blockNetworkLoads = true
+            settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
             settings.loadsImagesAutomatically = true
             isVerticalScrollBarEnabled = true
             isHorizontalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             tag = ""
             webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest): Boolean = true
                 override fun onPageFinished(view: WebView, url: String?) {
                     view.postVisualStateCallback(System.nanoTime(), object : WebView.VisualStateCallback() {
-                        override fun onComplete(requestId: Long) { onPageRendered() }
+                        override fun onComplete(requestId: Long) { pageRendered() }
                     })
                 }
             }
@@ -2130,6 +2177,11 @@ private fun OfficialScheduleWebPreview(html:String,previewWebView:MutableState<W
                 view.scrollTo(0, 0)
                 view.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "UTF-8", null)
             }
+        },
+        onRelease = { view ->
+            if (previewWebView.value === view) previewWebView.value = null
+            view.stopLoading()
+            view.destroy()
         }
     )
 }
@@ -2613,7 +2665,7 @@ private fun AccountsScreen(
         val isSelf = account.username.equals(currentUsername, true) || account.role == "admin"
         Dialog(onDismissRequest = { selectedAccount = null }) {
             Surface(color = AppSurface, shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp).heightIn(max = 660.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.imePadding().padding(20.dp).heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.78f).dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         AccountPhotoAvatar(account, 64.dp)
                         Column(Modifier.weight(1f).padding(start = 12.dp)) {
@@ -2774,14 +2826,7 @@ private fun AccountsScreen(
 
 @Composable
 private fun AccountPhotoAvatar(account: RemoteAccount, size: androidx.compose.ui.unit.Dp) {
-    val bitmap = remember(account.photoDataUrl) {
-        account.photoDataUrl.substringAfter(",", "").takeIf { it.isNotBlank() }?.let { encoded ->
-            runCatching {
-                val bytes = Base64.decode(encoded, Base64.DEFAULT)
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-            }.getOrNull()
-        }
-    }
+    val bitmap = rememberAvatarBitmap(account.photoDataUrl)
     if (bitmap != null) {
         Image(bitmap, contentDescription = account.displayName + " profile photo", contentScale = ContentScale.Crop, modifier = Modifier.size(size).clip(CircleShape))
     } else {
@@ -2836,3 +2881,4 @@ private fun sampleHistory() = mutableListOf(
     SavedSchedule("Aug 24 – 30, 2026", "Jeremias 30", "Aug 17, 2026", "2026-08-24"),
     SavedSchedule("Aug 17 – 23, 2026", "Jeremias 29", "Aug 10, 2026", "2026-08-17")
 )
+

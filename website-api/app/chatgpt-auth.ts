@@ -58,7 +58,7 @@ export const sessionCookie = (token: string, expiresAt: Date) => `${COOKIE_NAME}
 export const expiredSessionCookie = () => `${COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 export async function currentSessionToken() { return (await cookies()).get(COOKIE_NAME)?.value ?? null; }
 
-export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
+export async function getChatGPTUser(options: { allowPasswordChange?: boolean } = {}): Promise<ChatGPTUser | null> {
   const token = await currentSessionToken();
   if (!token) return null;
   const [row] = await getDb().select({
@@ -70,11 +70,12 @@ export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
     .innerJoin(users, eq(authAccounts.userId, users.id))
     .where(and(eq(authSessions.tokenHash, await sha256(token)), gt(authSessions.expiresAt, new Date().toISOString()), eq(authAccounts.status, "active")))
     .limit(1);
+  if (row?.mustChangePassword && !options.allowPasswordChange) return null;
   return row ? { ...row, fullName: row.displayName, provider: "native" } : null;
 }
 
 export async function requireChatGPTUser(returnTo: string): Promise<ChatGPTUser> {
-  const user = await getChatGPTUser();
+  const user = await getChatGPTUser({ allowPasswordChange: true });
   if (!user) redirect(`/login?returnTo=${encodeURIComponent(safeRelativeReturnPath(returnTo))}`);
   if (user.mustChangePassword && returnTo !== "/change-password") redirect("/change-password");
   return user;
@@ -90,8 +91,6 @@ export function assertSameOrigin(request: Request) {
 export async function getBootstrapIdentity() {
   const requestHeaders = await headers();
   const adminEmail = (getRuntimeEnv().ADMIN_EMAIL || "").trim().toLowerCase();
-  const email = requestHeaders.get("oai-authenticated-user-email")?.trim().toLowerCase();
-  if (email && email === adminEmail) return email;
   const jwt = requestHeaders.get("cf-access-jwt-assertion");
   const env = getRuntimeEnv();
   if (!jwt || !env.CF_ACCESS_TEAM_DOMAIN || !env.CF_ACCESS_AUD) return null;
@@ -118,3 +117,4 @@ function safeRelativeReturnPath(value: string) {
   try { const url = new URL(value, "https://app.local"); return url.origin === "https://app.local" ? `${url.pathname}${url.search}` : "/"; }
   catch { return "/"; }
 }
+

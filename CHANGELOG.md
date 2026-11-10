@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.39.0 — 2026-11-10
+
+- Completed forest-green Material3 surface colors for dialogs, inputs, menus and both themes.
+- Moved avatar decoding off the UI thread with bounded thumbnail sizes and a shared memory cache.
+- Made the navigation drawer fully scrollable and improved keyboard and small-screen dialog sizing.
+- Restricted preview WebViews, APK download sources and shared export paths; disabled app backup.
+- Revoked server sessions on sign-out and blocked authenticated API use until required password changes are complete.
+- Removed unsigned admin bootstrap header trust and disabled caching of API responses.
+- Added Android lint checks and backported date APIs for Android 7 compatibility.
+
+
 ## v0.38.1 — 2026-11-10
 
 - Refreshed assignment choices immediately after each selection so a chosen participant disappears from other slots.
@@ -141,3 +152,4 @@
 - Added Two Tone icons to Participants add, filter and edit controls with consistent sizing.
 - Styled account deletion actions in red and account disabling actions in orange.
 - Packaged the APK and Android source archive as GitHub Release assets.
+
