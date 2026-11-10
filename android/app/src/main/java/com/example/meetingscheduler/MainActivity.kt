@@ -285,7 +285,7 @@ private fun AppUpdatePrompt() {
                     onClick = {
                         val activity = context as? MainActivity
                         if (activity != null && !downloadQueued) {
-                            activity.downloadAppUpdate(available.apkUrl)
+                            AppUpdateClient.download(activity, available.apkUrl)
                             downloadQueued = true
                         }
                     }
