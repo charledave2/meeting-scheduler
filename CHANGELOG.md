@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.37.6 — 2026-11-10
+
+- Added automatic checks for newer public GitHub releases when the app opens.
+- Added an in-app update prompt that downloads the signed APK through Android Downloads and hands installation to Android.
+
 ## v0.37.5 — 2026-11-09
 
 - Applied the first forest-green calendar icon concept to the Android launcher, splash animation, and sign-in page.
