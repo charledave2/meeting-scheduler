@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.37.7 — 2026-11-10
+
+- Matched the Home Page upcoming meeting preview height to the portrait Preview & Export schedule viewport.
+- Redesigned account tool access controls as compact, clearly labeled permission cards with selected-state indicators.
+
 ## v0.37.6 — 2026-11-10
 
 - Added automatic checks for newer public GitHub releases when the app opens.
