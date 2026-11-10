@@ -9,6 +9,8 @@
 - Revoked server sessions on sign-out and blocked authenticated API use until required password changes are complete.
 - Removed unsigned admin bootstrap header trust and disabled caching of API responses.
 - Added Android lint checks and backported date APIs for Android 7 compatibility.
+- Corrected Android-version-specific theme resources and regenerated the backend dependency lockfile.
+- Updated Next.js and its matching ESLint configuration to address dependency security advisories.
 
 
 ## v0.38.1 — 2026-11-10

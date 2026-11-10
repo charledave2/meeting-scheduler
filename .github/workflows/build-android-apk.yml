@@ -45,7 +45,12 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Android lint security and compatibility checks
-        run: gradle --no-daemon :app:lintDebug
+        run: |
+          if ! gradle --no-daemon :app:lintDebug; then
+            cat app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
+            exit 1
+          fi
+          cat app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:

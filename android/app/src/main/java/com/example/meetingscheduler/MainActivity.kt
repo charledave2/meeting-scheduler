@@ -491,7 +491,8 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
     SideEffect {
         window.statusBarColor = scheme.background.toArgb()
         window.navigationBarColor = scheme.background.toArgb()
-        window.decorView.systemUiVisibility = if (darkMode) 0 else (View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR)
+        val lightNavigation = if (android.os.Build.VERSION.SDK_INT >= 26) View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR else 0
+        window.decorView.systemUiVisibility = if (darkMode) 0 else (View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or lightNavigation)
     }
     CompositionLocalProvider(LocalDensity provides Density(systemDensity.density, systemDensity.fontScale * appFontScale)) {
         MaterialTheme(colorScheme = scheme, shapes = Shapes(
