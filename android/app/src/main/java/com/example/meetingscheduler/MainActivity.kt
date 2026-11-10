@@ -85,6 +85,8 @@ import androidx.compose.material.icons.twotone.Warning
 import androidx.compose.material.icons.twotone.PersonAdd
 import androidx.compose.material.icons.twotone.Sort
 import androidx.compose.material.icons.twotone.AdminPanelSettings
+import androidx.compose.material.icons.twotone.Search
+import androidx.compose.material.icons.twotone.SystemUpdateAlt
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -261,37 +263,132 @@ internal data class AvailableAppUpdate(val version: String, val apkUrl: String, 
 private fun AppUpdatePrompt() {
     val context = LocalContext.current
     var update by remember { mutableStateOf<AvailableAppUpdate?>(null) }
-    var downloadQueued by remember { mutableStateOf(false) }
+    var downloadId by remember { mutableStateOf<Long?>(null) }
+    var downloadProgress by remember { mutableStateOf<AppUpdateDownloadProgress?>(null) }
+    var downloadError by remember { mutableStateOf<String?>(null) }
+    var installPermissionMissing by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
         update = runCatching {
-            kotlinx.coroutines.withContext(Dispatchers.IO) {
-                AppUpdateClient.checkForUpdate(BuildConfig.VERSION_NAME)
-            }
+            withContext(Dispatchers.IO) { AppUpdateClient.checkForUpdate(BuildConfig.VERSION_NAME) }
         }.getOrNull()
     }
+
+    LaunchedEffect(downloadId) {
+        val id = downloadId ?: return@LaunchedEffect
+        while (true) {
+            val state = runCatching {
+                withContext(Dispatchers.IO) { AppUpdateClient.downloadProgress(context, id) }
+            }.getOrNull()
+            downloadProgress = state
+            if (state == null || state.complete || state.failed) break
+            delay(500)
+        }
+        if (downloadProgress?.failed == true) downloadError = "Hindi natuloy ang download. Subukan ulit."
+    }
+
     update?.let { available ->
+        val downloading = downloadId != null && downloadProgress?.complete != true && downloadProgress?.failed != true
+        val complete = downloadProgress?.complete == true
+        val progressValue = (downloadProgress?.percent ?: 0).coerceIn(0, 100) / 100f
+        val notes = available.notes.lineSequence()
+            .map { it.trim().removePrefix("-").removePrefix("*").trim() }
+            .filter { it.isNotBlank() && !it.startsWith("#") }
+            .take(3)
+            .toList()
+
         AlertDialog(
-            onDismissRequest = { update = null },
-            title = { Text("May bagong update") },
+            onDismissRequest = { if (!downloading) update = null },
+            icon = {
+                Surface(shape = CircleShape, color = ForestContainer, modifier = Modifier.size(52.dp)) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.TwoTone.SystemUpdateAlt, contentDescription = null, tint = Forest, modifier = Modifier.size(29.dp))
+                    }
+                }
+            },
+            title = { Text("May bagong update", fontWeight = FontWeight.SemiBold) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Meeting Scheduler ${available.version} ay handa nang i-update.")
-                    if (available.notes.isNotBlank()) Text(available.notes, color = Muted, fontSize = 12.sp, maxLines = 4)
-                    if (downloadQueued) Text("Sinimulan na ang download. Buksan ang download notification para i-install.", color = Forest, fontSize = 12.sp)
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Meeting Scheduler ${available.version} ay handa nang i-update.", color = Ink)
+                    if (notes.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text("Mga bagong pagbabago", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            notes.forEach { Text("• $it", color = Muted, fontSize = 12.sp, lineHeight = 17.sp) }
+                        }
+                    }
+                    if (downloadId != null) {
+                        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Text(
+                                when {
+                                    complete -> "Handa nang i-install"
+                                    downloadProgress?.failed == true -> "Hindi natapos ang download"
+                                    else -> "Dina-download ang update…"
+                                },
+                                color = if (downloadProgress?.failed == true) MaterialTheme.colorScheme.error else Forest,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            LinearProgressIndicator(
+                                progress = { if (complete) 1f else progressValue },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = Forest,
+                                trackColor = ForestContainer
+                            )
+                            Text(
+                                if (complete) "100%" else downloadProgress?.percent?.let { "$it%" } ?: "Inihahanda ang download…",
+                                color = Muted,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                    if (installPermissionMissing) {
+                        Text("Payagan ang pag-install mula sa app na ito sa Android settings, pagkatapos ay pindutin ulit ang Install update.", color = Muted, fontSize = 12.sp)
+                    }
+                    downloadError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                    if (complete) Text("Ilulunsad ng Android ang confirmation bago i-install.", color = Muted, fontSize = 11.sp)
                 }
             },
             confirmButton = {
-                TextButton(
+                Button(
+                    enabled = !downloading,
                     onClick = {
-                        val activity = context as? MainActivity
-                        if (activity != null && !downloadQueued) {
-                            AppUpdateClient.download(activity, available.apkUrl)
-                            downloadQueued = true
+                        val activity = context as? MainActivity ?: return@Button
+                        downloadError = null
+                        if (complete && downloadId != null) {
+                            if (AppUpdateClient.canInstallPackages(activity)) {
+                                runCatching { AppUpdateClient.install(activity, downloadId!!) }
+                                    .onFailure { downloadError = it.message ?: "Hindi mabuksan ang installer." }
+                            } else {
+                                installPermissionMissing = true
+                                runCatching { AppUpdateClient.openInstallSettings(activity) }
+                                    .onFailure { downloadError = it.message ?: "Hindi mabuksan ang Android settings." }
+                            }
+                        } else if (downloadProgress?.failed == true || downloadId == null) {
+                            runCatching {
+                                downloadId = AppUpdateClient.download(activity, available.apkUrl)
+                                downloadProgress = null
+                                installPermissionMissing = false
+                            }.onFailure { downloadError = it.message ?: "Hindi masimulan ang download." }
                         }
-                    }
-                ) { Text(if (downloadQueued) "Downloading…" else "I-download", color = Forest) }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF28634D), contentColor = Color.White)
+                ) {
+                    Icon(Icons.TwoTone.SystemUpdateAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        when {
+                            downloading -> "Downloading…"
+                            complete -> "Install update"
+                            downloadProgress?.failed == true -> "Try again"
+                            else -> "Download update"
+                        }
+                    )
+                }
             },
-            dismissButton = { TextButton(onClick = { update = null }) { Text("Mamaya") } }
+            dismissButton = {
+                if (!downloading) TextButton(onClick = { update = null }) { Text("Mamaya", color = Forest) }
+            },
+            containerColor = AppSurface
         )
     }
 }
@@ -1037,16 +1134,46 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     }
     if (datePicker) {
         val pickerState = rememberDatePickerState(initialSelectedDateMillis = week.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
-        DatePickerDialog(onDismissRequest = { datePicker = false }, confirmButton = {
-            TextButton(onClick = {
-                pickerState.selectedDateMillis?.let {
-                    remoteScheduleLoadedWeek=""; editingRemoteId=0
-                    val selectedWeek=Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate().with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)).toString()
-                    weekStart=selectedWeek; store.saveDetails(selectedWeek,bible,openingSong,closingSong,workbook)
-                }
-                datePicker = false
-            }) { Text("Select", color = Forest) }
-        }, dismissButton = { TextButton(onClick = { datePicker = false }) { Text("Cancel") } }) { DatePicker(state = pickerState) }
+        DatePickerDialog(
+            onDismissRequest = { datePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    pickerState.selectedDateMillis?.let {
+                        remoteScheduleLoadedWeek = ""; editingRemoteId = 0
+                        val selectedWeek = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
+                            .with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)).toString()
+                        weekStart = selectedWeek
+                        store.saveDetails(selectedWeek, bible, openingSong, closingSong, workbook)
+                    }
+                    datePicker = false
+                }) { Text("Select", color = Forest) }
+            },
+            dismissButton = { TextButton(onClick = { datePicker = false }) { Text("Cancel", color = Forest) } },
+            colors = DatePickerDialogDefaults.colors(containerColor = AppSurface)
+        ) {
+            DatePicker(
+                state = pickerState,
+                colors = DatePickerDefaults.colors(
+                    containerColor = AppSurface,
+                    titleContentColor = Ink,
+                    headlineContentColor = Ink,
+                    weekdayContentColor = Muted,
+                    subheadContentColor = Muted,
+                    yearContentColor = Ink,
+                    currentYearContentColor = if (MaterialTheme.colorScheme.background == DarkPalette.background) Color(0xFFA8C3A4) else Color(0xFF28634D),
+                    selectedYearContentColor = Color.White,
+                    selectedYearContainerColor = Color(0xFF28634D),
+                    dayContentColor = Ink,
+                    disabledDayContentColor = Muted.copy(alpha = 0.38f),
+                    selectedDayContentColor = Color.White,
+                    selectedDayContainerColor = Color(0xFF28634D),
+                    todayContentColor = if (MaterialTheme.colorScheme.background == DarkPalette.background) Color(0xFFA8C3A4) else Color(0xFF28634D),
+                    todayDateBorderColor = if (MaterialTheme.colorScheme.background == DarkPalette.background) Color(0xFFA8C3A4) else Color(0xFF28634D),
+                    dayInSelectionRangeContentColor = Ink,
+                    dayInSelectionRangeContainerColor = ForestContainer
+                )
+            )
+        }
     }
     toastMessage?.let { msg -> LaunchedEffect(msg) { Toast.makeText(context, msg, Toast.LENGTH_SHORT).show(); toastMessage = null } }
     accessNotice?.let { (message, warning) ->
@@ -1617,12 +1744,13 @@ private fun SlotPicker(
     onPick: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
     var pending by remember { mutableStateOf<Participant?>(null) }
     Column(modifier.padding(top = 3.dp)) {
         Text(label, color = Muted, fontSize = 10.sp, lineHeight = 12.sp)
         Box(Modifier.fillMaxWidth().padding(top = 2.dp)) {
             OutlinedButton(
-                onClick = { if (enabled) expanded = true },
+                onClick = { if (enabled) { searchQuery = ""; expanded = true } },
                 enabled = enabled,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(11.dp),
@@ -1632,16 +1760,40 @@ private fun SlotPicker(
             }
             DropdownMenu(
                 expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.heightIn(max = 340.dp).background(MaterialTheme.colorScheme.surfaceVariant)
+                onDismissRequest = { expanded = false; searchQuery = "" },
+                modifier = Modifier.widthIn(min = 250.dp, max = 320.dp)
+                    .heightIn(max = 380.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
-                DropdownMenuItem(text = { Text("Unassigned") }, enabled=enabled, onClick = { onPick(""); expanded = false })
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                    placeholder = { Text(if (choices.isNotEmpty() && choices.all { it.isAppointedBrother() }) "Search qualified brother" else "Search participant", fontSize = 12.sp) },
+                    leadingIcon = { Icon(Icons.TwoTone.Search, contentDescription = null, modifier = Modifier.size(19.dp), tint = Forest) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(13.dp)
+                )
+                DropdownMenuItem(
+                    text = { Text("Unassigned", fontSize = 13.sp) },
+                    enabled = enabled,
+                    onClick = { onPick(""); expanded = false; searchQuery = "" }
+                )
                 val orderedChoices = choices.sortedWith(
                     compareBy<Participant> { participantRotationRank(rotation[it.id]) }
                         .thenBy { it.name.lowercase(Locale.ROOT) }
                 )
-                orderedChoices.forEach { participant ->
-                    val stat = rotation[participant.id]
+                val filteredChoices = orderedChoices.filter { it.name.contains(searchQuery.trim(), ignoreCase = true) }
+                if (filteredChoices.isEmpty()) {
+                    DropdownMenuItem(
+                        text = { Text("Walang kapatid na tumutugma.", color = Muted, fontSize = 12.sp) },
+                        enabled = false,
+                        onClick = {}
+                    )
+                } else filteredChoices.forEach { participant ->
+                    val rawStat = rotation[participant.id]
+                    val isExempt = participant.isAppointedBrother() || rawStat?.exempt == true
+                    val stat = rawStat?.takeUnless { isExempt }
                     DropdownMenuItem(
                         enabled = enabled,
                         text = {
@@ -1649,13 +1801,14 @@ private fun SlotPicker(
                                 Column(Modifier.weight(1f)) {
                                     Text(participant.name, color = Ink, fontSize = 13.sp, maxLines = 1)
                                     Text(
-                                        buildString {
+                                        if (isExempt) "Exempt sa rotation · ${participant.appointment}"
+                                        else buildString {
                                             append(participant.appointment)
                                             if (stat != null) {
                                                 append(" · Main ").append(stat.mainThisMonth)
                                                 append(" · Assist ").append(stat.assistantThisMonth)
                                                 append(" · ").append(stat.totalThisMonth).append(" this month")
-                                                if (!stat.eligible && !stat.exempt) stat.nextEligibleDate?.let { append(" · After ").append(rotationShortDate(it)) }
+                                                if (!stat.eligible) stat.nextEligibleDate?.let { append(" · After ").append(rotationShortDate(it)) }
                                             }
                                         },
                                         color = Muted,
@@ -1664,12 +1817,17 @@ private fun SlotPicker(
                                         maxLines = 2
                                     )
                                 }
-                                if (stat != null) RotationStatusTag(stat)
+                                if (isExempt) {
+                                    Surface(color = ForestContainer, shape = RoundedCornerShape(50)) {
+                                        Text("Exempt", color = Forest, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                                    }
+                                } else if (stat != null) RotationStatusTag(stat)
                             }
                         },
                         onClick = {
                             expanded = false
-                            if (stat != null && !stat.exempt && (stat.totalThisMonth > 0 || !stat.eligible)) pending = participant
+                            searchQuery = ""
+                            if (stat != null && (stat.totalThisMonth > 0 || !stat.eligible)) pending = participant
                             else onPick(participant.name)
                         }
                     )
@@ -2261,6 +2419,22 @@ private fun AccountsScreen(
                                     Surface(Modifier.align(Alignment.BottomEnd).size(24.dp), shape = CircleShape, color = ForestContainer, border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
                                         Box(contentAlignment = Alignment.Center) { Icon(Icons.TwoTone.AdminPanelSettings, contentDescription = "Administrator", tint = Forest, modifier = Modifier.size(15.dp)) }
                                     }
+                                }
+                            }
+                            if (!account.role.equals("admin", true) && account.status.lowercase() in setOf("active", "disabled")) {
+                                val active = account.status.equals("active", true)
+                                Surface(
+                                    color = if (active) ForestContainer else MaterialTheme.colorScheme.errorContainer,
+                                    shape = RoundedCornerShape(50),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, if (active) Forest.copy(alpha = 0.22f) else MaterialTheme.colorScheme.error.copy(alpha = 0.24f))
+                                ) {
+                                    Text(
+                                        if (active) "Active" else "Disabled",
+                                        color = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                                    )
                                 }
                             }
                         }

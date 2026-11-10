@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.37.8 — 2026-11-10
+
+- Added a compact, searchable participant picker anchored to each assignment field.
+- Hid rotation counts and rotation warnings for elders and ministerial servants, who are exempt from rotation.
+- Added Active and Disabled badges to non-administrator accounts.
+- Restyled the in-app update dialog with a two-tone icon, download progress, and an in-app APK install handoff.
+- Applied the app’s forest-green palette to the Workbook date picker in light and dark themes.
+
+
 ## v0.37.7 — 2026-11-10
 
 - Matched the Home Page upcoming meeting preview height to the portrait Preview & Export schedule viewport.
