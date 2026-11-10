@@ -13,7 +13,6 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-internal data class AvailableAppUpdate(val version: String, val apkUrl: String, val notes: String)
 internal data class AppUpdateDownloadProgress(val percent: Int?, val complete: Boolean, val failed: Boolean)
 
 internal object AppUpdateClient {

@@ -1149,7 +1149,6 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 }) { Text("Select", color = Forest) }
             },
             dismissButton = { TextButton(onClick = { datePicker = false }) { Text("Cancel", color = Forest) } },
-            colors = DatePickerDialogDefaults.colors(containerColor = AppSurface)
         ) {
             DatePicker(
                 state = pickerState,
