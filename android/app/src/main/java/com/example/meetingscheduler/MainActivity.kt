@@ -824,8 +824,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     fun shareSchedulePng() {
         val renderer=officialPreviewWebView.value
         if(renderer==null || renderer.width<=0 || renderer.height<=0){toastMessage="Hintaying mabuo ang preview bago mag-export.";return}
-        renderer.evaluateJavascript("window.scrollTo(0,0)") {
-            renderer.post {
+        renderer.scrollTo(0, 0)
+        renderer.post {
                 val bitmap=Bitmap.createBitmap(renderer.width,renderer.height,Bitmap.Config.ARGB_8888)
                 renderer.draw(Canvas(bitmap))
                 val file=File(File(context.cacheDir,"exports").apply { mkdirs() },"meeting-schedule.png")
@@ -834,7 +834,6 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 val uri=FileProvider.getUriForFile(context,"${context.packageName}.files",file)
                 val intent=Intent(Intent.ACTION_SEND).apply{type="image/png";putExtra(Intent.EXTRA_STREAM,uri);addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)}
                 context.startActivity(Intent.createChooser(intent,"Share schedule image"))
-            }
         }
     }
     fun openSaved(item: SavedSchedule) {
@@ -921,7 +920,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet(modifier = Modifier.widthIn(max = 340.dp), drawerContainerColor = AppSurface, windowInsets = WindowInsets.safeDrawing) {
-                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 12.dp)) {
+                val compactDrawer = LocalConfiguration.current.screenHeightDp < 520 || LocalDensity.current.fontScale > 1.4f
+                Column(Modifier.fillMaxSize().then(if (compactDrawer) Modifier.verticalScroll(rememberScrollState()) else Modifier).padding(horizontal = 14.dp, vertical = 12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 10.dp, bottom = 12.dp)) {
                         Box(Modifier.size(48.dp).clip(CircleShape).clickable { profileNameDraft = identityName; profileError = null; profileDialogOpen = true }) { ProfileAvatar(identityName, profilePhotoPath, 48.dp, profilePhotoDataUrl) }
                         Spacer(Modifier.width(12.dp))
@@ -929,7 +929,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     }
                     HorizontalDivider(color = SurfaceContainer)
                     Column(
-                        Modifier.fillMaxWidth().padding(top = 4.dp)
+                        Modifier.then(if (compactDrawer) Modifier else Modifier.weight(1f).verticalScroll(rememberScrollState())).fillMaxWidth().padding(top = 4.dp)
                     ) {
                         if (canAccess(Screen.HOME)) {
                             DrawerSection("OVERVIEW")
@@ -1210,7 +1210,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                             AndroidView(
                                 factory = { viewContext -> WebView(viewContext).apply {
                                     setBackgroundColor(android.graphics.Color.WHITE)
-                                    settings.javaScriptEnabled = true
+                                    settings.javaScriptEnabled = false
             settings.allowFileAccess = false
             settings.allowContentAccess = false
             settings.blockNetworkLoads = true
@@ -1560,8 +1560,9 @@ private val avatarCache = object : android.util.LruCache<String, ImageBitmap>(8 
 
 @Composable
 private fun rememberAvatarBitmap(dataUrl: String, photoPath: String? = null): ImageBitmap? {
-    val bitmap by produceState<ImageBitmap?>(null, dataUrl, photoPath) {
-        value = withContext(Dispatchers.IO) {
+    var bitmap by remember(dataUrl, photoPath) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(dataUrl, photoPath) {
+        bitmap = withContext(Dispatchers.IO) {
             val cacheKey = dataUrl.takeIf { it.isNotBlank() }?.let {
                 Base64.encodeToString(java.security.MessageDigest.getInstance("SHA-256").digest(it.toByteArray()), Base64.NO_WRAP)
             }
@@ -2147,7 +2148,7 @@ private fun OfficialScheduleWebPreview(html:String,previewWebView:MutableState<W
         factory = { context -> WebView(context).apply {
             setLayerType(View.LAYER_TYPE_HARDWARE, null)
             setBackgroundColor(android.graphics.Color.WHITE)
-            settings.javaScriptEnabled = true
+            settings.javaScriptEnabled = false
             settings.allowFileAccess = false
             settings.allowContentAccess = false
             settings.blockNetworkLoads = true
