@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.40.2 — 2026-11-10
+
+- Emphasized all drawer account roles with bold uppercase labels aligned beneath the profile photo.
+- Styled the profile sign-out action in the theme’s red error color.
+- Removed the Appearance heading and compacted profile controls, corners and spacing.
+
+
 ## v0.40.1 — 2026-11-10
 
 - Aligned the drawer’s bottom profile shortcut to the left.
