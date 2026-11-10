@@ -962,8 +962,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                                     profileError = null
                                     profileDialogOpen = true
                                     scope.launch { drawerState.close() }
-                                }.padding(vertical = 10.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
+                                }.padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalAlignment = Alignment.Start,
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             ProfileAvatar(identityName, profilePhotoPath, 54.dp, profilePhotoDataUrl)
@@ -1238,34 +1238,40 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             onDismissRequest = { profileDialogOpen = false },
             containerColor = AppSurface,
             shape = RoundedCornerShape(28.dp),
-            title = { Text("Profile & preferences", fontWeight = FontWeight.Bold) },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.TwoTone.ManageAccounts, contentDescription = null, tint = Forest, modifier = Modifier.size(24.dp))
+                    Text("Profile & preferences", fontWeight = FontWeight.Bold, fontSize = 20.sp, lineHeight = 25.sp, modifier = Modifier.weight(1f))
+                }
+            },
             text = {
                 Column(
-                    Modifier.fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.55f).dp)
+                    Modifier.fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.60f).dp)
                         .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     ProfileAvatar(identityName, profilePhotoPath, 76.dp, profilePhotoDataUrl)
                     OutlinedButton(
                         onClick = { profilePhotoPicker.launch(arrayOf("image/*")) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp)
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                        shape = RoundedCornerShape(16.dp)
                     ) {
-                        Icon(Icons.TwoTone.AddAPhoto, contentDescription = null, tint = Forest, modifier = Modifier.size(18.dp))
+                        Icon(Icons.TwoTone.AddAPhoto, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(7.dp))
-                        Text(if (profilePhotoPath.isNullOrBlank() && profilePhotoDataUrl.isBlank()) "Add photo" else "Change photo", color = Forest)
+                        Text(if (profilePhotoPath.isNullOrBlank() && profilePhotoDataUrl.isBlank()) "Add photo" else "Change photo", color = Forest, fontSize = 14.sp, maxLines = 1)
                     }
                     OutlinedTextField(
                         value = profileNameDraft,
                         onValueChange = { profileNameDraft = it; profileError = null },
                         label = { Text("Name") },
-                        leadingIcon = { Icon(Icons.TwoTone.Edit, contentDescription = null, tint = Forest) },
+                        leadingIcon = { Icon(Icons.TwoTone.Edit, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp)) },
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = Ink),
                         singleLine = true,
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Text("Naka-save sa cloud ang photo. Sa device na ito naka-save ang pangalan.", color = Muted, fontSize = 11.sp)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Surface(
                         color = ForestContainer,
@@ -1273,7 +1279,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
-                            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
@@ -1298,24 +1304,28 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                             authReady = true
                             scope.launch { drawerState.close() }
                         },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp)
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                        shape = RoundedCornerShape(16.dp)
                     ) {
-                        Icon(Icons.TwoTone.Logout, contentDescription = null, tint = Forest, modifier = Modifier.size(19.dp))
+                        Icon(Icons.TwoTone.Logout, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Sign out", color = Forest)
+                        Text("Sign out", color = Forest, fontSize = 14.sp, maxLines = 1)
                     }
                     profileError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 11.sp) }
                 }
             },
             confirmButton = {
-                TextButton(enabled = profileNameDraft.isNotBlank(), onClick = {
-                    identityName = profileNameDraft.trim()
-                    store.saveProfileName(identityUsername, identityName)
-                    profileDialogOpen = false
-                }) { Text("Save name", color = Forest) }
-            },
-            dismissButton = { TextButton(onClick = { profileDialogOpen = false }) { Text("Close", color = Muted) } }
+                ProfileDialogActions(
+                    canSave = profileNameDraft.isNotBlank(),
+                    onClose = { profileDialogOpen = false },
+                    onSave = {
+                        identityName = profileNameDraft.trim()
+                        store.saveProfileName(identityUsername, identityName)
+                        profileDialogOpen = false
+                    }
+                )
+            }
         )
     }
     if (datePicker) {
@@ -1648,6 +1658,48 @@ private fun rememberAvatarBitmap(dataUrl: String, photoPath: String? = null): Im
         }
     }
     return bitmap
+}
+
+@Composable
+private fun ProfileDialogActions(canSave: Boolean, onClose: () -> Unit, onSave: () -> Unit) {
+    val stacked = LocalConfiguration.current.screenWidthDp < 320 || LocalDensity.current.fontScale > 1.3f
+    val closeButton: @Composable (Modifier) -> Unit = { buttonModifier ->
+        OutlinedButton(
+            onClick = onClose,
+            modifier = buttonModifier.heightIn(min = 48.dp),
+            shape = RoundedCornerShape(16.dp),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Forest)
+        ) {
+            Icon(Icons.TwoTone.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Close", fontSize = 14.sp, maxLines = 1)
+        }
+    }
+    val saveButton: @Composable (Modifier) -> Unit = { buttonModifier ->
+        Button(
+            onClick = onSave,
+            enabled = canSave,
+            modifier = buttonModifier.heightIn(min = 48.dp),
+            shape = RoundedCornerShape(16.dp),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
+        ) {
+            Icon(Icons.TwoTone.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Save", fontSize = 14.sp, maxLines = 1)
+        }
+    }
+    if (stacked) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            saveButton(Modifier.fillMaxWidth())
+            closeButton(Modifier.fillMaxWidth())
+        }
+    } else {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            closeButton(Modifier.weight(1f))
+            saveButton(Modifier.weight(1f))
+        }
+    }
 }
 
 @Composable

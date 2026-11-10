@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.40.1 — 2026-11-10
+
+- Aligned the drawer’s bottom profile shortcut to the left.
+- Standardized profile actions with Material Two Tone icons and a shorter Save label.
+- Removed the profile reminder and added equal-width footer actions with stacking for narrow screens or enlarged fonts.
+
+
 ## v0.40.0 — 2026-11-10
 
 - Opened Ano ang Sasabihin Mo assignments to any active brother, including publishers.
