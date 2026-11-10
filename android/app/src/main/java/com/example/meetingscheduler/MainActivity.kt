@@ -255,6 +255,47 @@ private fun Assignment.toJson() = JSONObject().put("title",title).put("detail",d
     .put("secondaryAssignee",secondaryAssignee).put("secondaryAssistant",secondaryAssistant)
     .put("hasAssistant",hasAssistant).put("hasSecondary",hasSecondary).put("hasSecondaryAssistant",hasSecondaryAssistant)
 
+internal data class AvailableAppUpdate(val version: String, val apkUrl: String, val notes: String)
+
+@Composable
+private fun AppUpdatePrompt() {
+    val context = LocalContext.current
+    var update by remember { mutableStateOf<AvailableAppUpdate?>(null) }
+    var downloadQueued by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        update = runCatching {
+            kotlinx.coroutines.withContext(Dispatchers.IO) {
+                AppUpdateClient.checkForUpdate(BuildConfig.VERSION_NAME)
+            }
+        }.getOrNull()
+    }
+    update?.let { available ->
+        AlertDialog(
+            onDismissRequest = { update = null },
+            title = { Text("May bagong update") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Meeting Scheduler ${available.version} ay handa nang i-update.")
+                    if (available.notes.isNotBlank()) Text(available.notes, color = Muted, fontSize = 12.sp, maxLines = 4)
+                    if (downloadQueued) Text("Sinimulan na ang download. Buksan ang download notification para i-install.", color = Forest, fontSize = 12.sp)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val activity = context as? MainActivity
+                        if (activity != null && !downloadQueued) {
+                            activity.downloadAppUpdate(available.apkUrl)
+                            downloadQueued = true
+                        }
+                    }
+                ) { Text(if (downloadQueued) "Downloading…" else "I-download", color = Forest) }
+            },
+            dismissButton = { TextButton(onClick = { update = null }) { Text("Mamaya") } }
+        )
+    }
+}
+
 @Composable
 private fun MeetingSchedulerRoot(window: android.view.Window) {
     val context = LocalContext.current
@@ -272,13 +313,16 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
         MaterialTheme(colorScheme = scheme, shapes = Shapes(
             small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(26.dp)
         )) {
-            MeetingSchedulerApp(
-                darkMode = darkMode,
-                onToggleTheme = { darkMode = !darkMode; store.darkMode = darkMode },
-                store = store,
-                fontScale = appFontScale,
-                onFontScaleChange = { appFontScale = it.coerceIn(0.85f, 1.35f); store.appFontScale = appFontScale }
-            )
+            Box(Modifier.fillMaxSize()) {
+                MeetingSchedulerApp(
+                    darkMode = darkMode,
+                    onToggleTheme = { darkMode = !darkMode; store.darkMode = darkMode },
+                    store = store,
+                    fontScale = appFontScale,
+                    onFontScaleChange = { appFontScale = it.coerceIn(0.85f, 1.35f); store.appFontScale = appFontScale }
+                )
+                AppUpdatePrompt()
+            }
         }
     }
 }
