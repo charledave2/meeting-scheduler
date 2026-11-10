@@ -586,7 +586,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     LaunchedEffect(drawerState.isOpen) {
         if (drawerState.isOpen) runCatching { api.currentUser() }
-            .onSuccess { profilePhotoDataUrl = it.photoDataUrl; identityToolAccess = it.toolAccess }
+            .onSuccess { profilePhotoDataUrl = it.photoDataUrl; identityToolAccess = it.toolAccess; identityRole = it.role }
     }
     val scope = rememberCoroutineScope()
     var weekStart by rememberSaveable { mutableStateOf(store.detail("week", LocalDate.of(2026, 11, 9).toString())) }
@@ -923,7 +923,11 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 val compactDrawer = LocalConfiguration.current.screenHeightDp < 520 || LocalDensity.current.fontScale > 1.4f
                 Column(Modifier.fillMaxSize().then(if (compactDrawer) Modifier.verticalScroll(rememberScrollState()) else Modifier).padding(horizontal = 14.dp, vertical = 12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 10.dp, bottom = 12.dp)) {
-                        Box(Modifier.size(48.dp).clip(CircleShape).clickable { profileNameDraft = identityName; profileError = null; profileDialogOpen = true }) { ProfileAvatar(identityName, profilePhotoPath, 48.dp, profilePhotoDataUrl) }
+                        Image(
+                            painter = androidx.compose.ui.res.painterResource(R.drawable.ic_meeting_scheduler),
+                            contentDescription = "Meeting Scheduler",
+                            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))
+                        )
                         Spacer(Modifier.width(12.dp))
                         Column { Text("Meeting Scheduler", fontWeight = FontWeight.Bold, fontSize = 17.sp); Text("Midweek meeting workspace", color = Muted, fontSize = 12.sp) }
                     }
@@ -951,25 +955,29 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     }
                     Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp)) {
                         HorizontalDivider(color = SurfaceContainer, modifier = Modifier.padding(bottom = 6.dp))
-                        TextButton(onClick = onToggleTheme, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
-                            Icon(if (darkMode) Icons.TwoTone.LightMode else Icons.TwoTone.DarkMode, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(if (darkMode) "Light Mode" else "Dark Mode", color = Forest, fontSize = 13.sp)
-                        }
-                        TextButton(onClick = {
-                            val oldSession = api.signOut()
-                            authScope.launch { api.revokeSession(oldSession) }
-                            signedIn = false
-                            identityName = ""
-                            identityUsername = ""
-                            identityRole = ""
-                            loginError = null
-                            authReady = true
-                            scope.launch { drawerState.close() }
-                        }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)) {
-                            Icon(Icons.TwoTone.Logout, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Sign Out", color = Forest, fontSize = 13.sp)
+                        Column(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp))
+                                .clickable(onClickLabel = "Open profile and preferences") {
+                                    profileNameDraft = identityName
+                                    profileError = null
+                                    profileDialogOpen = true
+                                    scope.launch { drawerState.close() }
+                                }.padding(vertical = 10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            ProfileAvatar(identityName, profilePhotoPath, 54.dp, profilePhotoDataUrl)
+                            Text(
+                                when (identityRole.lowercase(Locale.ROOT)) {
+                                    "admin", "administrator" -> "Administrator"
+                                    "scheduler" -> "Scheduler"
+                                    "viewer" -> "Viewer"
+                                    else -> identityRole
+                                },
+                                color = Muted,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
                         }
                     }
                 }
@@ -1230,24 +1238,73 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             onDismissRequest = { profileDialogOpen = false },
             containerColor = AppSurface,
             shape = RoundedCornerShape(28.dp),
-            title = { Text("Edit Profile", fontWeight = FontWeight.Bold) },
+            title = { Text("Profile & preferences", fontWeight = FontWeight.Bold) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    Modifier.fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.55f).dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     ProfileAvatar(identityName, profilePhotoPath, 76.dp, profilePhotoDataUrl)
-                    OutlinedButton(onClick = { profilePhotoPicker.launch(arrayOf("image/*")) }, shape = RoundedCornerShape(18.dp)) {
+                    OutlinedButton(
+                        onClick = { profilePhotoPicker.launch(arrayOf("image/*")) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp)
+                    ) {
                         Icon(Icons.TwoTone.AddAPhoto, contentDescription = null, tint = Forest, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(7.dp))
-                        Text(if (profilePhotoPath.isNullOrBlank() && profilePhotoDataUrl.isBlank()) "Add Photo" else "Change Photo", color = Forest)
+                        Text(if (profilePhotoPath.isNullOrBlank() && profilePhotoDataUrl.isBlank()) "Add photo" else "Change photo", color = Forest)
                     }
                     OutlinedTextField(
                         value = profileNameDraft,
                         onValueChange = { profileNameDraft = it; profileError = null },
                         label = { Text("Name") },
+                        leadingIcon = { Icon(Icons.TwoTone.Edit, contentDescription = null, tint = Forest) },
                         singleLine = true,
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Text("Naka-save sa cloud ang profile photo. Sa device na ito naman naka-save ang pangalan.", color = Muted, fontSize = 11.sp)
+                    Text("Naka-save sa cloud ang photo. Sa device na ito naka-save ang pangalan.", color = Muted, fontSize = 11.sp)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Surface(
+                        color = ForestContainer,
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(if (darkMode) Icons.TwoTone.DarkMode else Icons.TwoTone.LightMode, contentDescription = null, tint = Forest)
+                            Column(Modifier.weight(1f)) {
+                                Text("Appearance", color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                Text(if (darkMode) "Dark mode" else "Light mode", color = Forest, fontSize = 11.sp)
+                            }
+                            Switch(checked = darkMode, onCheckedChange = { checked -> if (checked != darkMode) onToggleTheme() })
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            profileDialogOpen = false
+                            val oldSession = api.signOut()
+                            authScope.launch { api.revokeSession(oldSession) }
+                            signedIn = false
+                            identityName = ""
+                            identityUsername = ""
+                            identityRole = ""
+                            loginError = null
+                            authReady = true
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp)
+                    ) {
+                        Icon(Icons.TwoTone.Logout, contentDescription = null, tint = Forest, modifier = Modifier.size(19.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Sign out", color = Forest)
+                    }
                     profileError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 11.sp) }
                 }
             },
@@ -1256,9 +1313,9 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     identityName = profileNameDraft.trim()
                     store.saveProfileName(identityUsername, identityName)
                     profileDialogOpen = false
-                }) { Text("Save", color = Forest) }
+                }) { Text("Save name", color = Forest) }
             },
-            dismissButton = { TextButton(onClick = { profileDialogOpen = false }) { Text("Cancel", color = Muted) } }
+            dismissButton = { TextButton(onClick = { profileDialogOpen = false }) { Text("Close", color = Muted) } }
         )
     }
     if (datePicker) {
@@ -1334,26 +1391,33 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
 @Composable
 private fun MeetingSplashScreen() {
     var reveal by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { delay(140); reveal = true }
-    Surface(color = Color(0xFF173522), modifier = Modifier.fillMaxSize()) {
+    val compact = LocalConfiguration.current.screenHeightDp < 440
+    LaunchedEffect(Unit) { delay(90); reveal = true }
+    Surface(color = Color(0xFF0B4A2B), modifier = Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            AnimatedVisibility(visible = reveal, enter = fadeIn(tween(500)) + scaleIn(tween(500))) {
+            AnimatedVisibility(
+                visible = reveal,
+                enter = fadeIn(tween(480)) + scaleIn(tween(600), initialScale = 0.78f)
+            ) {
                 Image(
-                    painter = androidx.compose.ui.res.painterResource(com.example.meetingscheduler.R.drawable.ic_meeting_scheduler),
-                    contentDescription = null,
-                    modifier = Modifier.size(120.dp)
+                    painter = androidx.compose.ui.res.painterResource(R.drawable.ic_meeting_scheduler),
+                    contentDescription = "Meeting Scheduler",
+                    modifier = Modifier.size(if (compact) 76.dp else 112.dp)
                 )
             }
-            Spacer(Modifier.height(20.dp))
-            AnimatedVisibility(visible = reveal, enter = fadeIn(tween(420, delayMillis = 120)) + slideInVertically(tween(420, delayMillis = 120)) { it / 5 }) {
+            Spacer(Modifier.height(if (compact) 10.dp else 18.dp))
+            AnimatedVisibility(
+                visible = reveal,
+                enter = fadeIn(tween(380, delayMillis = 140)) + slideInVertically(tween(440, delayMillis = 140)) { it / 4 }
+            ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Meeting Scheduler", color = Color(0xFFDDE9D9), fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(6.dp))
-                    Text("Midweek meeting workspace", color = Color(0xFFA8C3A4), fontSize = 13.sp)
+                    Text("Meeting Scheduler", color = Color(0xFFF6F0D8), fontSize = if (compact) 20.sp else 23.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(5.dp))
+                    Text("Midweek meeting workspace", color = Color(0xFFB8D7AF), fontSize = 12.sp)
                 }
             }
         }
@@ -1891,8 +1955,8 @@ private fun AssignmentPicker(index: Int, part: Assignment, eligible: List<Partic
             Spacer(Modifier.width(9.dp))
             Column(Modifier.weight(1f)) { Text(part.title.substringAfter(". ",part.title), fontWeight = FontWeight.Bold, fontSize = 13.sp, lineHeight=16.sp); Text(listOf(part.time,part.duration,part.detail).filter{it.isNotBlank()}.joinToString(" · "), color = Muted, fontSize = 10.sp, lineHeight = 13.sp) }
         }
-        val title=part.title.lowercase(); val bibleReading=title.contains("pagbabasa ng bibliya"); val bibleStudy=title.contains("pag-aaral ng kongregasyon sa bibliya"); val what=title.contains("ano ang sasabihin mo")
-        val qualified=part.section=="living" || (part.section=="treasures" && !bibleReading) || what
+        val title=part.title.lowercase(Locale.ROOT); val bibleReading=title.contains("pagbabasa ng bibliya"); val bibleStudy=title.contains("pag-aaral ng kongregasyon sa bibliya"); val what=title.contains("ano ang sasabihin mo")
+        val qualified=!what && (part.section=="living" || (part.section=="treasures" && !bibleReading))
         val brothers=eligible.filter{it.isBrother() && !it.unbaptized}; val elders=brothers.filter{it.isAppointedBrother()}
         if(bibleStudy) {
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) { SlotPicker("Conductor",part.person,elders,Modifier.weight(1f),rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("main",it)}; SlotPicker("Reader",part.assistant,brothers,Modifier.weight(1f),rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("assistant",it)} }
@@ -1902,7 +1966,7 @@ private fun AssignmentPicker(index: Int, part: Assignment, eligible: List<Partic
                 Column(Modifier.weight(1f)){SlotPicker("Second Hall",part.secondaryAssignee,if(qualified) elders else if(bibleReading) brothers else eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("secondary",it)}; if(part.hasSecondaryAssistant) SlotPicker("Assistant",part.secondaryAssistant,eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("secondaryAssistant",it)} }
             }
         } else {
-            SlotPicker(if(qualified) "Qualified brother" else "Participant",part.person,if(qualified) elders else eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("main",it)}
+            SlotPicker(if(what) "Brother" else if(qualified) "Qualified brother" else "Participant",part.person,if(what) eligible.filter { it.isBrother() } else if(qualified) elders else eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("main",it)}
             if(part.hasAssistant&&!what) SlotPicker("Assistant",part.assistant,eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("assistant",it)}
         }
     }
@@ -2254,8 +2318,8 @@ private fun buildOfficialScheduleText(
                             if (part.secondaryAssistant.isNotBlank()) appendLine("       Assistant : ${part.secondaryAssistant}")
                         }
                         else -> {
-                            val qualified = part.section == "living" || (part.section == "treasures" && !isBibleReading(part)) || isWhat(part)
-                            appendLine("       ${if (qualified) "Qualified brother" else "Participant"} : ${part.person.ifBlank { "—" }}")
+                            val qualified = !isWhat(part) && (part.section == "living" || (part.section == "treasures" && !isBibleReading(part)))
+                            appendLine("       ${if (isWhat(part)) "Brother" else if (qualified) "Qualified brother" else "Participant"} : ${part.person.ifBlank { "—" }}")
                             if (part.assistant.isNotBlank()) appendLine("       Assistant : ${part.assistant}")
                         }
                     }

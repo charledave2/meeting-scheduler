@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.40.0 — 2026-11-10
+
+- Opened Ano ang Sasabihin Mo assignments to any active brother, including publishers.
+- Matched the Android launch animation and in-app splash to the current app icon.
+- Replaced the drawer header profile shortcut with the app icon.
+- Added a bottom profile photo shortcut with the signed-in account role.
+- Grouped photo changes, local display-name editing, appearance and sign-out in a scrollable profile dialog.
+
+
 ## v0.39.0 — 2026-11-10
 
 - Completed forest-green Material3 surface colors for dialogs, inputs, menus and both themes.
