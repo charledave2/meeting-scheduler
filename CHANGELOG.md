@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.43.0 — 2026-11-12
+
+- Replaced the side drawer with compact forest green bottom navigation for Home, Workbook, History and Account & Settings.
+- Added a raised center Tools button with a springy tap animation that opens Assignments, Preview & Export and Participants.
+- Shows only destinations each account can access; preserves the existing profile editor, theme and biometric lock settings.
+- Kept the existing app identity and signing configuration so the update installs over the previous official version with its existing app data.
+
+
 ## v0.42.1 — 2026-11-11
 
 - Moved the theme switcher and biometric lock from the profile dialog to Account & Settings for every signed-in role.
