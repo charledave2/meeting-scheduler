@@ -1,0 +1,64 @@
+name: Build navigation preview APK
+
+on:
+  push:
+    branches: [preview/meeting-bottom-navigation]
+    paths:
+      - "android/**"
+      - ".github/workflows/navigation-preview.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - name: Check out preview source
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+      - name: Install Android SDK packages
+        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+      - name: Build isolated navigation preview
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Run app lock regression tests
+        run: gradle --no-daemon :app:testDebugUnitTest
+      - name: Android lint
+        run: |
+          if ! gradle --no-daemon :app:lintDebug; then
+            cat app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
+            exit 1
+          fi
+      - name: Verify separate package and signing
+        run: |
+          NAV_APK=app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$NAV_APK" > nav-badging.txt
+          grep -F "package: name='com.example.meetingscheduler.navpreview'" nav-badging.txt
+          grep -F "application-label:'JW Meeting Scheduler Preview'" nav-badging.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump xmltree "$NAV_APK" AndroidManifest.xml > nav-manifest.txt
+          grep -F 'com.example.meetingscheduler.navpreview.files' nav-manifest.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$NAV_APK"
+          cp "$NAV_APK" JW-Meeting-Scheduler-Navigation-Preview.apk
+      - name: Upload test APK only
+        uses: actions/upload-artifact@v4
+        with:
+          name: JW-Meeting-Scheduler-Navigation-Preview
+          path: android/JW-Meeting-Scheduler-Navigation-Preview.apk
+          retention-days: 7
+          if-no-files-found: error

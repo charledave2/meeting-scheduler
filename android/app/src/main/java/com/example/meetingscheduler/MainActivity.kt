@@ -20,6 +20,7 @@ import android.widget.Toast
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -285,7 +286,7 @@ private data class SavedSchedule(
     val assignments: List<Assignment> = emptyList(),
     val chairman: String = "", val openingPrayer: String = "", val adviser: String = "", val audienceGroup: String = ""
 )
-private enum class Screen(val title: String, val section: String) {
+internal enum class Screen(val title: String, val section: String) {
     HOME("Home Page", "OVERVIEW"),
     DETAILS("Workbook", "SCHEDULE TOOLS"),
     ASSIGNMENTS("Assignments", "SCHEDULE TOOLS"),
@@ -534,7 +535,7 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
                             onFontScaleChange = { appFontScale = it.coerceIn(0.85f, 1.35f); store.appFontScale = appFontScale },
                             appLock = appLock
                         )
-                        AppUpdatePrompt()
+                        if (!BuildConfig.NAVIGATION_PREVIEW) AppUpdatePrompt()
                     }
                 }
             }
@@ -613,12 +614,11 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
 
     var current by rememberSaveable { mutableStateOf(Screen.HOME) }
     val officialPreviewWebView = remember { mutableStateOf<WebView?>(null) }
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
-    LaunchedEffect(drawerState.isOpen) {
-        if (drawerState.isOpen) runCatching { api.currentUser() }
+    var toolsOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(profileDialogOpen, toolsOpen) {
+        if (profileDialogOpen || toolsOpen) runCatching { api.currentUser() }
             .onSuccess { profilePhotoDataUrl = it.photoDataUrl; identityToolAccess = it.toolAccess; identityRole = it.role }
     }
-    val scope = rememberCoroutineScope()
     var weekStart by rememberSaveable { mutableStateOf(store.detail("week", LocalDate.of(2026, 11, 9).toString())) }
     var bible by rememberSaveable { mutableStateOf(store.detail("bible", "Jeremias 31")) }
     var openingSong by rememberSaveable { mutableStateOf(store.detail("opening", "27")) }
@@ -947,253 +947,211 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         accountPhotoTarget = null
     }
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            ModalDrawerSheet(modifier = Modifier.widthIn(max = 340.dp), drawerContainerColor = AppSurface, windowInsets = WindowInsets.safeDrawing) {
-                val compactDrawer = LocalConfiguration.current.screenHeightDp < 520 || LocalDensity.current.fontScale > 1.4f
-                Column(Modifier.fillMaxSize().then(if (compactDrawer) Modifier.verticalScroll(rememberScrollState()) else Modifier).padding(horizontal = 14.dp, vertical = 12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 10.dp, bottom = 12.dp)) {
-                        Image(
-                            painter = androidx.compose.ui.res.painterResource(R.drawable.ic_meeting_scheduler),
-                            contentDescription = "JW Meeting Scheduler",
-                            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column { Text("JW Meeting Scheduler", fontWeight = FontWeight.Bold, fontSize = 17.sp); Text("Midweek meeting workspace", color = Muted, fontSize = 12.sp) }
-                    }
-                    HorizontalDivider(color = SurfaceContainer)
-                    Column(
-                        Modifier.then(if (compactDrawer) Modifier else Modifier.weight(1f).verticalScroll(rememberScrollState())).fillMaxWidth().padding(top = 4.dp)
-                    ) {
-                        if (canAccess(Screen.HOME)) {
-                            DrawerSection("OVERVIEW")
-                            DrawerEntry(Icons.TwoTone.Home, Screen.HOME, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                        }
-                        if (listOf(Screen.DETAILS, Screen.ASSIGNMENTS, Screen.PREVIEW).any(::canAccess)) {
-                            DrawerSection("SCHEDULE TOOLS")
-                            if (canAccess(Screen.DETAILS)) DrawerEntry(Icons.TwoTone.CalendarMonth, Screen.DETAILS, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                            if (canAccess(Screen.ASSIGNMENTS)) DrawerEntry(Icons.TwoTone.Assignment, Screen.ASSIGNMENTS, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                            if (canAccess(Screen.PREVIEW)) DrawerEntry(Icons.TwoTone.Preview, Screen.PREVIEW, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                        }
-                        if (canAccess(Screen.PARTICIPANTS) || canAccess(Screen.HISTORY)) {
-                            DrawerSection("CONGREGATION")
-                            if (canAccess(Screen.PARTICIPANTS)) DrawerEntry(Icons.TwoTone.Groups, Screen.PARTICIPANTS, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                            if (canAccess(Screen.HISTORY)) DrawerEntry(Icons.TwoTone.History, Screen.HISTORY, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                        }
-                        DrawerSection("ACCOUNT")
-                        DrawerEntry(Icons.TwoTone.ManageAccounts, Screen.ACCOUNTS, current) { destination -> navigateTo(destination); scope.launch { drawerState.close() } }
-                    }
-                    Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp)) {
-                        HorizontalDivider(color = SurfaceContainer, modifier = Modifier.padding(bottom = 6.dp))
-                        Column(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                                .clickable(onClickLabel = "Open profile") {
-                                    profileNameDraft = identityName
-                                    profileError = null
-                                    profileDialogOpen = true
-                                    scope.launch { drawerState.close() }
-                                }.padding(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalAlignment = Alignment.Start,
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier.width(IntrinsicSize.Max),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                ProfileAvatar(identityName, profilePhotoPath, 54.dp, profilePhotoDataUrl)
-                                Text(
-                                    when (identityRole.lowercase(Locale.ROOT)) {
-                                        "admin", "administrator" -> "ADMINISTRATOR"
-                                        "scheduler" -> "SCHEDULER"
-                                        "viewer" -> "VIEWER"
-                                        else -> identityRole.uppercase(Locale.ROOT)
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                    color = Forest,
-                                    fontSize = 12.sp,
-                                    letterSpacing = 0.6.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-                }
-            }
+    val availableScreens = Screen.entries.filter(::canAccess).toSet()
+    fun openProfile() {
+        profileNameDraft = identityName
+        profileError = null
+        profileDialogOpen = true
+    }
+    BackHandler(enabled = current != Screen.HOME && canAccess(Screen.HOME) && !profileDialogOpen && !toolsOpen) {
+        navigateTo(Screen.HOME)
+    }
+    if (toolsOpen) {
+        PreviewToolsSheet(availableScreens, current, onDismiss = { toolsOpen = false }) {
+            toolsOpen = false
+            navigateTo(it)
         }
-    ) {
-        Scaffold(
-            containerColor = AppSurface,
-            topBar = {
-                CenterAlignedTopAppBar(
-                    title = {},
-                    navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Box(Modifier.size(36.dp).background(ForestContainer, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-                                Icon(Icons.TwoTone.Menu, contentDescription = "Open navigation menu", tint = Forest)
-                            }
-                        }
-                    },
-                    actions = {
-
-                    },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = AppSurface)
-                )
-            },
-            snackbarHost = { SnackbarHost(hostState = remember { SnackbarHostState() }) },
-            contentWindowInsets = WindowInsets.safeDrawing
-        ) { insets ->
-            val scroll = Modifier.fillMaxSize().padding(insets)
-            AnimatedContent(
-                targetState = current,
-                transitionSpec = {
-                    (fadeIn(tween(120)) + slideInHorizontally(tween(140)) { it / 22 }) togetherWith
-                        (fadeOut(tween(80)) + slideOutHorizontally(tween(100)) { -it / 28 })
+    }
+    Scaffold(
+        containerColor = AppSurface,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("JW Meeting Scheduler", fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 2)
+                        Text("NAVIGATION PREVIEW", color = Forest, fontSize = 9.sp, letterSpacing = 0.8.sp)
+                    }
                 },
-                label = "screen transition"
-            ) { destination -> when (destination) {
-                Screen.HOME -> HomeScreen(
-                    modifier = scroll,
-                    accountName = identityName,
-                    canCreateSchedule = canEdit(Screen.DETAILS),
-                    schedules = homeSchedules,
-                    loading = homeBusy,
-                    error = homeError,
-                    onRefresh = { homeLoaded = false },
-                    onOpenSchedule = ::openUpcomingPreview,
-                    onCreateSchedule = { navigateTo(Screen.DETAILS) }
-                )
-                Screen.DETAILS -> DetailsScreen(
-                    modifier = scroll, weekLabel = weekLabel, bible = bible, onBible = { bible = it; persistDetails() },
-                    openingSong = openingSong, onOpeningSong = { openingSong = it; persistDetails() }, closingSong = closingSong,
-                    onClosingSong = { closingSong = it; persistDetails() },
-                    onPickDate = { datePicker = true }, onImport = { authScope.launch { fetchWorkbookForSelectedWeek() } },
-                    workbookStatus = workbookStatus,
-                    workbookBusy = workbookBusy, workbookCaptureLog = workbookCaptureLog,
-                    canContinue = !workbookBusy && participantsLoaded && !participantsBusy,
-                    canContinueToAssignments = canAccess(Screen.ASSIGNMENTS),
-                    readOnly = !canEdit(Screen.DETAILS),
-                    onNext = { navigateTo(Screen.ASSIGNMENTS) }
-                )
-                Screen.ASSIGNMENTS -> AssignmentsScreen(
-                    modifier = scroll, parts = parts, eligible = eligible, rotation = rotationStats,
-                    rotationBusy = rotationBusy, rotationError = rotationError,
-                    chairman=chairman, openingPrayer=openingPrayer, adviser=adviser, audienceGroup=audienceGroup,
-                    onRole = { role, value ->
-                        if (role != "audience_group" && value.isNotBlank()) {
-                            parts.indices.forEach { index -> parts[index] = parts[index].withoutParticipant(value) }
-                            store.saveAssignments(parts.toList())
-                            if (role != "chairman" && chairman.equals(value, true)) { chairman = ""; store.setDetail("chairman", "") }
-                            if (role != "opening_prayer" && openingPrayer.equals(value, true)) { openingPrayer = ""; store.setDetail("opening_prayer", "") }
-                            if (role != "adviser" && adviser.equals(value, true)) { adviser = ""; store.setDetail("adviser", "") }
-                        }
-                        when (role) {
-                            "chairman" -> chairman = value
-                            "opening_prayer" -> openingPrayer = value
-                            "adviser" -> adviser = value
-                            else -> audienceGroup = value
-                        }
-                        store.setDetail(role, value)
-                    },
-                    isAdmin = signedIn && identityRole == "admin", readOnly = !canEdit(Screen.ASSIGNMENTS), canContinueExport = canAccess(Screen.PREVIEW),
-                    onAssign = { index, slot, name ->
-                        if (name.isNotBlank()) {
-                            parts.indices.forEach { i -> parts[i] = parts[i].withoutParticipant(name) }
-                            if (chairman.equals(name, true)) { chairman = ""; store.setDetail("chairman", "") }
-                            if (openingPrayer.equals(name, true)) { openingPrayer = ""; store.setDetail("opening_prayer", "") }
-                            if (adviser.equals(name, true)) { adviser = ""; store.setDetail("adviser", "") }
-                        }
-                        assignParticipantToOneSlot(parts, index, slot, name)
-                        store.saveAssignments(parts.toList())
-                    },
-                    onSaveCloud = ::saveToCloud, onContinueExport = { navigateTo(Screen.PREVIEW) }
-                )
-                Screen.PREVIEW -> PreviewScreen(
-                    modifier = scroll, weekStart = weekStart, bible = bible, openingSong = openingSong,
-                    closingSong = closingSong, parts = parts, chairman=chairman, openingPrayer=openingPrayer,
-                    adviser=adviser, audienceGroup=audienceGroup, previewWebView=officialPreviewWebView, allowExport=canEdit(Screen.PREVIEW),
-                    onExportText = {
-                        val text = buildOfficialScheduleText(weekStart, bible, openingSong, closingSong, parts, chairman, openingPrayer, adviser, audienceGroup)
-                        val file = File(File(context.cacheDir, "exports").apply { mkdirs() }, "meeting-schedule-${weekStart}.txt")
-                        file.writeText(text, Charsets.UTF_8)
-                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
-                        val intent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_STREAM, uri)
-                            putExtra(Intent.EXTRA_SUBJECT, "Meeting schedule · $weekLabel")
-                            putExtra(Intent.EXTRA_TEXT, "Iskedyul ng Pulong ng Gitnang Sanlinggo · $weekLabel")
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            clipData = android.content.ClipData.newUri(context.contentResolver, "Meeting schedule text", uri)
-                        }
-                        context.startActivity(Intent.createChooser(intent, "Share schedule text"))
-                    }, onPng = ::shareSchedulePng
-                )
-                Screen.PARTICIPANTS -> {
-                    ParticipantsScreen(modifier = scroll, participants = participants,
-                        onAdd = { name -> participants.add(0, Participant(name)); store.saveParticipants(participants.toList()); toastMessage = "Naidagdag si $name" },
-                        onToggle = { index -> participants[index] = participants[index].copy(enabled = !participants[index].enabled); store.saveParticipants(participants.toList()) },
-                        onEdit = { original, changed -> authScope.launch {
-                            runCatching { if (changed.id > 0 && signedIn) api.updateMember(changed.id, changed.name, changed.appointment, changed.service, changed.gender, changed.unbaptized) else JSONObject() }
-                                .onSuccess { response ->
-                                    if (changed.unbaptized && !response.optBoolean("unbaptized",false)) { toastMessage = "Hindi pa updated ang website API. I-deploy muna ang backend update." }
-                                    else participants.indexOfFirst { it.id == original.id && it.name == original.name }.takeIf { it >= 0 }?.let { index -> participants[index] = changed; store.saveParticipants(participants.toList()); toastMessage = "Na-update si ${changed.name}" }
-                                }
-                                .onFailure { toastMessage = it.message ?: "Hindi na-update ang participant" }
-                        } },
-                        isAdmin=participantAdmin,
-                        canEdit=canEdit(Screen.PARTICIPANTS) && participantCanEdit,
-                        onRefresh={participantsLoaded=false},
-                        onSetActive={ person,active -> authScope.launch {
-                            runCatching { api.setMemberActive(person.id,active) }.onSuccess {
-                                val i=participants.indexOfFirst { it.id==person.id }; if(i>=0){participants[i]=participants[i].copy(enabled=active);store.saveParticipants(participants.toList())};toastMessage=if(active)"Na-activate si ${person.name}" else "Ginawang inactive si ${person.name}"
-                            }.onFailure{toastMessage=it.message?:"Hindi nabago ang status"}
-                        } },
-                        onDelete={ person -> authScope.launch {
-                            runCatching { api.deleteMember(person.id) }.onSuccess { response -> if(response.optBoolean("deleted",false)){participants.removeAll { it.id==person.id };store.saveParticipants(participants.toList());toastMessage="Na-delete si ${person.name}"}else toastMessage="Hindi pa updated ang website API para sa permanent delete." }
-                                .onFailure{toastMessage=it.message?:"Hindi na-delete ang participant"}
-                        } })
-                }
-                Screen.HISTORY -> {
-                    LaunchedEffect(current, signedIn, historyLoaded) { if (current == Screen.HISTORY && signedIn && !historyLoaded) runCatching { api.schedules() }.onSuccess { remoteRows = it; historyLoaded=true; cloudStatus = "History mula sa website" }.onFailure { cloudStatus = "Hindi makuha ang history: ${it.message}" } }
-                    HistoryScreen(modifier = scroll, remoteSchedules = remoteRows, cloudStatus = cloudStatus, isAdmin=signedIn && identityRole=="admin", canEdit=canEdit(Screen.HISTORY), canCreate=canEdit(Screen.DETAILS), onView={loadRemoteSchedule(it,false)}, onEdit={loadRemoteSchedule(it,true)}, onDelete={remote -> authScope.launch { runCatching { api.deleteSchedule(remote.id) }.onSuccess { historyLoaded=false; toastMessage="Na-delete ang schedule" }.onFailure { toastMessage=it.message ?: "Hindi ma-delete" } }}, onNew = { editingRemoteId=0; navigateTo(Screen.DETAILS) })
-                }
-                Screen.ACCOUNTS -> {
-                    LaunchedEffect(current, signedIn, accountsLoaded, accountReloadTick) {
-                        if(current==Screen.ACCOUNTS && signedIn && identityRole.equals("admin", true) && !accountsLoaded && !accountsBusy) {
-                            accountsBusy=true; accountsError=null
-                            try {
-                                runCatching { api.accounts() }.onSuccess { remoteAccounts=it;accountsLoaded=true }
-                                    .onFailure { accountsError=it.message ?: "Hindi makuha ang accounts." }
-                            } finally { accountsBusy=false }
-                        }
+                navigationIcon = {
+                    Image(androidx.compose.ui.res.painterResource(R.drawable.ic_meeting_scheduler),
+                        contentDescription = null, modifier = Modifier.padding(start = 14.dp, end = 8.dp).size(34.dp))
+                },
+                actions = {
+                    Column(
+                        Modifier.padding(end = 12.dp).clip(RoundedCornerShape(16.dp))
+                            .clickable(onClickLabel = "Open profile", onClick = ::openProfile)
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        ProfileAvatar(identityName, profilePhotoPath, 28.dp, profilePhotoDataUrl)
+                        Text(when (identityRole.lowercase(Locale.ROOT)) {
+                            "admin", "administrator" -> "ADMINISTRATOR"
+                            else -> identityRole.uppercase(Locale.ROOT)
+                        }, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Forest)
                     }
-                    AccountsScreen(
-                        modifier=scroll, accounts=remoteAccounts, loading=accountsBusy, error=accountsError,
-                        currentUsername=identityUsername, isAdmin=identityRole.equals("admin", true),
-                        fontScale=fontScale, onFontScaleChange=onFontScaleChange,
-                        darkMode=darkMode, onToggleTheme=onToggleTheme, appLock=appLock,
-                        onRefresh={accountsLoaded=false;accountReloadTick++},
-                        onUploadPhoto={ account -> accountPhotoTarget=account; accountPhotoPicker.launch("image/*") },
-                        onAction={ account,action,role,password -> authScope.launch {
-                            accountsBusy=true;accountsError=null
-                            runCatching { api.accountAction(account.id,action,role,password) }
-                                .onSuccess { response -> toastMessage=response.optString("message","Account updated.");accountsLoaded=false;accountReloadTick++ }
-                                .onFailure { accountsError=it.message ?: "Hindi na-update ang account." }
-                            accountsBusy=false
-                        } },
-                        onUpdateToolAccess={ account, modes -> authScope.launch {
-                            accountsBusy=true; accountsError=null
-                            runCatching { api.updateAccountToolAccess(account.id, modes) }
-                                .onSuccess { response -> toastMessage=response.optString("message","Tool access updated."); accountsLoaded=false; accountReloadTick++ }
-                                .onFailure { accountsError=it.message ?: "Hindi na-save ang tool access." }
-                            accountsBusy=false
-                        } }
-                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = AppSurface)
+            )
+        },
+        bottomBar = {
+            PreviewBottomNavigation(current, availableScreens, onNavigate = ::navigateTo) {
+                if (availableScreens.any { it in setOf(Screen.ASSIGNMENTS, Screen.PREVIEW, Screen.PARTICIPANTS) }) {
+                    toolsOpen = true
+                } else openProfile()
+            }
+        },
+        snackbarHost = { SnackbarHost(hostState = remember { SnackbarHostState() }) },
+        contentWindowInsets = WindowInsets.safeDrawing
+    ) { insets ->
+        val scroll = Modifier.fillMaxSize().padding(insets)
+        AnimatedContent(
+            targetState = current,
+            transitionSpec = {
+                (fadeIn(tween(120)) + slideInHorizontally(tween(140)) { it / 22 }) togetherWith
+                    (fadeOut(tween(80)) + slideOutHorizontally(tween(100)) { -it / 28 })
+            },
+            label = "screen transition"
+        ) { destination -> when (destination) {
+            Screen.HOME -> HomeScreen(
+                modifier = scroll,
+                accountName = identityName,
+                canCreateSchedule = canEdit(Screen.DETAILS),
+                schedules = homeSchedules,
+                loading = homeBusy,
+                error = homeError,
+                onRefresh = { homeLoaded = false },
+                onOpenSchedule = ::openUpcomingPreview,
+                onCreateSchedule = { navigateTo(Screen.DETAILS) }
+            )
+            Screen.DETAILS -> DetailsScreen(
+                modifier = scroll, weekLabel = weekLabel, bible = bible, onBible = { bible = it; persistDetails() },
+                openingSong = openingSong, onOpeningSong = { openingSong = it; persistDetails() }, closingSong = closingSong,
+                onClosingSong = { closingSong = it; persistDetails() },
+                onPickDate = { datePicker = true }, onImport = { authScope.launch { fetchWorkbookForSelectedWeek() } },
+                workbookStatus = workbookStatus,
+                workbookBusy = workbookBusy, workbookCaptureLog = workbookCaptureLog,
+                canContinue = !workbookBusy && participantsLoaded && !participantsBusy,
+                canContinueToAssignments = canAccess(Screen.ASSIGNMENTS),
+                readOnly = !canEdit(Screen.DETAILS),
+                onNext = { navigateTo(Screen.ASSIGNMENTS) }
+            )
+            Screen.ASSIGNMENTS -> AssignmentsScreen(
+                modifier = scroll, parts = parts, eligible = eligible, rotation = rotationStats,
+                rotationBusy = rotationBusy, rotationError = rotationError,
+                chairman=chairman, openingPrayer=openingPrayer, adviser=adviser, audienceGroup=audienceGroup,
+                onRole = { role, value ->
+                    if (role != "audience_group" && value.isNotBlank()) {
+                        parts.indices.forEach { index -> parts[index] = parts[index].withoutParticipant(value) }
+                        store.saveAssignments(parts.toList())
+                        if (role != "chairman" && chairman.equals(value, true)) { chairman = ""; store.setDetail("chairman", "") }
+                        if (role != "opening_prayer" && openingPrayer.equals(value, true)) { openingPrayer = ""; store.setDetail("opening_prayer", "") }
+                        if (role != "adviser" && adviser.equals(value, true)) { adviser = ""; store.setDetail("adviser", "") }
+                    }
+                    when (role) {
+                        "chairman" -> chairman = value
+                        "opening_prayer" -> openingPrayer = value
+                        "adviser" -> adviser = value
+                        else -> audienceGroup = value
+                    }
+                    store.setDetail(role, value)
+                },
+                isAdmin = signedIn && identityRole == "admin", readOnly = !canEdit(Screen.ASSIGNMENTS), canContinueExport = canAccess(Screen.PREVIEW),
+                onAssign = { index, slot, name ->
+                    if (name.isNotBlank()) {
+                        parts.indices.forEach { i -> parts[i] = parts[i].withoutParticipant(name) }
+                        if (chairman.equals(name, true)) { chairman = ""; store.setDetail("chairman", "") }
+                        if (openingPrayer.equals(name, true)) { openingPrayer = ""; store.setDetail("opening_prayer", "") }
+                        if (adviser.equals(name, true)) { adviser = ""; store.setDetail("adviser", "") }
+                    }
+                    assignParticipantToOneSlot(parts, index, slot, name)
+                    store.saveAssignments(parts.toList())
+                },
+                onSaveCloud = ::saveToCloud, onContinueExport = { navigateTo(Screen.PREVIEW) }
+            )
+            Screen.PREVIEW -> PreviewScreen(
+                modifier = scroll, weekStart = weekStart, bible = bible, openingSong = openingSong,
+                closingSong = closingSong, parts = parts, chairman=chairman, openingPrayer=openingPrayer,
+                adviser=adviser, audienceGroup=audienceGroup, previewWebView=officialPreviewWebView, allowExport=canEdit(Screen.PREVIEW),
+                onExportText = {
+                    val text = buildOfficialScheduleText(weekStart, bible, openingSong, closingSong, parts, chairman, openingPrayer, adviser, audienceGroup)
+                    val file = File(File(context.cacheDir, "exports").apply { mkdirs() }, "meeting-schedule-${weekStart}.txt")
+                    file.writeText(text, Charsets.UTF_8)
+                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        putExtra(Intent.EXTRA_SUBJECT, "Meeting schedule · $weekLabel")
+                        putExtra(Intent.EXTRA_TEXT, "Iskedyul ng Pulong ng Gitnang Sanlinggo · $weekLabel")
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        clipData = android.content.ClipData.newUri(context.contentResolver, "Meeting schedule text", uri)
+                    }
+                    context.startActivity(Intent.createChooser(intent, "Share schedule text"))
+                }, onPng = ::shareSchedulePng
+            )
+            Screen.PARTICIPANTS -> {
+                ParticipantsScreen(modifier = scroll, participants = participants,
+                    onAdd = { name -> participants.add(0, Participant(name)); store.saveParticipants(participants.toList()); toastMessage = "Naidagdag si $name" },
+                    onToggle = { index -> participants[index] = participants[index].copy(enabled = !participants[index].enabled); store.saveParticipants(participants.toList()) },
+                    onEdit = { original, changed -> authScope.launch {
+                        runCatching { if (changed.id > 0 && signedIn) api.updateMember(changed.id, changed.name, changed.appointment, changed.service, changed.gender, changed.unbaptized) else JSONObject() }
+                            .onSuccess { response ->
+                                if (changed.unbaptized && !response.optBoolean("unbaptized",false)) { toastMessage = "Hindi pa updated ang website API. I-deploy muna ang backend update." }
+                                else participants.indexOfFirst { it.id == original.id && it.name == original.name }.takeIf { it >= 0 }?.let { index -> participants[index] = changed; store.saveParticipants(participants.toList()); toastMessage = "Na-update si ${changed.name}" }
+                            }
+                            .onFailure { toastMessage = it.message ?: "Hindi na-update ang participant" }
+                    } },
+                    isAdmin=participantAdmin,
+                    canEdit=canEdit(Screen.PARTICIPANTS) && participantCanEdit,
+                    onRefresh={participantsLoaded=false},
+                    onSetActive={ person,active -> authScope.launch {
+                        runCatching { api.setMemberActive(person.id,active) }.onSuccess {
+                            val i=participants.indexOfFirst { it.id==person.id }; if(i>=0){participants[i]=participants[i].copy(enabled=active);store.saveParticipants(participants.toList())};toastMessage=if(active)"Na-activate si ${person.name}" else "Ginawang inactive si ${person.name}"
+                        }.onFailure{toastMessage=it.message?:"Hindi nabago ang status"}
+                    } },
+                    onDelete={ person -> authScope.launch {
+                        runCatching { api.deleteMember(person.id) }.onSuccess { response -> if(response.optBoolean("deleted",false)){participants.removeAll { it.id==person.id };store.saveParticipants(participants.toList());toastMessage="Na-delete si ${person.name}"}else toastMessage="Hindi pa updated ang website API para sa permanent delete." }
+                            .onFailure{toastMessage=it.message?:"Hindi na-delete ang participant"}
+                    } })
+            }
+            Screen.HISTORY -> {
+                LaunchedEffect(current, signedIn, historyLoaded) { if (current == Screen.HISTORY && signedIn && !historyLoaded) runCatching { api.schedules() }.onSuccess { remoteRows = it; historyLoaded=true; cloudStatus = "History mula sa website" }.onFailure { cloudStatus = "Hindi makuha ang history: ${it.message}" } }
+                HistoryScreen(modifier = scroll, remoteSchedules = remoteRows, cloudStatus = cloudStatus, isAdmin=signedIn && identityRole=="admin", canEdit=canEdit(Screen.HISTORY), canCreate=canEdit(Screen.DETAILS), onView={loadRemoteSchedule(it,false)}, onEdit={loadRemoteSchedule(it,true)}, onDelete={remote -> authScope.launch { runCatching { api.deleteSchedule(remote.id) }.onSuccess { historyLoaded=false; toastMessage="Na-delete ang schedule" }.onFailure { toastMessage=it.message ?: "Hindi ma-delete" } }}, onNew = { editingRemoteId=0; navigateTo(Screen.DETAILS) })
+            }
+            Screen.ACCOUNTS -> {
+                LaunchedEffect(current, signedIn, accountsLoaded, accountReloadTick) {
+                    if(current==Screen.ACCOUNTS && signedIn && identityRole.equals("admin", true) && !accountsLoaded && !accountsBusy) {
+                        accountsBusy=true; accountsError=null
+                        try {
+                            runCatching { api.accounts() }.onSuccess { remoteAccounts=it;accountsLoaded=true }
+                                .onFailure { accountsError=it.message ?: "Hindi makuha ang accounts." }
+                        } finally { accountsBusy=false }
+                    }
                 }
-            } }
-        }
+                AccountsScreen(
+                    modifier=scroll, accounts=remoteAccounts, loading=accountsBusy, error=accountsError,
+                    currentUsername=identityUsername, isAdmin=identityRole.equals("admin", true),
+                    fontScale=fontScale, onFontScaleChange=onFontScaleChange,
+                    darkMode=darkMode, onToggleTheme=onToggleTheme, appLock=appLock,
+                    onRefresh={accountsLoaded=false;accountReloadTick++},
+                    onUploadPhoto={ account -> accountPhotoTarget=account; accountPhotoPicker.launch("image/*") },
+                    onAction={ account,action,role,password -> authScope.launch {
+                        accountsBusy=true;accountsError=null
+                        runCatching { api.accountAction(account.id,action,role,password) }
+                            .onSuccess { response -> toastMessage=response.optString("message","Account updated.");accountsLoaded=false;accountReloadTick++ }
+                            .onFailure { accountsError=it.message ?: "Hindi na-update ang account." }
+                        accountsBusy=false
+                    } },
+                    onUpdateToolAccess={ account, modes -> authScope.launch {
+                        accountsBusy=true; accountsError=null
+                        runCatching { api.updateAccountToolAccess(account.id, modes) }
+                            .onSuccess { response -> toastMessage=response.optString("message","Tool access updated."); accountsLoaded=false; accountReloadTick++ }
+                            .onFailure { accountsError=it.message ?: "Hindi na-save ang tool access." }
+                        accountsBusy=false
+                    } }
+                )
+            }
+        } }
     }
     val profilePhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) authScope.launch {
@@ -1325,7 +1283,6 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                             identityRole = ""
                             loginError = null
                             authReady = true
-                            scope.launch { drawerState.close() }
                         },
                         modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
@@ -1737,26 +1694,6 @@ private fun ProfileAvatar(name: String, photoPath: String?, size: androidx.compo
             Text(name.split(" ").filter { it.isNotBlank() }.take(2).mapNotNull { it.firstOrNull() }.joinToString("").ifBlank { "?" }.uppercase(), color = Forest, fontWeight = FontWeight.Bold, fontSize = (size.value * .34f).sp)
         }
     }
-}
-
-@Composable
-private fun DrawerSection(title: String) { Text(title, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 16.dp, top = 18.dp, bottom = 7.dp)) }
-
-@Composable
-private fun DrawerEntry(icon: ImageVector, screen: Screen, selected: Screen, restricted: Boolean = false, onClick: (Screen) -> Unit) {
-    NavigationDrawerItem(
-        modifier = if (restricted) Modifier.alpha(0.48f) else Modifier,
-        label = { Text(screen.title, fontWeight = if (selected == screen) FontWeight.Bold else FontWeight.Medium, color = if (restricted) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface) },
-        icon = {
-            Box(Modifier.size(36.dp).background(if (selected == screen) ForestContainer else SurfaceContainer, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = null, tint = if (restricted) MaterialTheme.colorScheme.outline else if (selected == screen) Forest else Muted)
-            }
-        },
-        selected = selected == screen,
-        onClick = { onClick(screen) },
-        shape = RoundedCornerShape(28.dp),
-        colors = NavigationDrawerItemDefaults.colors(selectedContainerColor = ForestContainer, selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer, unselectedTextColor = MaterialTheme.colorScheme.onSurface)
-    )
 }
 
 @Composable
@@ -3043,5 +2980,6 @@ private fun sampleHistory() = mutableListOf(
     SavedSchedule("Aug 24 – 30, 2026", "Jeremias 30", "Aug 17, 2026", "2026-08-24"),
     SavedSchedule("Aug 17 – 23, 2026", "Jeremias 29", "Aug 10, 2026", "2026-08-17")
 )
+
 
 

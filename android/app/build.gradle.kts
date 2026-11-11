@@ -9,11 +9,12 @@ android {
     compileSdk = 35
     buildToolsVersion = "35.0.0"
     defaultConfig {
-        applicationId = "com.example.meetingscheduler"
+        applicationId = "com.example.meetingscheduler.navpreview"
         minSdk = 24
         targetSdk = 35
-        versionCode = 59
-        versionName = "0.42.1"
+        versionCode = 1
+        versionName = "0.42.1-nav-preview.1"
+        buildConfigField("boolean", "NAVIGATION_PREVIEW", "true")
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
@@ -65,5 +66,6 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
 }
+
 
 
