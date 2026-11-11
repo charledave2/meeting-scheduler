@@ -988,7 +988,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                         HorizontalDivider(color = SurfaceContainer, modifier = Modifier.padding(bottom = 6.dp))
                         Column(
                             Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                                .clickable(onClickLabel = "Open profile and preferences") {
+                                .clickable(onClickLabel = "Open profile") {
                                     profileNameDraft = identityName
                                     profileError = null
                                     profileDialogOpen = true
@@ -1173,6 +1173,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                         modifier=scroll, accounts=remoteAccounts, loading=accountsBusy, error=accountsError,
                         currentUsername=identityUsername, isAdmin=identityRole.equals("admin", true),
                         fontScale=fontScale, onFontScaleChange=onFontScaleChange,
+                        darkMode=darkMode, onToggleTheme=onToggleTheme, appLock=appLock,
                         onRefresh={accountsLoaded=false;accountReloadTick++},
                         onUploadPhoto={ account -> accountPhotoTarget=account; accountPhotoPicker.launch("image/*") },
                         onAction={ account,action,role,password -> authScope.launch {
@@ -1281,7 +1282,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Icon(Icons.TwoTone.ManageAccounts, contentDescription = null, tint = Forest, modifier = Modifier.size(24.dp))
-                    Text("Profile & preferences", fontWeight = FontWeight.Bold, fontSize = 20.sp, lineHeight = 25.sp, modifier = Modifier.weight(1f))
+                    Text("Profile", fontWeight = FontWeight.Bold, fontSize = 20.sp, lineHeight = 25.sp, modifier = Modifier.weight(1f))
                 }
             },
             text = {
@@ -1313,22 +1314,6 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                         modifier = Modifier.fillMaxWidth()
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Surface(
-                        color = ForestContainer,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            Modifier.padding(horizontal = 12.dp, vertical = 0.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Icon(if (darkMode) Icons.TwoTone.DarkMode else Icons.TwoTone.LightMode, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
-                            Text(if (darkMode) "Dark mode" else "Light mode", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                            Switch(checked = darkMode, onCheckedChange = { checked -> if (checked != darkMode) onToggleTheme() })
-                        }
-                    }
-                    BiometricLockPreference(appLock)
                     OutlinedButton(
                         onClick = {
                             profileDialogOpen = false
@@ -2731,6 +2716,7 @@ private fun scheduleStartDate(label:String, updatedAt:String=""): LocalDate? = r
 private fun AccountsScreen(
     modifier: Modifier, accounts: List<RemoteAccount>, loading: Boolean, error: String?, currentUsername: String,
     isAdmin: Boolean, fontScale: Float, onFontScaleChange: (Float) -> Unit,
+    darkMode: Boolean, onToggleTheme: () -> Unit, appLock: AppLockController,
     onRefresh: () -> Unit, onUploadPhoto: (RemoteAccount) -> Unit,
     onAction: (RemoteAccount, String, String, String) -> Unit,
     onUpdateToolAccess: (RemoteAccount, Map<String, String>) -> Unit
@@ -2757,6 +2743,24 @@ private fun AccountsScreen(
             }
         }
         Text(if (isAdmin) "Manage accounts and your app preferences." else "Manage your profile and app preferences.", color = Muted, fontSize = 12.sp)
+        M3Card {
+            Surface(
+                color = ForestContainer,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 12.dp, vertical = 0.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(if (darkMode) Icons.TwoTone.DarkMode else Icons.TwoTone.LightMode, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
+                    Text(if (darkMode) "Dark mode" else "Light mode", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                    Switch(checked = darkMode, onCheckedChange = { checked -> if (checked != darkMode) onToggleTheme() })
+                }
+            }
+            BiometricLockPreference(appLock)
+        }
         M3Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.TwoTone.ManageAccounts, contentDescription = null, tint = Forest, modifier = Modifier.size(22.dp))

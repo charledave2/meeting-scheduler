@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.42.1 — 2026-11-11
+
+- Moved the theme switcher and biometric lock from the profile dialog to Account & Settings for every signed-in role.
+- Kept profile editing and sign-out in a compact Profile dialog.
+
 ## v0.42.0 — 2026-11-11
 
 - Added optional device-local biometric lock in Profile & preferences, with Android fingerprint/face authentication and phone PIN, pattern or password fallback.
