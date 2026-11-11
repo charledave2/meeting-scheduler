@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -50,6 +51,8 @@ internal fun PreviewBottomNavigation(
     onCenterClick: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
+    val labelGrowth = ((LocalDensity.current.fontScale - 1f).coerceAtLeast(0f) * 14f).dp
+    val bodyHeight = 76.dp + labelGrowth
     val tools = available.any { it in setOf(Screen.ASSIGNMENTS, Screen.PREVIEW, Screen.PARTICIPANTS) }
     val centerSelected = tools && current in setOf(Screen.ASSIGNMENTS, Screen.PREVIEW, Screen.PARTICIPANTS)
     val rotation = remember { Animatable(0f) }
@@ -59,9 +62,10 @@ internal fun PreviewBottomNavigation(
     var animating by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 14.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center) {
-        BoxWithConstraints(Modifier.widthIn(max = 640.dp).fillMaxWidth().height(100.dp)) {
+        BoxWithConstraints(Modifier.widthIn(max = 640.dp).fillMaxWidth().height(bodyHeight + 24.dp)) {
+            val centerSlotWidth = maxWidth / 5
             Surface(
-                modifier = Modifier.fillMaxWidth().height(76.dp).align(Alignment.BottomCenter),
+                modifier = Modifier.fillMaxWidth().height(bodyHeight).align(Alignment.BottomCenter),
                 shape = RoundedCornerShape(28.dp), color = colors.surfaceContainerHigh,
                 border = BorderStroke(1.dp, colors.outlineVariant.copy(alpha = 0.65f)),
                 shadowElevation = 3.dp
@@ -72,7 +76,7 @@ internal fun PreviewBottomNavigation(
                             PreviewNavItem(screen, current == screen, Modifier.weight(1f)) { onNavigate(screen) }
                         }
                     }
-                    Spacer(Modifier.width(maxWidth / 5))
+                    Spacer(Modifier.width(centerSlotWidth))
                     Row(Modifier.weight(1f)) {
                         listOf(Screen.HISTORY, Screen.ACCOUNTS).filter { it in available }.forEach { screen ->
                             PreviewNavItem(screen, current == screen, Modifier.weight(1f)) { onNavigate(screen) }

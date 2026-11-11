@@ -968,8 +968,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             TopAppBar(
                 title = {
                     Column {
-                        Text("JW Meeting Scheduler", fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 2)
-                        Text("NAVIGATION PREVIEW", color = Forest, fontSize = 9.sp, letterSpacing = 0.8.sp)
+                        Text("JW Meeting Scheduler", fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        Text("NAVIGATION PREVIEW", color = Forest, fontSize = 9.sp, lineHeight = 11.sp, letterSpacing = 0.8.sp, maxLines = 1)
                     }
                 },
                 navigationIcon = {
@@ -988,7 +988,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                         Text(when (identityRole.lowercase(Locale.ROOT)) {
                             "admin", "administrator" -> "ADMINISTRATOR"
                             else -> identityRole.uppercase(Locale.ROOT)
-                        }, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Forest)
+                        }, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, fontWeight = FontWeight.Bold, color = Forest)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = AppSurface)
