@@ -17,7 +17,7 @@ import java.io.FileOutputStream
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.activity.compose.setContent
@@ -93,6 +93,7 @@ import androidx.compose.material.icons.twotone.SystemUpdateAlt
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -174,10 +175,30 @@ private val SurfaceContainer @Composable get() = MaterialTheme.colorScheme.surfa
 private val Ink @Composable get() = MaterialTheme.colorScheme.onSurface
 private val Muted @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
+    internal lateinit var appLock: AppLockController
+        private set
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        appLock = AppLockController(this)
+        appLock.updatePrivacy()
         setContent { MeetingSchedulerRoot(window) }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::appLock.isInitialized) appLock.onForeground()
+    }
+
+    override fun onPause() {
+        if (::appLock.isInitialized) appLock.onBackground()
+        super.onPause()
+    }
+
+    override fun onStop() {
+        if (::appLock.isInitialized) appLock.onBackground()
+        super.onStop()
     }
 }
 
@@ -334,7 +355,7 @@ internal data class AvailableAppUpdate(val version: String, val apkUrl: String, 
 private fun AppUpdatePrompt() {
     val context = LocalContext.current
     var update by remember { mutableStateOf<AvailableAppUpdate?>(null) }
-    var downloadId by remember { mutableStateOf<Long?>(null) }
+    var downloadId by rememberSaveable { mutableStateOf<Long?>(null) }
     var downloadProgress by remember { mutableStateOf<AppUpdateDownloadProgress?>(null) }
     var downloadError by remember { mutableStateOf<String?>(null) }
     var installPermissionMissing by remember { mutableStateOf(false) }
@@ -483,6 +504,8 @@ private fun AppUpdatePrompt() {
 @Composable
 private fun MeetingSchedulerRoot(window: android.view.Window) {
     val context = LocalContext.current
+    val appLock = (context as MainActivity).appLock
+    val workspaceState = rememberSaveableStateHolder()
     val store = remember(context) { LocalWorkspaceStore(context) }
     var darkMode by rememberSaveable { mutableStateOf(store.darkMode) }
     var appFontScale by rememberSaveable { mutableFloatStateOf(store.appFontScale) }
@@ -499,14 +522,21 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
             small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(26.dp)
         )) {
             Box(Modifier.fillMaxSize()) {
-                MeetingSchedulerApp(
-                    darkMode = darkMode,
-                    onToggleTheme = { darkMode = !darkMode; store.darkMode = darkMode },
-                    store = store,
-                    fontScale = appFontScale,
-                    onFontScaleChange = { appFontScale = it.coerceIn(0.85f, 1.35f); store.appFontScale = appFontScale }
-                )
-                AppUpdatePrompt()
+                if (appLock.state.locked) {
+                    AppLockScreen(appLock)
+                } else {
+                    workspaceState.SaveableStateProvider("workspace") {
+                        MeetingSchedulerApp(
+                            darkMode = darkMode,
+                            onToggleTheme = { darkMode = !darkMode; store.darkMode = darkMode },
+                            store = store,
+                            fontScale = appFontScale,
+                            onFontScaleChange = { appFontScale = it.coerceIn(0.85f, 1.35f); store.appFontScale = appFontScale },
+                            appLock = appLock
+                        )
+                        AppUpdatePrompt()
+                    }
+                }
             }
         }
     }
@@ -514,7 +544,7 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, store: LocalWorkspaceStore, fontScale: Float, onFontScaleChange: (Float) -> Unit) {
+private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, store: LocalWorkspaceStore, fontScale: Float, onFontScaleChange: (Float) -> Unit, appLock: AppLockController) {
     val context = LocalContext.current
     val api = remember(context) { SchedulerApi(context) }
     val authScope = rememberCoroutineScope()
@@ -531,8 +561,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var identityToolAccess by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var profilePhotoPath by rememberSaveable { mutableStateOf<String?>(null) }
     var profilePhotoDataUrl by remember { mutableStateOf("") }
-    var profileDialogOpen by remember { mutableStateOf(false) }
-    var profileNameDraft by remember { mutableStateOf("") }
+    var profileDialogOpen by rememberSaveable { mutableStateOf(false) }
+    var profileNameDraft by rememberSaveable { mutableStateOf("") }
     var profileError by remember { mutableStateOf<String?>(null) }
     var workbookStatus by rememberSaveable { mutableStateOf("Naghahanap ng workbook para sa napiling linggo…") }
     var workbookBusy by remember { mutableStateOf(false) }
@@ -609,14 +639,14 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         if (unique != storedAssignments) store.saveAssignments(unique)
     }
     val history = remember(store) { mutableStateListOf<SavedSchedule>().apply { addAll(store.loadHistory()) } }
-    var participantsLoaded by rememberSaveable { mutableStateOf(false) }
+    var participantsLoaded by remember { mutableStateOf(false) }
     var participantsBusy by remember { mutableStateOf(false) }
     var rotationStats by remember { mutableStateOf<Map<Int, ParticipantRotation>>(emptyMap()) }
     var rotationBusy by remember { mutableStateOf(false) }
     var rotationError by remember { mutableStateOf<String?>(null) }
     var remoteRows by remember { mutableStateOf<List<RemoteSchedule>>(emptyList()) }
     var homeSchedules by remember { mutableStateOf<List<RemoteSchedule>>(emptyList()) }
-    var homeLoaded by rememberSaveable { mutableStateOf(false) }
+    var homeLoaded by remember { mutableStateOf(false) }
     var homeBusy by remember { mutableStateOf(false) }
     var homeError by remember { mutableStateOf<String?>(null) }
     var homePreviewHtml by remember { mutableStateOf<String?>(null) }
@@ -624,11 +654,11 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var homePreviewLoading by remember { mutableStateOf(false) }
     var editingRemoteId by rememberSaveable { mutableIntStateOf(0) }
     var suppressWeekLookup by remember { mutableStateOf(false) }
-    var remoteScheduleLoadedWeek by remember { mutableStateOf("") }
+    var remoteScheduleLoadedWeek by rememberSaveable { mutableStateOf("") }
     var weekLoadNonce by remember { mutableIntStateOf(0) }
-    var historyLoaded by rememberSaveable { mutableStateOf(false) }
+    var historyLoaded by remember { mutableStateOf(false) }
     var remoteAccounts by remember { mutableStateOf<List<RemoteAccount>>(emptyList()) }
-    var accountsLoaded by rememberSaveable { mutableStateOf(false) }
+    var accountsLoaded by remember { mutableStateOf(false) }
     var accountsBusy by remember { mutableStateOf(false) }
     var accountsError by remember { mutableStateOf<String?>(null) }
     var accountReloadTick by remember { mutableIntStateOf(0) }
@@ -761,6 +791,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 persistDetails()
                 store.saveAssignments(parts.toList())
                 workbookStatus = "✓ ${result.parts.size} bahagi ang nakuha mula sa JW.ORG"
+                remoteScheduleLoadedWeek = weekStart
                 workbookCaptureLog = (workbookCaptureLog + "PARSED · ${result.parts.size} meeting parts" + "DONE · metadata and assignments saved locally").takeLast(7)
             }
             .onFailure {
@@ -1297,6 +1328,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                             Switch(checked = darkMode, onCheckedChange = { checked -> if (checked != darkMode) onToggleTheme() })
                         }
                     }
+                    BiometricLockPreference(appLock)
                     OutlinedButton(
                         onClick = {
                             profileDialogOpen = false
@@ -3007,4 +3039,5 @@ private fun sampleHistory() = mutableListOf(
     SavedSchedule("Aug 24 – 30, 2026", "Jeremias 30", "Aug 17, 2026", "2026-08-24"),
     SavedSchedule("Aug 17 – 23, 2026", "Jeremias 29", "Aug 10, 2026", "2026-08-17")
 )
+
 

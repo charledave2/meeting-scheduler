@@ -44,6 +44,8 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
+      - name: App lock security regression tests
+        run: gradle --no-daemon :app:testDebugUnitTest
       - name: Android lint security and compatibility checks
         run: |
           if ! gradle --no-daemon :app:lintDebug; then
@@ -97,4 +99,5 @@ jobs:
       - name: Remove temporary signing key
         if: always()
         run: rm -f app/release-keystore.jks
+
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.42.0 — 2026-11-11
+
+- Added optional device-local biometric lock in Profile & preferences, with Android fingerprint/face authentication and phone PIN, pattern or password fallback.
+- Require successful authentication to enable or disable the lock. Re-lock on leaving the app and after a fresh launch; cancellation and failed attempts keep the workspace protected.
+- Added a forest green lock screen, protected recent-app previews, and retained meeting drafts and update downloads across locking.
+- Added security regression tests for restart, background, cancellation, stale callbacks and preference changes.
+
 ## v0.41.0 — 2026-11-10
 
 - Renamed the Android app to JW Meeting Scheduler across launcher, drawer, splash, login, update notifications and export branding.
@@ -183,4 +190,5 @@
 - Added Two Tone icons to Participants add, filter and edit controls with consistent sizing.
 - Styled account deletion actions in red and account disabling actions in orange.
 - Packaged the APK and Android source archive as GitHub Release assets.
+
 
