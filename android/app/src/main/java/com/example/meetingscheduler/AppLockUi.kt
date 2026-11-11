@@ -1,6 +1,7 @@
 package com.example.meetingscheduler
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -14,7 +15,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -56,7 +56,7 @@ internal fun BiometricLockPreference(lock: AppLockController) {
 
 @Composable
 internal fun AppLockScreen(lock: AppLockController) {
-    val activity = LocalContext.current as MainActivity
+    val activity = LocalActivity.current as MainActivity
     val colors = MaterialTheme.colorScheme
     BackHandler { activity.moveTaskToBack(true) }
     Surface(color = colors.background, modifier = Modifier.fillMaxSize()) {

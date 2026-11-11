@@ -504,7 +504,7 @@ private fun AppUpdatePrompt() {
 @Composable
 private fun MeetingSchedulerRoot(window: android.view.Window) {
     val context = LocalContext.current
-    val appLock = (context as MainActivity).appLock
+    val appLock = (androidx.activity.compose.LocalActivity.current as MainActivity).appLock
     val workspaceState = rememberSaveableStateHolder()
     val store = remember(context) { LocalWorkspaceStore(context) }
     var darkMode by rememberSaveable { mutableStateOf(store.darkMode) }
