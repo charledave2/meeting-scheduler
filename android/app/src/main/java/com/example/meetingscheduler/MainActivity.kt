@@ -44,6 +44,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -1477,19 +1478,16 @@ private fun MeetingSplashScreen() {
                         )
                     }
                 }
-                AnimatedVisibility(
-                    visible = reveal,
-                    modifier = Modifier.align(Alignment.BottomEnd).offset(x = (-24).dp, y = (-23).dp),
-                    enter = fadeIn(tween(250, delayMillis = 430)) + scaleIn(tween(340, delayMillis = 430), initialScale = 0.45f)
-                ) {
+                if (reveal) {
                     Surface(
-                        modifier = Modifier.size(if (compact) 34.dp else 40.dp),
+                        modifier = Modifier.align(Alignment.BottomEnd).offset(x = (-24).dp, y = (-23).dp)
+                            .graphicsLayer { scaleX = entrance.value; scaleY = entrance.value; alpha = entrance.value },
                         shape = CircleShape,
                         color = Color(0xFFB8D7AF),
                         border = BorderStroke(3.dp, Color(0xFF10472F)),
                         shadowElevation = 6.dp
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(if (compact) 34.dp else 40.dp), contentAlignment = Alignment.Center) {
                             Icon(Icons.TwoTone.CheckCircle, contentDescription = null,
                                 tint = Color(0xFF173A27), modifier = Modifier.size(if (compact) 22.dp else 26.dp))
                         }
