@@ -28,6 +28,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -990,18 +992,56 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                         contentDescription = null, modifier = Modifier.padding(start = 14.dp, end = 8.dp).size(34.dp))
                 },
                 actions = {
-                    Column(
-                        Modifier.padding(end = 12.dp).clip(RoundedCornerShape(16.dp))
-                            .clickable(onClickLabel = "Open profile", onClick = ::openProfile)
-                            .padding(horizontal = 6.dp, vertical = 4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        ProfileAvatar(identityName, profilePhotoPath, 28.dp, profilePhotoDataUrl)
-                        Text(when (identityRole.lowercase(Locale.ROOT)) {
-                            "admin", "administrator" -> "ADMINISTRATOR"
-                            else -> identityRole.uppercase(Locale.ROOT)
-                        }, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, fontWeight = FontWeight.Bold, color = Forest)
+                    Box(Modifier.padding(end = 8.dp)) {
+                        Column(
+                            Modifier.clip(RoundedCornerShape(14.dp))
+                                .clickable(onClickLabel = "Open profile", onClick = ::openProfile)
+                                .padding(horizontal = 6.dp, vertical = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            ProfileAvatar(identityName, profilePhotoPath, 28.dp, profilePhotoDataUrl)
+                            Text(when (identityRole.lowercase(Locale.ROOT)) {
+                                "admin", "administrator" -> "ADMINISTRATOR"
+                                else -> identityRole.uppercase(Locale.ROOT)
+                            }, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, fontWeight = FontWeight.Bold, color = Forest)
+                        }
+                        DropdownMenu(
+                            expanded = profileDialogOpen,
+                            onDismissRequest = { profileDialogOpen = false },
+                            modifier = Modifier.width(280.dp).heightIn(
+                                max = (LocalConfiguration.current.screenHeightDp * 0.68f).dp
+                            )
+                        ) {
+                            ProfilePreferencesMenu(
+                                identityName = identityName,
+                                identityRole = identityRole,
+                                profilePhotoPath = profilePhotoPath,
+                                profilePhotoDataUrl = profilePhotoDataUrl,
+                                nameDraft = profileNameDraft,
+                                profileError = profileError,
+                                darkMode = darkMode,
+                                onNameChange = { profileNameDraft = it; profileError = null },
+                                onChangePhoto = { profilePhotoPicker.launch(arrayOf("image/*")) },
+                                onToggleTheme = onToggleTheme,
+                                onSignOut = {
+                                    profileDialogOpen = false
+                                    val oldSession = api.signOut()
+                                    authScope.launch { api.revokeSession(oldSession) }
+                                    signedIn = false
+                                    identityName = ""
+                                    identityUsername = ""
+                                    identityRole = ""
+                                    loginError = null
+                                    authReady = true
+                                },
+                                onSave = {
+                                    identityName = profileNameDraft.trim()
+                                    store.saveProfileName(identityUsername, identityName)
+                                    profileDialogOpen = false
+                                }
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = AppSurface)
@@ -1244,84 +1284,6 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 }
             }
         }
-    }
-    if (profileDialogOpen) {
-        AlertDialog(
-            onDismissRequest = { profileDialogOpen = false },
-            containerColor = AppSurface,
-            shape = RoundedCornerShape(28.dp),
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(Icons.TwoTone.ManageAccounts, contentDescription = null, tint = Forest, modifier = Modifier.size(24.dp))
-                    Text("Profile", fontWeight = FontWeight.Bold, fontSize = 20.sp, lineHeight = 25.sp, modifier = Modifier.weight(1f))
-                }
-            },
-            text = {
-                Column(
-                    Modifier.fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.60f).dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    ProfileAvatar(identityName, profilePhotoPath, 64.dp, profilePhotoDataUrl)
-                    OutlinedButton(
-                        onClick = { profilePhotoPicker.launch(arrayOf("image/*")) },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.TwoTone.AddAPhoto, contentDescription = null, tint = Forest, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(7.dp))
-                        Text(if (profilePhotoPath.isNullOrBlank() && profilePhotoDataUrl.isBlank()) "Add photo" else "Change photo", color = Forest, fontSize = 13.sp, maxLines = 1)
-                    }
-                    OutlinedTextField(
-                        value = profileNameDraft,
-                        onValueChange = { profileNameDraft = it; profileError = null },
-                        label = { Text("Name") },
-                        leadingIcon = { Icon(Icons.TwoTone.Edit, contentDescription = null, tint = Forest, modifier = Modifier.size(18.dp)) },
-                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = Ink),
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    OutlinedButton(
-                        onClick = {
-                            profileDialogOpen = false
-                            val oldSession = api.signOut()
-                            authScope.launch { api.revokeSession(oldSession) }
-                            signedIn = false
-                            identityName = ""
-                            identityUsername = ""
-                            identityRole = ""
-                            loginError = null
-                            authReady = true
-                        },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.65f)),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Icon(Icons.TwoTone.Logout, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Sign out", color = MaterialTheme.colorScheme.error, fontSize = 13.sp, maxLines = 1)
-                    }
-                    profileError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 11.sp) }
-                }
-            },
-            confirmButton = {
-                ProfileDialogActions(
-                    canSave = profileNameDraft.isNotBlank(),
-                    onClose = { profileDialogOpen = false },
-                    onSave = {
-                        identityName = profileNameDraft.trim()
-                        store.saveProfileName(identityUsername, identityName)
-                        profileDialogOpen = false
-                    }
-                )
-            }
-        )
     }
     if (datePicker) {
         val pickerState = rememberDatePickerState(initialSelectedDateMillis = week.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
@@ -1758,233 +1720,104 @@ private fun rememberAvatarBitmap(dataUrl: String, photoPath: String? = null): Im
 }
 
 @Composable
-private fun ProfileDialogActions(canSave: Boolean, onClose: () -> Unit, onSave: () -> Unit) {
-    val stacked = LocalConfiguration.current.screenWidthDp < 320 || LocalDensity.current.fontScale > 1.3f
-    val closeButton: @Composable (Modifier) -> Unit = { buttonModifier ->
-        OutlinedButton(
-            onClick = onClose,
-            modifier = buttonModifier.heightIn(min = 40.dp),
-            shape = RoundedCornerShape(12.dp),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = Forest)
-        ) {
-            Icon(Icons.TwoTone.Close, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Close", fontSize = 13.sp, maxLines = 1)
-        }
-    }
-    val saveButton: @Composable (Modifier) -> Unit = { buttonModifier ->
-        Button(
-            onClick = onSave,
-            enabled = canSave,
-            modifier = buttonModifier.heightIn(min = 40.dp),
-            shape = RoundedCornerShape(12.dp),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-        ) {
-            Icon(Icons.TwoTone.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Save", fontSize = 13.sp, maxLines = 1)
-        }
-    }
-    if (stacked) {
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            saveButton(Modifier.fillMaxWidth())
-            closeButton(Modifier.fillMaxWidth())
-        }
-    } else {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            closeButton(Modifier.weight(1f))
-            saveButton(Modifier.weight(1f))
-        }
-    }
-}
-
-@Composable
-private fun ProfileAvatar(name: String, photoPath: String?, size: androidx.compose.ui.unit.Dp, photoDataUrl: String = "") {
-    val bitmap = rememberAvatarBitmap(photoDataUrl, photoPath)
-    if (bitmap != null) {
-        Image(bitmap, contentDescription = "Profile photo", contentScale = ContentScale.Crop, modifier = Modifier.size(size).clip(CircleShape))
-    } else {
-        Box(Modifier.size(size).background(ForestContainer, CircleShape), contentAlignment = Alignment.Center) {
-            Text(name.split(" ").filter { it.isNotBlank() }.take(2).mapNotNull { it.firstOrNull() }.joinToString("").ifBlank { "?" }.uppercase(), color = Forest, fontWeight = FontWeight.Bold, fontSize = (size.value * .34f).sp)
-        }
-    }
-}
-
-@Composable
-private fun PageColumn(modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        modifier = modifier.verticalScroll(rememberScrollState()).padding(PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 24.dp)),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        content = content
-    )
-}
-
-@Composable
-private fun PageHeading(eyebrow: String, title: String, subtitle: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(eyebrow, color = Forest, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.5.sp)
-        Text(title, fontSize = 27.sp, fontWeight = FontWeight.Bold, lineHeight = 31.sp)
-        Text(subtitle, color = Muted, fontSize = 13.sp, lineHeight = 18.sp)
-    }
-}
-
-@Composable
-private fun M3Card(content: @Composable ColumnScope.() -> Unit) {
-    Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp), content = content)
-    }
-}
-
-@Composable
-private fun Label(text: String) { Text(text.uppercase(), color = Muted, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.4.sp) }
-
-@Composable
-private fun HomeScreen(
-    modifier: Modifier,
-    accountName: String,
-    canCreateSchedule: Boolean,
-    schedules: List<RemoteSchedule>,
-    loading: Boolean,
-    error: String?,
-    onRefresh: () -> Unit,
-    onOpenSchedule: (RemoteSchedule) -> Unit,
-    onCreateSchedule: () -> Unit
+private fun ProfilePreferencesMenu(
+    identityName: String,
+    identityRole: String,
+    profilePhotoPath: String?,
+    profilePhotoDataUrl: String,
+    nameDraft: String,
+    profileError: String?,
+    darkMode: Boolean,
+    onNameChange: (String) -> Unit,
+    onChangePhoto: () -> Unit,
+    onToggleTheme: () -> Unit,
+    onSignOut: () -> Unit,
+    onSave: () -> Unit
 ) {
-    val hour = java.time.LocalTime.now().hour
-    val greeting = when (hour) { in 5..11 -> "Good morning"; in 12..17 -> "Good afternoon"; else -> "Good evening" }
-    val today = LocalDate.now()
-    val upcoming = remember(schedules, today) {
-        schedules.mapNotNull { remote ->
-            val start = scheduleStartDate(remote.weekLabel, remote.updatedAt) ?: return@mapNotNull null
-            if (start.plusDays(6).isBefore(today)) null else start to remote
-        }.sortedBy { it.first }.take(6)
+    val colors = MaterialTheme.colorScheme
+    val roleLabel = when (identityRole.lowercase(Locale.ROOT)) {
+        "admin", "administrator" -> "ADMINISTRATOR"
+        else -> identityRole.uppercase(Locale.ROOT).ifBlank { "ACCOUNT" }
     }
-    PageColumn(modifier) {
-        PageHeading("MIDWEEK MEETING WORKSPACE", "Home Page", "Your congregation schedule at a glance.")
-        Card(shape = RoundedCornerShape(26.dp), colors = CardDefaults.cardColors(containerColor = ForestContainer)) {
-            Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(52.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f), RoundedCornerShape(17.dp)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.TwoTone.Home, contentDescription = null, tint = Forest, modifier = Modifier.size(27.dp))
-                }
-                Spacer(Modifier.width(14.dp))
-                Column {
-                    Text("$greeting,", color = Muted, fontSize = 14.sp)
-                    Text(accountName.ifBlank { "there" }, color = MaterialTheme.colorScheme.onPrimaryContainer, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                    Text(today.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.ENGLISH)), color = Muted, fontSize = 12.sp)
-                }
-            }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    Column(
+        Modifier.fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.62f).dp)
+            .verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ProfileAvatar(identityName, profilePhotoPath, 42.dp, profilePhotoDataUrl)
             Column(Modifier.weight(1f)) {
-                Text("Upcoming Meetings", fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                Text("Tap a meeting to preview its official schedule.", color = Muted, fontSize = 12.sp)
+                Text(identityName, fontSize = 14.sp, lineHeight = 17.sp, fontWeight = FontWeight.Bold,
+                    color = colors.onSurface, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Text(roleLabel, fontSize = 10.sp, lineHeight = 13.sp, fontWeight = FontWeight.Bold,
+                    color = colors.primary, maxLines = 1)
             }
-            IconButton(onClick = onRefresh) { Icon(Icons.TwoTone.Refresh, contentDescription = "Refresh upcoming meetings", tint = Forest) }
         }
-        when {
-            loading -> Box(Modifier.fillMaxWidth().padding(28.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Forest) }
-            error != null -> Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
-                Text(error, color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
-            }
-            upcoming.isEmpty() -> Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = SurfaceContainer)) {
-                Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(30.dp))
-                    Text("No upcoming saved meetings", fontWeight = FontWeight.SemiBold)
-                    Text("Create a workbook and save the schedule to the cloud to see it here.", color = Muted, fontSize = 12.sp)
-                    if (canCreateSchedule) FilledTonalButton(onClick = onCreateSchedule, shape = RoundedCornerShape(16.dp)) {
-                        Icon(Icons.TwoTone.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(7.dp)); Text("Open Workbook")
+        TextButton(
+            onClick = onChangePhoto,
+            modifier = Modifier.fillMaxWidth().height(34.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+        ) {
+            Icon(Icons.TwoTone.AddAPhoto, contentDescription = null, tint = colors.primary, modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(if (profilePhotoPath.isNullOrBlank() && profilePhotoDataUrl.isBlank()) "Add photo" else "Change photo",
+                fontSize = 12.sp, maxLines = 1)
+        }
+        Row(
+            Modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(13.dp))
+                .background(colors.surfaceContainerHigh)
+                .border(BorderStroke(1.dp, colors.outlineVariant), RoundedCornerShape(13.dp))
+                .padding(start = 10.dp, end = 3.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.TwoTone.Edit, contentDescription = null, tint = colors.primary, modifier = Modifier.size(17.dp))
+            BasicTextField(
+                value = nameDraft,
+                onValueChange = onNameChange,
+                modifier = Modifier.weight(1f).padding(start = 8.dp, end = 4.dp),
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall.copy(color = colors.onSurface),
+                decorationBox = { innerTextField ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (nameDraft.isBlank()) Text("Name", color = colors.onSurfaceVariant, fontSize = 12.sp)
+                        innerTextField()
                     }
                 }
-            }
-            else -> upcoming.forEach { (date, remote) ->
-                Card(
-                    modifier = Modifier.fillMaxWidth().clickable { onOpenSchedule(remote) },
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = SurfaceContainer),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                ) {
-                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(44.dp).background(ForestContainer, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
-                            Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(23.dp))
-                        }
-                        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                            Text(remote.weekLabel, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                            Text(remote.reading, color = Muted, fontSize = 12.sp)
-                            Text(date.format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.ENGLISH)), color = Forest, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                        }
-                        Icon(Icons.TwoTone.Preview, contentDescription = "Preview schedule", tint = Forest)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, canContinueToAssignments:Boolean, readOnly:Boolean, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
-    PageColumn(modifier) {
-        PageHeading("SCHEDULE BUILDER", "Workbook", "Pumili ng linggo. Kusang kukunin ang weekly program.")
-        M3Card {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(38.dp).background(ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) { Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp)) }
-                Column(Modifier.weight(1f).padding(start = 11.dp)) {
-                    Label("MEETING WEEK")
-                    Text("Pangunahing impormasyon", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-            OutlinedButton(onClick = onPickDate, enabled=!readOnly, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), shape = RoundedCornerShape(15.dp), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
-                Text(weekLabel, modifier = Modifier.weight(1f), color = Ink, fontWeight = FontWeight.SemiBold)
-                Text("Change", color = Forest, fontSize = 12.sp)
-            }
-            OutlinedTextField(bible, onBible, enabled=!readOnly, label = { Text("Bible reading") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(openingSong, onOpeningSong, enabled=!readOnly, label = { Text("Opening song") }, singleLine = true, modifier = Modifier.weight(1f))
-                OutlinedTextField(closingSong, onClosingSong, enabled=!readOnly, label = { Text("Closing song") }, singleLine = true, modifier = Modifier.weight(1f))
-            }
-        }
-        val fetchError = workbookStatus.contains("hindi", ignoreCase = true) || workbookStatus.contains("wala", ignoreCase = true) || workbookStatus.contains("permission", ignoreCase = true)
-        M3Card {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(38.dp).background(if (fetchError) MaterialTheme.colorScheme.error.copy(alpha = .12f) else ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
-                    Icon(if (workbookBusy) Icons.TwoTone.Refresh else if (workbookStatus.startsWith("✓")) Icons.TwoTone.CheckCircle else Icons.TwoTone.AutoStories, contentDescription = null, tint = if (fetchError) MaterialTheme.colorScheme.error else Forest, modifier = Modifier.size(22.dp))
-                }
-                Column(Modifier.weight(1f).padding(start = 11.dp)) {
-                    Label("JW.ORG WORKBOOK")
-                    Text("Weekly program", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                }
-                IconButton(onClick = onImport, enabled = !workbookBusy && !readOnly, modifier = Modifier.size(40.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(Icons.TwoTone.Refresh, contentDescription = "I-refresh ang weekly program", tint = Forest, modifier = Modifier.size(23.dp)) }
-            }
-            Text("Awtomatikong naghahanap batay sa napiling linggo.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
-            Surface(
-                color = if (MaterialTheme.colorScheme.background == DarkPalette.background) Color(0xFF0D120E) else Color(0xFFE4ECE4),
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+            IconButton(
+                onClick = onSave,
+                enabled = nameDraft.isNotBlank(),
+                modifier = Modifier.size(40.dp)
             ) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (workbookBusy) "CAPTURE LOG · RUNNING" else "CAPTURE LOG", color = Forest, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.1.sp)
-                        if (workbookBusy) CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 1.5.dp, color = Forest)
-                    }
-                    workbookCaptureLog.takeLast(6).forEach { line ->
-                        Text(
-                            "› $line",
-                            color = if (line.startsWith("ERROR")) MaterialTheme.colorScheme.error else if (MaterialTheme.colorScheme.background == DarkPalette.background) Color(0xFFB8D7B5) else Color(0xFF2D5638),
-                            fontSize = 10.sp,
-                            lineHeight = 14.sp,
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                            maxLines = 2
-                        )
-                    }
-                    if (!workbookBusy) Text(workbookStatus.removePrefix("✓ "), color = if (fetchError) MaterialTheme.colorScheme.error else Muted, fontSize = 10.sp, lineHeight = 14.sp)
-                }
+                Icon(Icons.TwoTone.CheckCircle, contentDescription = "Save", tint = colors.primary,
+                    modifier = Modifier.size(20.dp))
             }
         }
-        if (canContinueToAssignments) Button(onClick = onNext, enabled=canContinue, modifier=Modifier.fillMaxWidth(), shape=RoundedCornerShape(18.dp), colors=ButtonDefaults.buttonColors(containerColor=Forest), contentPadding=PaddingValues(vertical=15.dp)) {
-            Text(if(workbookBusy) "Checking saved schedule…" else if(!canContinue) "Loading participants…" else "Continue to assignments")
-            Spacer(Modifier.width(9.dp))
-            Icon(Icons.TwoTone.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
+        profileError?.let {
+            Text(it, color = colors.error, fontSize = 11.sp, lineHeight = 14.sp)
+        }
+        HorizontalDivider(color = colors.outlineVariant)
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp))
+                .background(colors.primaryContainer).padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(if (darkMode) Icons.TwoTone.DarkMode else Icons.TwoTone.LightMode,
+                contentDescription = null, tint = colors.primary, modifier = Modifier.size(19.dp))
+            Text(if (darkMode) "Dark mode" else "Light mode", color = colors.onPrimaryContainer,
+                fontSize = 12.sp, modifier = Modifier.weight(1f))
+            Switch(checked = darkMode, onCheckedChange = { onToggleTheme() })
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            IconButton(
+                onClick = onSignOut,
+                modifier = Modifier.size(40.dp)
+                    .clip(CircleShape).background(colors.errorContainer)
+            ) {
+                Icon(Icons.TwoTone.Logout, contentDescription = "Sign out",
+                    tint = colors.error, modifier = Modifier.size(19.dp))
+            }
         }
     }
 }
