@@ -968,6 +968,40 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         profileError = null
         profileDialogOpen = true
     }
+    val profilePhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) authScope.launch {
+            profileError = null
+            val dataUrl = runCatching {
+                withContext(Dispatchers.IO) {
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+                    var sample = 1
+                    while (maxOf(bounds.outWidth, bounds.outHeight).coerceAtLeast(1) / sample > 720) sample *= 2
+                    val options = BitmapFactory.Options().apply { inSampleSize = sample }
+                    val decoded = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+                        ?: error("Hindi mabasa ang napiling larawan.")
+                    val scale = minOf(1f, 512f / maxOf(decoded.width, decoded.height).coerceAtLeast(1))
+                    val bitmap = if (scale < 1f) Bitmap.createScaledBitmap(decoded, (decoded.width * scale).toInt().coerceAtLeast(1), (decoded.height * scale).toInt().coerceAtLeast(1), true) else decoded
+                    val output = ByteArrayOutputStream()
+                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, 78, output)) { "Hindi ma-compress ang larawan." }
+                    val encoded = Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+                    check(encoded.length <= 600_000) { "Masyadong malaki ang larawan. Pumili ng mas maliit." }
+                    "data:image/jpeg;base64,$encoded"
+                }
+            }.getOrElse { error ->
+                profileError = error.message ?: "Hindi maihanda ang larawan."
+                null
+            }
+            if (dataUrl != null) runCatching { api.uploadOwnProfilePhoto(dataUrl) }
+                .onSuccess {
+                    profilePhotoDataUrl = dataUrl
+                    profilePhotoPath = null
+                    toastMessage = "Na-save sa cloud ang profile photo."
+                    if (identityRole == "admin") { accountsLoaded = false; accountReloadTick++ }
+                }
+                .onFailure { profileError = it.message ?: "Hindi na-save sa cloud ang profile photo." }
+        }
+    }
     BackHandler(enabled = current != Screen.HOME && canAccess(Screen.HOME) && !profileDialogOpen && !toolsOpen) {
         navigateTo(Screen.HOME)
     }
@@ -1205,40 +1239,6 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 )
             }
         } }
-    }
-    val profilePhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) authScope.launch {
-            profileError = null
-            val dataUrl = runCatching {
-                withContext(Dispatchers.IO) {
-                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-                    var sample = 1
-                    while (maxOf(bounds.outWidth, bounds.outHeight).coerceAtLeast(1) / sample > 720) sample *= 2
-                    val options = BitmapFactory.Options().apply { inSampleSize = sample }
-                    val decoded = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
-                        ?: error("Hindi mabasa ang napiling larawan.")
-                    val scale = minOf(1f, 512f / maxOf(decoded.width, decoded.height).coerceAtLeast(1))
-                    val bitmap = if (scale < 1f) Bitmap.createScaledBitmap(decoded, (decoded.width * scale).toInt().coerceAtLeast(1), (decoded.height * scale).toInt().coerceAtLeast(1), true) else decoded
-                    val output = ByteArrayOutputStream()
-                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, 78, output)) { "Hindi ma-compress ang larawan." }
-                    val encoded = Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
-                    check(encoded.length <= 600_000) { "Masyadong malaki ang larawan. Pumili ng mas maliit." }
-                    "data:image/jpeg;base64,$encoded"
-                }
-            }.getOrElse { error ->
-                profileError = error.message ?: "Hindi maihanda ang larawan."
-                null
-            }
-            if (dataUrl != null) runCatching { api.uploadOwnProfilePhoto(dataUrl) }
-                .onSuccess {
-                    profilePhotoDataUrl = dataUrl
-                    profilePhotoPath = null
-                    toastMessage = "Na-save sa cloud ang profile photo."
-                    if (identityRole == "admin") { accountsLoaded = false; accountReloadTick++ }
-                }
-                .onFailure { profileError = it.message ?: "Hindi na-save sa cloud ang profile photo." }
-        }
     }
     if (homePreviewWeek != null) {
         val configuration = LocalConfiguration.current
