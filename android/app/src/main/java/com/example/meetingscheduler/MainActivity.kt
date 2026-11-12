@@ -949,6 +949,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 )
                 view.layout(0, 0, outputWidth, outputHeight)
                 val bitmap = Bitmap.createBitmap(outputWidth, outputHeight, Bitmap.Config.ARGB_8888)
+                bitmap.density = SCHEDULE_EXPORT_DPI
                 view.visibility = View.VISIBLE
                 view.draw(Canvas(bitmap))
                 view.visibility = View.INVISIBLE
@@ -2019,16 +2020,49 @@ private fun HomeScreen(
     }
     PageColumn(modifier) {
         PageHeading("MIDWEEK MEETING WORKSPACE", "Home Page", "Your congregation schedule at a glance.")
-        Card(shape = RoundedCornerShape(26.dp), colors = CardDefaults.cardColors(containerColor = ForestContainer)) {
-            Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(52.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f), RoundedCornerShape(17.dp)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.TwoTone.Home, contentDescription = null, tint = Forest, modifier = Modifier.size(27.dp))
+        val greetingShape = RoundedCornerShape(26.dp)
+        val abstractAccent = MaterialTheme.colorScheme.onPrimaryContainer
+        Card(shape = greetingShape, colors = CardDefaults.cardColors(containerColor = ForestContainer)) {
+            Box(Modifier.fillMaxWidth().clip(greetingShape)) {
+                ComposeCanvas(Modifier.matchParentSize()) {
+                    val orbit = size.height * 1.35f
+                    drawCircle(
+                        color = abstractAccent.copy(alpha = 0.07f),
+                        radius = size.height * 0.68f,
+                        center = androidx.compose.ui.geometry.Offset(size.width * 0.99f, size.height * 0.02f)
+                    )
+                    drawCircle(
+                        color = abstractAccent.copy(alpha = 0.055f),
+                        radius = size.height * 0.4f,
+                        center = androidx.compose.ui.geometry.Offset(size.width * 0.79f, size.height * 0.94f)
+                    )
+                    drawArc(
+                        color = abstractAccent.copy(alpha = 0.24f),
+                        startAngle = 128f,
+                        sweepAngle = 150f,
+                        useCenter = false,
+                        topLeft = androidx.compose.ui.geometry.Offset(size.width - orbit * 0.69f, -orbit * 0.38f),
+                        size = androidx.compose.ui.geometry.Size(orbit, orbit),
+                        style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                    drawLine(
+                        color = abstractAccent.copy(alpha = 0.14f),
+                        start = androidx.compose.ui.geometry.Offset(size.width * 0.79f, size.height * 0.82f),
+                        end = androidx.compose.ui.geometry.Offset(size.width * 0.96f, size.height * 0.58f),
+                        strokeWidth = 1.dp.toPx(),
+                        cap = StrokeCap.Round
+                    )
                 }
-                Spacer(Modifier.width(14.dp))
-                Column {
-                    Text("$greeting,", color = Muted, fontSize = 14.sp)
-                    Text(accountName.ifBlank { "there" }, color = MaterialTheme.colorScheme.onPrimaryContainer, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                    Text(today.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.ENGLISH)), color = Muted, fontSize = 12.sp)
+                Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(52.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f), RoundedCornerShape(17.dp)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.TwoTone.Home, contentDescription = null, tint = Forest, modifier = Modifier.size(27.dp))
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column {
+                        Text("$greeting,", color = Muted, fontSize = 14.sp)
+                        Text(accountName.ifBlank { "there" }, color = MaterialTheme.colorScheme.onPrimaryContainer, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                        Text(today.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.ENGLISH)), color = Muted, fontSize = 12.sp)
+                    }
                 }
             }
         }
@@ -2616,13 +2650,12 @@ private fun buildOfficialScheduleText(
         appendLine("${clock(lastEnd)}  •  Pangwakas na Komento (3 min.)")
         appendLine("${clock(lastEnd + 3)}  •  Awit $closingSong at Panalangin")
         appendLine("       Panalangin : ${chairman.ifBlank { "—" }}")
-        appendLine()
-        appendLine("Nabuo sa JW Meeting Scheduler")
     }
 }
 
 private const val SCHEDULE_EXPORT_WIDTH_PX = 2480
 private const val SCHEDULE_EXPORT_HEIGHT_PX = 3508
+private const val SCHEDULE_EXPORT_DPI = 300
 private const val SCHEDULE_EXPORT_CSS_WIDTH = 397
 private const val SCHEDULE_EXPORT_CSS_HEIGHT = 562
 
@@ -2648,7 +2681,7 @@ private fun buildOfficialScheduleHtml(weekStart:String,bible:String,openingSong:
     val html=buildString {
         val viewport = if (exportMode) "width=$SCHEDULE_EXPORT_CSS_WIDTH,initial-scale=1,maximum-scale=1,user-scalable=no" else "width=device-width,initial-scale=1"
         append("<!doctype html><html><head><meta name=\"viewport\" content=\"").append(viewport).append("\"><style>")
-        if (exportMode) append("@font-face{font-family:'Google Sans';src:url('fonts/GoogleSansFlex.ttf') format('truetype');font-style:normal;font-weight:100 900;font-display:block}")
+        append("@font-face{font-family:'Google Sans';src:url('fonts/GoogleSansFlex.ttf') format('truetype');font-style:normal;font-weight:100 900;font-display:block}")
         append("*{box-sizing:border-box}html,body{margin:0;background:#fff;color:#171717;font-family:'Google Sans','Google Sans Text',Roboto,Arial,sans-serif}body{padding:18px 20px 14px;font-size:6.4px;line-height:1.25")
         if (exportMode) append(";width:${SCHEDULE_EXPORT_CSS_WIDTH}px;height:${SCHEDULE_EXPORT_CSS_HEIGHT}px;overflow:hidden;zoom:$exportZoom")
         append("}.title{font-size:9.5px;font-weight:700;padding-bottom:5px;border-bottom:1px solid #252525}.sub{margin:7px 0 14px;color:#397782;font-size:7.2px}.toprow{display:grid;grid-template-columns:30px minmax(0,1fr) minmax(95px,.9fr);gap:5px;align-items:start;margin:0 0 5px}.time{white-space:nowrap}.bullet{font-size:6px;margin-right:3px}.role strong{margin-right:3px}.advisor{margin:7px 0 16px}.section{display:flex;align-items:center;gap:6px;margin:16px 0 8px;font-size:7.8px;font-weight:600}.badge{width:17px;height:17px;border-radius:4px;overflow:hidden;flex:0 0 17px}.badge img{display:block;width:100%;height:100%}.program{display:grid;grid-template-columns:30px minmax(80px,1.55fr) minmax(62px,1fr) minmax(62px,1fr);gap:5px;align-items:start;margin:0 0 8px}.part{overflow-wrap:anywhere}.dot{font-weight:bold;margin-right:3px}.hall{font-size:5.6px;color:#555;text-align:left;margin-bottom:2px}.name{font-size:6.4px;font-weight:700;overflow-wrap:anywhere}.assistant{font-size:5.8px;font-weight:400;color:#777;margin-top:2px;overflow-wrap:anywhere}.single{grid-column:3/5}.footer{border-top:1px solid #ddd;margin-top:14px;padding-top:8px}.footnote{text-align:right;color:#999;font-size:5px;margin-top:20px}@media print{body{padding:18px 20px 14px}}")
@@ -2685,7 +2718,7 @@ private fun buildOfficialScheduleHtml(weekStart:String,bible:String,openingSong:
         }
         append("<div class=\"footer\"><div class=\"toprow\"><div class=\"time\">").append(clock(lastEnd)).append("</div><div><span class=\"bullet\">●</span>Pangwakas na Komento (3 min.)</div><div></div></div>")
         append("<div class=\"toprow\"><div class=\"time\">").append(clock(closeSongTime)).append("</div><div><span class=\"bullet\">●</span>Awit ").append(closingSong.htmlSafe()).append(" at Panalangin</div><div class=\"role\"><strong>Panalangin :</strong> ").append(chairman.ifBlank{"—"}.htmlSafe()).append("</div></div></div>")
-        append("<div class=\"footnote\">Nabuo sa JW Meeting Scheduler</div></body></html>")
+        append("</body></html>")
     }
     return html
 }

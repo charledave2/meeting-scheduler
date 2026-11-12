@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.45.4 — 2026-11-13
+
+- Use the bundled Google Sans font in both schedule preview and PNG export.
+- Remove the “Nabuo sa JW Meeting Scheduler” footer from schedule exports.
+- Keep PNG output at a lossless 2480 × 3508 pixels with 300 DPI metadata.
+- Add a subtle forest-green abstract design to the Home Page greeting card.
+
 ## v0.45.3 — 2026-11-12
 
 - Fixed shared PNG content scaling so the schedule fills the fixed A4 canvas across device densities.
