@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.2 — 2026-11-12
+
+- Fixed PNG export rendering by attaching the temporary high-resolution WebView to the Activity window before capture, then removing it after rendering.
+- Kept the fixed A4/300 DPI PNG output and chooser success popup behavior.
+
 ## v0.45.1 — 2026-11-12
 
 - Fixed PNG sharing so the generated image is granted correctly to apps in the Android Sharesheet.

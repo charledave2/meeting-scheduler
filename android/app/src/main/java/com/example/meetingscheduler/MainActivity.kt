@@ -918,8 +918,26 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         val outputHeight = SCHEDULE_EXPORT_HEIGHT_PX
         val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
         val initialScale = (outputWidth * 100f / (SCHEDULE_EXPORT_CSS_WIDTH * density)).toInt().coerceAtLeast(1)
+        var hostContext: Context = context
+        while (hostContext !is android.app.Activity && hostContext is android.content.ContextWrapper) {
+            val base = hostContext.baseContext
+            if (base === hostContext) break
+            hostContext = base
+        }
+        val activityRoot = (hostContext as? android.app.Activity)?.findViewById<android.view.ViewGroup>(android.R.id.content)
+        if (activityRoot == null) {
+            toastMessage = "Hindi maihanda ang PNG renderer. Isara at buksan muli ang Preview & Export."
+            return
+        }
         val renderer = WebView(context)
+        renderer.visibility = View.INVISIBLE
+        activityRoot.addView(renderer, android.widget.FrameLayout.LayoutParams(outputWidth, outputHeight))
         var captureStarted = false
+        var pageLoadFinished = false
+        fun removeRenderer(view: WebView) {
+            (view.parent as? android.view.ViewGroup)?.removeView(view)
+            runCatching { view.stopLoading(); view.destroy() }
+        }
         fun captureRenderedSchedule(view: WebView) {
             if (captureStarted) return
             captureStarted = true
@@ -930,9 +948,10 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 )
                 view.layout(0, 0, outputWidth, outputHeight)
                 val bitmap = Bitmap.createBitmap(outputWidth, outputHeight, Bitmap.Config.ARGB_8888)
+                view.visibility = View.VISIBLE
                 view.draw(Canvas(bitmap))
-                view.stopLoading()
-                view.destroy()
+                view.visibility = View.INVISIBLE
+                removeRenderer(view)
                 val file = File(File(context.cacheDir, "exports").apply { mkdirs() }, "meeting-schedule.png")
                 Thread {
                     val saved = runCatching {
@@ -953,7 +972,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     }
                 }.start()
             } catch (error: Exception) {
-                runCatching { view.stopLoading(); view.destroy() }
+                removeRenderer(view)
                 toastMessage = "Hindi mabuo ang export image: ${error.message ?: "subukan muli"}"
             }
         }
@@ -973,6 +992,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest): Boolean = true
                 override fun onPageFinished(view: WebView, url: String?) {
+                    pageLoadFinished = true
                     view.postVisualStateCallback(System.nanoTime(), object : WebView.VisualStateCallback() {
                         override fun onComplete(requestId: Long) {
                             view.postDelayed({ captureRenderedSchedule(view) }, 180L)
@@ -987,6 +1007,13 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             )
             layout(0, 0, outputWidth, outputHeight)
             loadDataWithBaseURL("file:///android_asset/", exportHtml, "text/html", "UTF-8", null)
+            postDelayed({
+                if (!pageLoadFinished && !captureStarted) {
+                    captureStarted = true
+                    removeRenderer(this)
+                    toastMessage = "Hindi natapos ang pagbuo ng PNG. Suriin ang preview at subukan muli."
+                }
+            }, 12_000L)
         }
     }
     fun openSaved(item: SavedSchedule) {
