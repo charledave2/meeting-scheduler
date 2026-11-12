@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.44.1 — 2026-11-12
+
+- Removed the theme switch from the profile popover; theme selection remains in Account & Settings.
+- Placed Save and Sign out side by side at the bottom as compact, label-free icons.
+- Removed the sign-out icon’s solid background and kept its icon in the theme’s error color.
+
 ## v0.44.0 — 2026-11-12
 
 - Replaced the centered profile dialog with a compact popover anchored beside the profile shortcut.
