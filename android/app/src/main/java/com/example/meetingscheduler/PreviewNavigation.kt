@@ -2,6 +2,10 @@ package com.example.meetingscheduler
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -151,16 +155,37 @@ private fun PreviewNavItem(screen: Screen, selected: Boolean, modifier: Modifier
         Screen.HISTORY -> Icons.TwoTone.History
         else -> Icons.TwoTone.ManageAccounts
     }
+    val iconScale = remember { Animatable(1f) }
+    val iconTilt = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
     Column(
         modifier.fillMaxHeight().clip(RoundedCornerShape(24.dp))
             .selectable(selected = selected, role = Role.Tab,
-                interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
+                interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {
+                    scope.launch {
+                        iconScale.snapTo(0.78f)
+                        launch {
+                            iconScale.animateTo(1.14f, tween(130, easing = FastOutSlowInEasing))
+                            iconScale.animateTo(1f, tween(150, easing = FastOutSlowInEasing))
+                        }
+                        launch {
+                            iconTilt.animateTo(if (selected) -10f else 10f, tween(100))
+                            iconTilt.animateTo(0f, tween(190, easing = FastOutSlowInEasing))
+                        }
+                    }
+                    onClick()
+                })
             .semantics { contentDescription = screen.title }.padding(top = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(Modifier.size(32.dp).background(if (selected) colors.primaryContainer else colors.surfaceContainerHigh,
             CircleShape), contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp),
+            Icon(icon, contentDescription = null,
+                modifier = Modifier.size(22.dp).graphicsLayer {
+                    scaleX = iconScale.value
+                    scaleY = iconScale.value
+                    rotationZ = iconTilt.value
+                },
                 tint = if (selected) colors.primary else colors.onSurfaceVariant)
         }
         Spacer(Modifier.height(4.dp))
