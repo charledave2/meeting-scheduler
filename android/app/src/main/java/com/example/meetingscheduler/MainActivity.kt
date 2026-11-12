@@ -25,6 +25,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -42,6 +43,17 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.foundation.Canvas as ComposeCanvas
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -1382,34 +1394,139 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
 
 @Composable
 private fun MeetingSplashScreen() {
-    var reveal by remember { mutableStateOf(false) }
     val compact = LocalConfiguration.current.screenHeightDp < 440
-    LaunchedEffect(Unit) { delay(90); reveal = true }
-    Surface(color = Color(0xFF0B4A2B), modifier = Modifier.fillMaxSize()) {
+    var reveal by remember { mutableStateOf(false) }
+    val entrance = remember { Animatable(0f) }
+    val orbit = rememberInfiniteTransition(label = "splash orbit")
+    val orbitAngle by orbit.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(8_000, easing = LinearEasing), RepeatMode.Restart),
+        label = "splash orbit angle"
+    )
+    LaunchedEffect(Unit) {
+        reveal = true
+        entrance.animateTo(1f, tween(880, easing = FastOutSlowInEasing))
+    }
+    Box(
+        Modifier.fillMaxSize().background(
+            Brush.verticalGradient(listOf(Color(0xFF0A2519), Color(0xFF10472F), Color(0xFF0A2519)))
+        ),
+        contentAlignment = Alignment.Center
+    ) {
         Column(
-            modifier = Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(20.dp),
+            modifier = Modifier.fillMaxSize().safeDrawingPadding()
+                .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            AnimatedVisibility(
-                visible = reveal,
-                enter = fadeIn(tween(480)) + scaleIn(tween(600), initialScale = 0.78f)
+            Box(
+                Modifier.size(if (compact) 176.dp else 226.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Image(
-                    painter = androidx.compose.ui.res.painterResource(R.drawable.ic_meeting_scheduler),
-                    contentDescription = "JW Meeting Scheduler",
-                    modifier = Modifier.size(if (compact) 76.dp else 112.dp)
-                )
+                ComposeCanvas(
+                    Modifier.fillMaxSize().graphicsLayer { rotationZ = orbitAngle }
+                ) {
+                    val inset = size.minDimension * 0.075f
+                    val ringSize = androidx.compose.ui.geometry.Size(
+                        size.width - inset * 2f,
+                        size.height - inset * 2f
+                    )
+                    drawCircle(Color(0xFFB8D7AF).copy(alpha = 0.045f), radius = size.minDimension * 0.45f)
+                    drawArc(
+                        color = Color(0xFFA8C3A4).copy(alpha = 0.9f),
+                        startAngle = -108f, sweepAngle = 126f, useCenter = false,
+                        topLeft = androidx.compose.ui.geometry.Offset(inset, inset), size = ringSize,
+                        style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                    drawArc(
+                        color = Color(0xFFD8E7C8).copy(alpha = 0.48f),
+                        startAngle = 78f, sweepAngle = 78f, useCenter = false,
+                        topLeft = androidx.compose.ui.geometry.Offset(inset, inset), size = ringSize,
+                        style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                    val radians = Math.toRadians(orbitAngle.toDouble())
+                    val orbitRadius = size.minDimension * 0.45f
+                    drawCircle(
+                        color = Color(0xFFDDE9D9),
+                        radius = 3.dp.toPx(),
+                        center = androidx.compose.ui.geometry.Offset(
+                            size.width / 2f + kotlin.math.cos(radians).toFloat() * orbitRadius,
+                            size.height / 2f + kotlin.math.sin(radians).toFloat() * orbitRadius
+                        )
+                    )
+                }
+                Surface(
+                    modifier = Modifier.size(if (compact) 112.dp else 138.dp).graphicsLayer {
+                        val scale = 0.76f + 0.24f * entrance.value
+                        scaleX = scale
+                        scaleY = scale
+                        rotationY = (1f - entrance.value) * -22f
+                        translationY = (1f - entrance.value) * 18.dp.toPx()
+                    },
+                    shape = RoundedCornerShape(if (compact) 30.dp else 38.dp),
+                    color = Color(0xFF145435),
+                    border = BorderStroke(1.dp, Color(0xFFA8C3A4).copy(alpha = 0.48f)),
+                    shadowElevation = 18.dp
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Image(
+                            painter = androidx.compose.ui.res.painterResource(R.drawable.ic_meeting_scheduler),
+                            contentDescription = "JW Meeting Scheduler",
+                            modifier = Modifier.size(if (compact) 82.dp else 100.dp)
+                        )
+                    }
+                }
+                AnimatedVisibility(
+                    visible = reveal,
+                    modifier = Modifier.align(Alignment.BottomEnd).offset(x = (-24).dp, y = (-23).dp),
+                    enter = fadeIn(tween(250, delayMillis = 430)) + scaleIn(tween(340, delayMillis = 430), initialScale = 0.45f)
+                ) {
+                    Surface(
+                        modifier = Modifier.size(if (compact) 34.dp else 40.dp),
+                        shape = CircleShape,
+                        color = Color(0xFFB8D7AF),
+                        border = BorderStroke(3.dp, Color(0xFF10472F)),
+                        shadowElevation = 6.dp
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.TwoTone.CheckCircle, contentDescription = null,
+                                tint = Color(0xFF173A27), modifier = Modifier.size(if (compact) 22.dp else 26.dp))
+                        }
+                    }
+                }
             }
             Spacer(Modifier.height(if (compact) 10.dp else 18.dp))
             AnimatedVisibility(
                 visible = reveal,
-                enter = fadeIn(tween(380, delayMillis = 140)) + slideInVertically(tween(440, delayMillis = 140)) { it / 4 }
+                enter = fadeIn(tween(380, delayMillis = 170)) +
+                    slideInVertically(tween(440, delayMillis = 170)) { it / 4 }
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("JW Meeting Scheduler", color = Color(0xFFF6F0D8), fontSize = if (compact) 20.sp else 23.sp, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    Spacer(Modifier.height(5.dp))
-                    Text("Midweek meeting workspace", color = Color(0xFFB8D7AF), fontSize = 12.sp)
+                    Text(
+                        "JW Meeting Scheduler",
+                        color = Color(0xFFF2F5EC),
+                        fontSize = if (compact) 20.sp else 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Aayos ang bawat bahagi ng pulong",
+                        color = Color(0xFFC5D9BE),
+                        fontSize = if (compact) 11.sp else 13.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            }
+            Spacer(Modifier.height(if (compact) 18.dp else 26.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                repeat(3) { index ->
+                    Box(
+                        Modifier.size(if (index == 1) 14.dp else 5.dp, 5.dp)
+                            .clip(CircleShape)
+                            .background(if (index == 1) Color(0xFFA8C3A4) else Color(0xFFA8C3A4).copy(alpha = 0.4f))
+                    )
                 }
             }
         }
