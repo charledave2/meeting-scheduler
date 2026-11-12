@@ -2,6 +2,8 @@ package com.example.meetingscheduler
 
 import android.content.Context
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.app.PendingIntent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.BitmapFactory
@@ -133,6 +135,18 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
+
+private const val SHARE_RESULT_PREFS = "schedule_share_result"
+private const val SHARE_CHOSEN_ACTION = "com.example.meetingscheduler.SHARE_TARGET_CHOSEN"
+
+class ShareTargetChosenReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val type = intent.getStringExtra("share_type") ?: return
+        context.getSharedPreferences(SHARE_RESULT_PREFS, Context.MODE_PRIVATE)
+            .edit().putString("selected_type", type).apply()
+    }
+}
+
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -679,6 +693,33 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var accountReloadTick by remember { mutableIntStateOf(0) }
     var accountPhotoTarget by remember { mutableStateOf<RemoteAccount?>(null) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
+    var shareSuccessType by rememberSaveable { mutableStateOf<String?>(null) }
+    val shareLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        val prefs = context.getSharedPreferences(SHARE_RESULT_PREFS, Context.MODE_PRIVATE)
+        val pending = prefs.getString("pending_type", null)
+        val selected = prefs.getString("selected_type", null)
+        if (pending != null && pending == selected) shareSuccessType = pending
+        prefs.edit().remove("pending_type").remove("selected_type").apply()
+    }
+    fun launchScheduleShare(intent: Intent, type: String, chooserTitle: String) {
+        val prefs = context.getSharedPreferences(SHARE_RESULT_PREFS, Context.MODE_PRIVATE)
+        prefs.edit().putString("pending_type", type).remove("selected_type").apply()
+        val callback = Intent(context, ShareTargetChosenReceiver::class.java)
+            .setAction(SHARE_CHOSEN_ACTION)
+            .putExtra("share_type", type)
+        val requestCode = if (type == "png") 451 else 452
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            requestCode,
+            callback,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+        )
+        val chooser = Intent.createChooser(intent, chooserTitle, pendingIntent.intentSender)
+        runCatching { shareLauncher.launch(chooser) }.onFailure {
+            prefs.edit().remove("pending_type").remove("selected_type").apply()
+            toastMessage = "Hindi mabuksan ang sharing menu: ${it.message ?: "subukan muli"}"
+        }
+    }
     var restrictedTapCount by rememberSaveable { mutableIntStateOf(0) }
     var accessNotice by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     val week = remember(weekStart) { runCatching { LocalDate.parse(weekStart) }.getOrDefault(LocalDate.of(2026,11,9)) }
@@ -900,12 +941,13 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                             type = "image/png"
                             putExtra(Intent.EXTRA_STREAM, uri)
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            clipData = android.content.ClipData.newUri(context.contentResolver, "Meeting schedule PNG", uri)
                         }
-                        uri to intent
+                        intent
                     }
                     bitmap.recycle()
                     android.os.Handler(android.os.Looper.getMainLooper()).post {
-                        saved.onSuccess { (_, intent) -> context.startActivity(Intent.createChooser(intent, "Share schedule image")) }
+                        saved.onSuccess { intent -> launchScheduleShare(intent, "png", "Share schedule image") }
                             .onFailure { toastMessage = "Hindi mabuo ang export image: ${it.message ?: "subukan muli"}" }
                     }
                 }.start()
@@ -1235,7 +1277,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         clipData = android.content.ClipData.newUri(context.contentResolver, "Meeting schedule text", uri)
                     }
-                    context.startActivity(Intent.createChooser(intent, "Share schedule text"))
+                    launchScheduleShare(intent, "text", "Share schedule text")
                 }, onPng = ::shareSchedulePng
             )
             Screen.PARTICIPANTS -> {
@@ -1404,6 +1446,18 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         }
     }
     toastMessage?.let { msg -> LaunchedEffect(msg) { Toast.makeText(context, msg, Toast.LENGTH_SHORT).show(); toastMessage = null } }
+    shareSuccessType?.let { type ->
+        AlertDialog(
+            onDismissRequest = { shareSuccessType = null },
+            icon = { Icon(Icons.TwoTone.CheckCircle, contentDescription = null, tint = Forest, modifier = Modifier.size(28.dp)) },
+            title = { Text("Matagumpay ang pag-share", fontWeight = FontWeight.Bold) },
+            text = { Text(if (type == "png") "Naibahagi ang schedule PNG." else "Naibahagi ang schedule text.") },
+            confirmButton = { TextButton(onClick = { shareSuccessType = null }) { Text("Okay", color = Forest) } },
+            containerColor = AppSurface,
+            titleContentColor = Ink,
+            textContentColor = Ink
+        )
+    }
     accessNotice?.let { (message, warning) ->
         LaunchedEffect(accessNotice) { delay(2_100); accessNotice = null }
         Dialog(onDismissRequest = { accessNotice = null }) {

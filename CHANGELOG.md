@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.45.1 — 2026-11-12
+
+- Fixed PNG sharing so the generated image is granted correctly to apps in the Android Sharesheet.
+- Routed PNG and Export Text through a tracked chooser result and show a success popup after the user returns from a selected share target.
+- Kept the success popup hidden when the Sharesheet is cancelled without choosing an app.
+
 ## v0.45.0 — 2026-11-12
 
 - Standardized schedule PNG exports to a fixed A4 portrait canvas at 300 DPI (2480 × 3508) on phones and tablets.
