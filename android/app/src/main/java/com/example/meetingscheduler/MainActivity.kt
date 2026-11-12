@@ -1054,10 +1054,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                                 profilePhotoDataUrl = profilePhotoDataUrl,
                                 nameDraft = profileNameDraft,
                                 profileError = profileError,
-                                darkMode = darkMode,
                                 onNameChange = { profileNameDraft = it; profileError = null },
                                 onChangePhoto = { profilePhotoPicker.launch(arrayOf("image/*")) },
-                                onToggleTheme = onToggleTheme,
                                 onSignOut = {
                                     profileDialogOpen = false
                                     val oldSession = api.signOut()
@@ -1727,10 +1725,8 @@ private fun ProfilePreferencesMenu(
     profilePhotoDataUrl: String,
     nameDraft: String,
     profileError: String?,
-    darkMode: Boolean,
     onNameChange: (String) -> Unit,
     onChangePhoto: () -> Unit,
-    onToggleTheme: () -> Unit,
     onSignOut: () -> Unit,
     onSave: () -> Unit
 ) {
@@ -1767,14 +1763,14 @@ private fun ProfilePreferencesMenu(
             Modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(13.dp))
                 .background(colors.surfaceContainerHigh)
                 .border(BorderStroke(1.dp, colors.outlineVariant), RoundedCornerShape(13.dp))
-                .padding(start = 10.dp, end = 3.dp),
+                .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(Icons.TwoTone.Edit, contentDescription = null, tint = colors.primary, modifier = Modifier.size(17.dp))
             BasicTextField(
                 value = nameDraft,
                 onValueChange = onNameChange,
-                modifier = Modifier.weight(1f).padding(start = 8.dp, end = 4.dp),
+                modifier = Modifier.weight(1f).padding(start = 8.dp),
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodySmall.copy(color = colors.onSurface),
                 decorationBox = { innerTextField ->
@@ -1784,36 +1780,28 @@ private fun ProfilePreferencesMenu(
                     }
                 }
             )
-            IconButton(
-                onClick = onSave,
-                enabled = nameDraft.isNotBlank(),
-                modifier = Modifier.size(40.dp)
-            ) {
-                Icon(Icons.TwoTone.CheckCircle, contentDescription = "Save", tint = colors.primary,
-                    modifier = Modifier.size(20.dp))
-            }
         }
         profileError?.let {
             Text(it, color = colors.error, fontSize = 11.sp, lineHeight = 14.sp)
         }
         HorizontalDivider(color = colors.outlineVariant)
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp))
-                .background(colors.primaryContainer).padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(if (darkMode) Icons.TwoTone.DarkMode else Icons.TwoTone.LightMode,
-                contentDescription = null, tint = colors.primary, modifier = Modifier.size(19.dp))
-            Text(if (darkMode) "Dark mode" else "Light mode", color = colors.onPrimaryContainer,
-                fontSize = 12.sp, modifier = Modifier.weight(1f))
-            Switch(checked = darkMode, onCheckedChange = { onToggleTheme() })
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            IconButton(
+                onClick = onSave,
+                enabled = nameDraft.isNotBlank(),
+                modifier = Modifier.size(40.dp)
+            ) {
+                Icon(Icons.TwoTone.CheckCircle, contentDescription = "Save",
+                    tint = colors.primary, modifier = Modifier.size(19.dp))
+            }
+            Spacer(Modifier.width(24.dp))
             IconButton(
                 onClick = onSignOut,
                 modifier = Modifier.size(40.dp)
-                    .clip(CircleShape).background(colors.errorContainer)
             ) {
                 Icon(Icons.TwoTone.Logout, contentDescription = "Sign out",
                     tint = colors.error, modifier = Modifier.size(19.dp))
