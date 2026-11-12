@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.3 — 2026-11-12
+
+- Fixed shared PNG content scaling so the schedule fills the fixed A4 canvas across device densities.
+- Kept the export font, page layout, dimensions, and preview rendering unchanged.
+
 ## v0.45.2 — 2026-11-12
 
 - Fixed PNG export rendering by attaching the temporary high-resolution WebView to the Activity window before capture, then removing it after rendering.
