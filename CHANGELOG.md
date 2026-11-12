@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.44.0 — 2026-11-12
+
+- Replaced the centered profile dialog with a compact popover anchored beside the profile shortcut.
+- Reduced profile name field and control sizes; save and sign-out are icon-only, with sign-out highlighted in the theme’s error color.
+- Applied the forest-green Material You palette to profile controls and kept the theme switch compact.
+- Added a custom animated forest-green splash and press animations for the navigation icons.
+
 ## v0.43.0 — 2026-11-12
 
 - Replaced the side drawer with compact forest green bottom navigation for Home, Workbook, History and Account & Settings.
