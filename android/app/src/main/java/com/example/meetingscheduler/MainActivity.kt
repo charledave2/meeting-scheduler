@@ -136,17 +136,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
 
-private const val SHARE_RESULT_PREFS = "schedule_share_result"
-private const val SHARE_CHOSEN_ACTION = "com.example.meetingscheduler.SHARE_TARGET_CHOSEN"
-
-class ShareTargetChosenReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        val type = intent.getStringExtra("share_type") ?: return
-        context.getSharedPreferences(SHARE_RESULT_PREFS, Context.MODE_PRIVATE)
-            .edit().putString("selected_type", type).apply()
-    }
-}
-
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -159,6 +148,18 @@ import java.time.Month
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+
+private const val SHARE_RESULT_PREFS = "schedule_share_result"
+private const val SHARE_CHOSEN_ACTION = "com.example.meetingscheduler.SHARE_TARGET_CHOSEN"
+
+class ShareTargetChosenReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val type = intent.getStringExtra("share_type") ?: return
+        context.getSharedPreferences(SHARE_RESULT_PREFS, Context.MODE_PRIVATE)
+            .edit().putString("selected_type", type).apply()
+    }
+}
+
 
 private val DarkPalette = darkColorScheme(
     primary = Color(0xFFA8C3A4), onPrimary = Color(0xFF17301F),
