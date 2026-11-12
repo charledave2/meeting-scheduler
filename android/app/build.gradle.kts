@@ -14,6 +14,7 @@ android {
         targetSdk = 35
         versionCode = 60
         versionName = "0.43.0"
+        resValue("string", "app_name", "JW Meeting Scheduler")
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
@@ -44,6 +45,11 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            applicationIdSuffix = ".preview"
+            versionNameSuffix = "-preview"
+            resValue("string", "app_name", "JW Meeting Scheduler Preview")
+        }
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")
         }
