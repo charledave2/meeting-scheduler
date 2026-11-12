@@ -1,5 +1,5 @@
-Warning: truncated output (original token count: 54439)
-Total output lines: 3264
+Warning: truncated output (original token count: 54456)
+Total output lines: 3266
 
 package com.example.meetingscheduler
 
@@ -913,10 +913,12 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         web.loadDataWithBaseURL("file:///android_asset/", html, "text/HTML", "UTF-8", null)
     }
     fun shareSchedulePng() {
+        val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
+        val exportZoom = SCHEDULE_EXPORT_WIDTH_PX / (SCHEDULE_EXPORT_CSS_WIDTH * density)
         val exportHtml = buildOfficialScheduleHtml(
             weekStart, bible, openingSong, closingSong, parts.toList(), chairman, openingPrayer, adviser, audienceGroup,
             exportMode = true,
-            exportZoom = SCHEDULE_EXPORT_WIDTH_PX / (SCHEDULE_EXPORT_CSS_WIDTH * context.resources.displayMetrics.density.coerceAtLeast(1f))
+            exportZoom = exportZoom
         )
         val outputWidth = SCHEDULE_EXPORT_WIDTH_PX
         val outputHeight = SCHEDULE_EXPORT_HEIGHT_PX
@@ -1335,7 +1337,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     } })
             }
             Screen.HISTORY -> {
-                LaunchedEffect(current, signedIn, historyLoaded) { if (current ==…14439 tokens truncated…se Color(0xFFB7E7E4) to Color(0xFF12494B)
+               …14456 tokens truncated…se Color(0xFFB7E7E4) to Color(0xFF12494B)
             }
             Box(Modifier.size(30.dp).background(badgeColors.first, RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) {
                 Text("${part.id.takeIf { it>0 } ?: index+1}", color = badgeColors.second, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
