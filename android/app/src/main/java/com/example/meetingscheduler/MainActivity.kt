@@ -868,18 +868,82 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         web.loadDataWithBaseURL("file:///android_asset/", html, "text/HTML", "UTF-8", null)
     }
     fun shareSchedulePng() {
-        val renderer=officialPreviewWebView.value
-        if(renderer==null || renderer.width<=0 || renderer.height<=0){toastMessage="Hintaying mabuo ang preview bago mag-export.";return}
-        renderer.scrollTo(0, 0)
-        renderer.post {
-                val bitmap=Bitmap.createBitmap(renderer.width,renderer.height,Bitmap.Config.ARGB_8888)
-                renderer.draw(Canvas(bitmap))
-                val file=File(File(context.cacheDir,"exports").apply { mkdirs() },"meeting-schedule.png")
-                FileOutputStream(file).use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)}
-                bitmap.recycle()
-                val uri=FileProvider.getUriForFile(context,"${context.packageName}.files",file)
-                val intent=Intent(Intent.ACTION_SEND).apply{type="image/png";putExtra(Intent.EXTRA_STREAM,uri);addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)}
-                context.startActivity(Intent.createChooser(intent,"Share schedule image"))
+        val exportHtml = buildOfficialScheduleHtml(
+            weekStart, bible, openingSong, closingSong, parts.toList(), chairman, openingPrayer, adviser, audienceGroup,
+            exportMode = true
+        )
+        val outputWidth = SCHEDULE_EXPORT_WIDTH_PX
+        val outputHeight = SCHEDULE_EXPORT_HEIGHT_PX
+        val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
+        val initialScale = (outputWidth * 100f / (SCHEDULE_EXPORT_CSS_WIDTH * density)).toInt().coerceAtLeast(1)
+        val renderer = WebView(context)
+        var captureStarted = false
+        fun captureRenderedSchedule(view: WebView) {
+            if (captureStarted) return
+            captureStarted = true
+            try {
+                view.measure(
+                    View.MeasureSpec.makeMeasureSpec(outputWidth, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(outputHeight, View.MeasureSpec.EXACTLY)
+                )
+                view.layout(0, 0, outputWidth, outputHeight)
+                val bitmap = Bitmap.createBitmap(outputWidth, outputHeight, Bitmap.Config.ARGB_8888)
+                view.draw(Canvas(bitmap))
+                view.stopLoading()
+                view.destroy()
+                val file = File(File(context.cacheDir, "exports").apply { mkdirs() }, "meeting-schedule.png")
+                Thread {
+                    val saved = runCatching {
+                        FileOutputStream(file).use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+                        val intent = Intent(Intent.ACTION_SEND).apply {
+                            type = "image/png"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        uri to intent
+                    }
+                    bitmap.recycle()
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        saved.onSuccess { (_, intent) -> context.startActivity(Intent.createChooser(intent, "Share schedule image")) }
+                            .onFailure { toastMessage = "Hindi mabuo ang export image: ${it.message ?: "subukan muli"}" }
+                    }
+                }.start()
+            } catch (error: Exception) {
+                runCatching { view.stopLoading(); view.destroy() }
+                toastMessage = "Hindi mabuo ang export image: ${error.message ?: "subukan muli"}"
+            }
+        }
+        renderer.apply {
+            setBackgroundColor(android.graphics.Color.WHITE)
+            settings.javaScriptEnabled = false
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
+            settings.blockNetworkLoads = true
+            settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            settings.loadsImagesAutomatically = true
+            settings.useWideViewPort = true
+            settings.loadWithOverviewMode = false
+            isVerticalScrollBarEnabled = false
+            isHorizontalScrollBarEnabled = false
+            setInitialScale(initialScale)
+            webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest): Boolean = true
+                override fun onPageFinished(view: WebView, url: String?) {
+                    view.postVisualStateCallback(System.nanoTime(), object : WebView.VisualStateCallback() {
+                        override fun onComplete(requestId: Long) {
+                            view.postDelayed({ captureRenderedSchedule(view) }, 180L)
+                        }
+                    })
+                    view.postDelayed({ captureRenderedSchedule(view) }, 1800L)
+                }
+            }
+            measure(
+                View.MeasureSpec.makeMeasureSpec(outputWidth, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(outputHeight, View.MeasureSpec.EXACTLY)
+            )
+            layout(0, 0, outputWidth, outputHeight)
+            loadDataWithBaseURL("file:///android_asset/", exportHtml, "text/html", "UTF-8", null)
         }
     }
     fun openSaved(item: SavedSchedule) {
@@ -2475,7 +2539,12 @@ private fun buildOfficialScheduleText(
     }
 }
 
-private fun buildOfficialScheduleHtml(weekStart:String,bible:String,openingSong:String,closingSong:String,parts:List<Assignment>,chairman:String,openingPrayer:String,adviser:String,audienceGroup:String):String {
+private const val SCHEDULE_EXPORT_WIDTH_PX = 2480
+private const val SCHEDULE_EXPORT_HEIGHT_PX = 3508
+private const val SCHEDULE_EXPORT_CSS_WIDTH = 397
+private const val SCHEDULE_EXPORT_CSS_HEIGHT = 562
+
+private fun buildOfficialScheduleHtml(weekStart:String,bible:String,openingSong:String,closingSong:String,parts:List<Assignment>,chairman:String,openingPrayer:String,adviser:String,audienceGroup:String,exportMode:Boolean=false):String {
     val start=runCatching{LocalDate.parse(weekStart)}.getOrDefault(LocalDate.now())
     val end=start.plusDays(6)
     val months=listOf("Enero","Pebrero","Marso","Abril","Mayo","Hunyo","Hulyo","Agosto","Setyembre","Oktubre","Nobyembre","Disyembre")
@@ -2495,8 +2564,12 @@ private fun buildOfficialScheduleHtml(weekStart:String,bible:String,openingSong:
     val grouped=parts.groupBy{it.section.ifBlank{"treasures"}}
     val sectionOrder=listOf("treasures","ministry","living")
     val html=buildString {
-        append("<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><style>")
-        append("*{box-sizing:border-box}html,body{margin:0;background:#fff;color:#171717;font-family:'Google Sans','Google Sans Text',Roboto,Arial,sans-serif}body{padding:18px 20px 14px;font-size:6.4px;line-height:1.25}.title{font-size:9.5px;font-weight:700;padding-bottom:5px;border-bottom:1px solid #252525}.sub{margin:7px 0 14px;color:#397782;font-size:7.2px}.toprow{display:grid;grid-template-columns:30px minmax(0,1fr) minmax(95px,.9fr);gap:5px;align-items:start;margin:0 0 5px}.time{white-space:nowrap}.bullet{font-size:6px;margin-right:3px}.role strong{margin-right:3px}.advisor{margin:7px 0 16px}.section{display:flex;align-items:center;gap:6px;margin:16px 0 8px;font-size:7.8px;font-weight:600}.badge{width:17px;height:17px;border-radius:4px;overflow:hidden;flex:0 0 17px}.badge img{display:block;width:100%;height:100%}.program{display:grid;grid-template-columns:30px minmax(80px,1.55fr) minmax(62px,1fr) minmax(62px,1fr);gap:5px;align-items:start;margin:0 0 8px}.part{overflow-wrap:anywhere}.dot{font-weight:bold;margin-right:3px}.hall{font-size:5.6px;color:#555;text-align:left;margin-bottom:2px}.name{font-size:6.4px;font-weight:700;overflow-wrap:anywhere}.assistant{font-size:5.8px;font-weight:400;color:#777;margin-top:2px;overflow-wrap:anywhere}.single{grid-column:3/5}.footer{border-top:1px solid #ddd;margin-top:14px;padding-top:8px}.footnote{text-align:right;color:#999;font-size:5px;margin-top:20px}@media print{body{padding:18px 20px 14px}}")
+        val viewport = if (exportMode) "width=$SCHEDULE_EXPORT_CSS_WIDTH,initial-scale=1,maximum-scale=1,user-scalable=no" else "width=device-width,initial-scale=1"
+        append("<!doctype html><html><head><meta name=\"viewport\" content=\"").append(viewport).append("\"><style>")
+        if (exportMode) append("@font-face{font-family:'Google Sans';src:url('fonts/GoogleSansFlex.ttf') format('truetype');font-style:normal;font-weight:100 900;font-display:block}")
+        append("*{box-sizing:border-box}html,body{margin:0;background:#fff;color:#171717;font-family:'Google Sans','Google Sans Text',Roboto,Arial,sans-serif}body{padding:18px 20px 14px;font-size:6.4px;line-height:1.25")
+        if (exportMode) append(";width:${SCHEDULE_EXPORT_CSS_WIDTH}px;height:${SCHEDULE_EXPORT_CSS_HEIGHT}px;overflow:hidden")
+        append("}.title{font-size:9.5px;font-weight:700;padding-bottom:5px;border-bottom:1px solid #252525}.sub{margin:7px 0 14px;color:#397782;font-size:7.2px}.toprow{display:grid;grid-template-columns:30px minmax(0,1fr) minmax(95px,.9fr);gap:5px;align-items:start;margin:0 0 5px}.time{white-space:nowrap}.bullet{font-size:6px;margin-right:3px}.role strong{margin-right:3px}.advisor{margin:7px 0 16px}.section{display:flex;align-items:center;gap:6px;margin:16px 0 8px;font-size:7.8px;font-weight:600}.badge{width:17px;height:17px;border-radius:4px;overflow:hidden;flex:0 0 17px}.badge img{display:block;width:100%;height:100%}.program{display:grid;grid-template-columns:30px minmax(80px,1.55fr) minmax(62px,1fr) minmax(62px,1fr);gap:5px;align-items:start;margin:0 0 8px}.part{overflow-wrap:anywhere}.dot{font-weight:bold;margin-right:3px}.hall{font-size:5.6px;color:#555;text-align:left;margin-bottom:2px}.name{font-size:6.4px;font-weight:700;overflow-wrap:anywhere}.assistant{font-size:5.8px;font-weight:400;color:#777;margin-top:2px;overflow-wrap:anywhere}.single{grid-column:3/5}.footer{border-top:1px solid #ddd;margin-top:14px;padding-top:8px}.footnote{text-align:right;color:#999;font-size:5px;margin-top:20px}@media print{body{padding:18px 20px 14px}}")
         append("</style></head><body>")
         append("<div class=\"title\">Iskedyul ng Pulong ng Gitnang Sanlinggo</div><div class=\"sub\">").append(weekText.htmlSafe()).append(" | <b>").append(bible.uppercase().htmlSafe()).append("</b></div>")
         append("<div class=\"toprow\"><div class=\"time\">").append(clock(firstMinute-6)).append("</div><div><span class=\"bullet\">●</span>Awit ").append(openingSong.htmlSafe()).append(" at Panalangin</div><div class=\"role\"><strong>Panalangin :</strong> ").append(openingPrayer.ifBlank{"—"}.htmlSafe()).append("</div></div>")

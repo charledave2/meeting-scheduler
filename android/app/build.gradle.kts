@@ -1,7 +1,47 @@
+import java.net.URL
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// Bundle a pinned Google Sans Flex build so export typography is the same offline on every device.
+val googleSansRevision = "a6452c14f7567eb588816c2db5898c522e607e4b"
+val googleSansFont = layout.projectDirectory.file("src/main/assets/fonts/GoogleSansFlex.ttf").asFile
+val googleSansLicense = layout.projectDirectory.file("src/main/assets/fonts/OFL.txt").asFile
+val prepareGoogleSansExportFont by tasks.registering {
+    outputs.files(googleSansFont, googleSansLicense)
+    outputs.upToDateWhen { false }
+    doLast {
+        fun ensurePinnedAsset(file: java.io.File, url: String, expectedSha256: String) {
+            fun digest(bytes: ByteArray) = MessageDigest.getInstance("SHA-256")
+                .digest(bytes).joinToString("") { "%02x".format(it) }
+            if (file.isFile && digest(file.readBytes()) == expectedSha256) return
+            val connection = URL(url).openConnection().apply {
+                connectTimeout = 20_000
+                readTimeout = 30_000
+            }
+            val bytes = connection.getInputStream().use { it.readBytes() }
+            check(digest(bytes) == expectedSha256) { "SHA-256 check failed for ${file.name}" }
+            file.parentFile.mkdirs()
+            file.writeBytes(bytes)
+        }
+        ensurePinnedAsset(
+            googleSansFont,
+            "https://raw.githubusercontent.com/googlefonts/googlesans-flex/$googleSansRevision/documentation/demo-fonts/GoogleSansFlex%5BGRAD%2CROND%2Copsz%2Cslnt%2Cwdth%2Cwght%5D-144B3.ttf",
+            "0c9cd7e90daabec83b94a73d90a1d2f659f7b671203ba80cc860ad651224d4f7"
+        )
+        ensurePinnedAsset(
+            googleSansLicense,
+            "https://raw.githubusercontent.com/googlefonts/googlesans-flex/$googleSansRevision/OFL.txt",
+            "831b6e041705873c3e6efb18c4c96202bc41c8be42a456d3d26c47abf14816d0"
+        )
+    }
+}
+tasks.matching { it.name == "preBuild" }.configureEach {
+    dependsOn(prepareGoogleSansExportFont)
 }
 
 android {
@@ -12,8 +52,8 @@ android {
         applicationId = "com.example.meetingscheduler"
         minSdk = 24
         targetSdk = 35
-        versionCode = 62
-        versionName = "0.44.1"
+        versionCode = 63
+        versionName = "0.45.0"
         resValue("string", "app_name", "JW Meeting Scheduler")
     }
     buildFeatures { compose = true; buildConfig = true }

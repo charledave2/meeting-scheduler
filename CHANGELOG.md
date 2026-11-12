@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.45.0 — 2026-11-12
+
+- Standardized schedule PNG exports to a fixed A4 portrait canvas at 300 DPI (2480 × 3508) on phones and tablets.
+- Rendered exports with a pinned, SHA-256-verified Google Sans Flex font so typography no longer falls back differently by device and works offline.
+- Kept export rendering separate from the on-screen preview.
+
+
 ## v0.44.1 — 2026-11-12
 
 - Removed the theme switch from the profile popover; theme selection remains in Account & Settings.
