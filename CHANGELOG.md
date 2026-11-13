@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.5 — 2026-11-14
+
+- Show visible progress and success or error feedback while saving schedules, importing workbooks, and preparing exports.
+- Disable repeat actions while a save or export is in progress.
+
 ## v0.45.4 — 2026-11-13
 
 - Use the bundled Google Sans font in both schedule preview and PNG export.

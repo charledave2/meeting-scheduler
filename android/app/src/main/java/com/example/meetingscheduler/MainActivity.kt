@@ -599,6 +599,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var workbookBusy by remember { mutableStateOf(false) }
     var workbookCaptureLog by remember { mutableStateOf(listOf("READY · waiting for the selected meeting week")) }
     var cloudStatus by rememberSaveable { mutableStateOf("Konektado sa website") }
+    var cloudSaveBusy by remember { mutableStateOf(false) }
+    var cloudSaveFeedback by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     var participantAdmin by rememberSaveable { mutableStateOf(false) }
     var participantCanEdit by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(api) {
@@ -695,6 +697,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var accountPhotoTarget by remember { mutableStateOf<RemoteAccount?>(null) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
     var shareSuccessType by rememberSaveable { mutableStateOf<String?>(null) }
+    var exportBusyType by remember { mutableStateOf<String?>(null) }
     val shareLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         val prefs = context.getSharedPreferences(SHARE_RESULT_PREFS, Context.MODE_PRIVATE)
         val pending = prefs.getString("pending_type", null)
@@ -716,8 +719,11 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
         )
         val chooser = Intent.createChooser(intent, chooserTitle, pendingIntent.intentSender)
-        runCatching { shareLauncher.launch(chooser) }.onFailure {
+        runCatching { shareLauncher.launch(chooser) }.onSuccess {
+            exportBusyType = null
+        }.onFailure {
             prefs.edit().remove("pending_type").remove("selected_type").apply()
+            exportBusyType = null
             toastMessage = "Hindi mabuksan ang sharing menu: ${it.message ?: "subukan muli"}"
         }
     }
@@ -816,12 +822,32 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         chairman=""; openingPrayer=""; adviser=""; audienceGroup=""
         store.setDetail("chairman",""); store.setDetail("opening_prayer",""); store.setDetail("adviser",""); store.setDetail("audience_group","")
     }
-    fun saveToCloud() { if (signedIn && identityRole == "admin") authScope.launch {
+    fun saveToCloud() {
+        if (!signedIn || identityRole != "admin") {
+            toastMessage = "Admin account lang ang puwedeng mag-save sa cloud"
+            return
+        }
+        if (cloudSaveBusy) return
+        authScope.launch {
+        cloudSaveBusy = true
+        cloudSaveFeedback = null
         cloudStatus = "Sine-save sa cloud…"
         runCatching { api.saveSchedule(weekLabel, weekStart, bible, openingSong, closingSong, parts.map { it.toJson() }, chairman, openingPrayer, adviser, audienceGroup, workbook, editingRemoteId) }
-            .onSuccess { historySaved -> cloudStatus = if (historySaved) "Naka-save sa cloud" else "Na-save; hindi na-update ang assignment history"; toastMessage = cloudStatus; historyLoaded=false; editingRemoteId=0 }
-            .onFailure { cloudStatus = "Hindi na-save: ${it.message ?: "server error"}"; toastMessage = cloudStatus }
-    } else toastMessage = "Admin account lang ang puwedeng mag-save sa cloud" }
+            .onSuccess { historySaved ->
+                cloudStatus = if (historySaved) "Naka-save sa cloud" else "Na-save; hindi na-update ang assignment history"
+                cloudSaveFeedback = cloudStatus to historySaved
+                toastMessage = cloudStatus
+                historyLoaded=false
+                editingRemoteId=0
+            }
+            .onFailure {
+                cloudStatus = "Hindi na-save: ${it.message ?: "server error"}"
+                cloudSaveFeedback = cloudStatus to false
+                toastMessage = cloudStatus
+            }
+        cloudSaveBusy = false
+        }
+    }
     fun persistDetails() = store.saveDetails(weekStart, bible, openingSong, closingSong, workbook)
     suspend fun fetchWorkbookForSelectedWeek() {
         workbookBusy = true
@@ -910,6 +936,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         web.loadDataWithBaseURL("file:///android_asset/", html, "text/HTML", "UTF-8", null)
     }
     fun shareSchedulePng() {
+        if (exportBusyType != null) return
+        exportBusyType = "png"
         val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
         val exportZoom = SCHEDULE_EXPORT_WIDTH_PX / (SCHEDULE_EXPORT_CSS_WIDTH * density)
         val exportHtml = buildOfficialScheduleHtml(
@@ -927,6 +955,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         }
         val activityRoot = (hostContext as? android.app.Activity)?.findViewById<android.view.ViewGroup>(android.R.id.content)
         if (activityRoot == null) {
+            exportBusyType = null
             toastMessage = "Hindi maihanda ang PNG renderer. Isara at buksan muli ang Preview & Export."
             return
         }
@@ -970,11 +999,12 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     bitmap.recycle()
                     android.os.Handler(android.os.Looper.getMainLooper()).post {
                         saved.onSuccess { intent -> launchScheduleShare(intent, "png", "Share schedule image") }
-                            .onFailure { toastMessage = "Hindi mabuo ang export image: ${it.message ?: "subukan muli"}" }
+                            .onFailure { exportBusyType = null; toastMessage = "Hindi mabuo ang export image: ${it.message ?: "subukan muli"}" }
                     }
                 }.start()
             } catch (error: Exception) {
                 removeRenderer(view)
+                exportBusyType = null
                 toastMessage = "Hindi mabuo ang export image: ${error.message ?: "subukan muli"}"
             }
         }
@@ -1012,6 +1042,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 if (!pageLoadFinished && !captureStarted) {
                     captureStarted = true
                     removeRenderer(this)
+                    exportBusyType = null
                     toastMessage = "Hindi natapos ang pagbuo ng PNG. Suriin ang preview at subukan muli."
                 }
             }, 12_000L)
@@ -1287,26 +1318,38 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     assignParticipantToOneSlot(parts, index, slot, name)
                     store.saveAssignments(parts.toList())
                 },
+                cloudSaveBusy = cloudSaveBusy, cloudSaveFeedback = cloudSaveFeedback,
                 onSaveCloud = ::saveToCloud, onContinueExport = { navigateTo(Screen.PREVIEW) }
             )
             Screen.PREVIEW -> PreviewScreen(
                 modifier = scroll, weekStart = weekStart, bible = bible, openingSong = openingSong,
                 closingSong = closingSong, parts = parts, chairman=chairman, openingPrayer=openingPrayer,
                 adviser=adviser, audienceGroup=audienceGroup, previewWebView=officialPreviewWebView, allowExport=canEdit(Screen.PREVIEW),
+                exportBusyType = exportBusyType,
                 onExportText = {
-                    val text = buildOfficialScheduleText(weekStart, bible, openingSong, closingSong, parts, chairman, openingPrayer, adviser, audienceGroup)
-                    val file = File(File(context.cacheDir, "exports").apply { mkdirs() }, "meeting-schedule-${weekStart}.txt")
-                    file.writeText(text, Charsets.UTF_8)
-                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
-                    val intent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_STREAM, uri)
-                        putExtra(Intent.EXTRA_SUBJECT, "Meeting schedule · $weekLabel")
-                        putExtra(Intent.EXTRA_TEXT, "Iskedyul ng Pulong ng Gitnang Sanlinggo · $weekLabel")
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        clipData = android.content.ClipData.newUri(context.contentResolver, "Meeting schedule text", uri)
+                    if (exportBusyType == null) {
+                        exportBusyType = "text"
+                        val text = buildOfficialScheduleText(weekStart, bible, openingSong, closingSong, parts.toList(), chairman, openingPrayer, adviser, audienceGroup)
+                        val exportWeekStart = weekStart
+                        authScope.launch {
+                            runCatching {
+                                val file = withContext(Dispatchers.IO) {
+                                    File(File(context.cacheDir, "exports").apply { mkdirs() }, "meeting-schedule-${exportWeekStart}.txt")
+                                        .apply { writeText(text, Charsets.UTF_8) }
+                                }
+                                val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+                                Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    putExtra(Intent.EXTRA_SUBJECT, "Meeting schedule · $weekLabel")
+                                    putExtra(Intent.EXTRA_TEXT, "Iskedyul ng Pulong ng Gitnang Sanlinggo · $weekLabel")
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    clipData = android.content.ClipData.newUri(context.contentResolver, "Meeting schedule text", uri)
+                                }
+                            }.onSuccess { intent -> launchScheduleShare(intent, "text", "Share schedule text") }
+                                .onFailure { exportBusyType = null; toastMessage = "Hindi mabuo ang export text: ${it.message ?: "subukan muli"}" }
+                        }
                     }
-                    launchScheduleShare(intent, "text", "Share schedule text")
                 }, onPng = ::shareSchedulePng
             )
             Screen.PARTICIPANTS -> {
@@ -2148,6 +2191,14 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
                 IconButton(onClick = onImport, enabled = !workbookBusy && !readOnly, modifier = Modifier.size(40.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(Icons.TwoTone.Refresh, contentDescription = "I-refresh ang weekly program", tint = Forest, modifier = Modifier.size(23.dp)) }
             }
             Text("Awtomatikong naghahanap batay sa napiling linggo.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+            if (workbookBusy) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    color = Forest,
+                    trackColor = ForestContainer
+                )
+                Text(workbookStatus, color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
+            }
             Surface(
                 color = if (MaterialTheme.colorScheme.background == DarkPalette.background) Color(0xFF0D120E) else Color(0xFFE4ECE4),
                 shape = RoundedCornerShape(14.dp),
@@ -2181,7 +2232,7 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
 }
 
 @Composable
-private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligible: List<Participant>, rotation: Map<Int, ParticipantRotation>, rotationBusy: Boolean, rotationError: String?, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, isAdmin:Boolean, readOnly:Boolean, canContinueExport:Boolean, onRole:(String,String)->Unit, onAssign: (Int,String,String) -> Unit, onSaveCloud: () -> Unit, onContinueExport: () -> Unit) {
+private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligible: List<Participant>, rotation: Map<Int, ParticipantRotation>, rotationBusy: Boolean, rotationError: String?, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, isAdmin:Boolean, readOnly:Boolean, canContinueExport:Boolean, cloudSaveBusy:Boolean, cloudSaveFeedback:Pair<String,Boolean>?, onRole:(String,String)->Unit, onAssign: (Int,String,String) -> Unit, onSaveCloud: () -> Unit, onContinueExport: () -> Unit) {
     val selectedNames = buildSet {
         listOf(chairman, openingPrayer, adviser).forEach { name ->
             name.trim().takeIf { it.isNotEmpty() }?.let { add(it.lowercase(Locale.ROOT)) }
@@ -2236,13 +2287,34 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
         if (isAdmin && !readOnly) {
             OutlinedButton(
                 onClick = onSaveCloud,
+                enabled = !cloudSaveBusy,
                 modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
                 shape = RoundedCornerShape(20.dp),
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 13.dp)
             ) {
-                Icon(Icons.TwoTone.CloudUpload, contentDescription = null, modifier = Modifier.size(20.dp))
+                if (cloudSaveBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest)
+                else Icon(Icons.TwoTone.CloudUpload, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(9.dp))
-                Text("Save to Cloud", fontWeight = FontWeight.SemiBold)
+                Text(if (cloudSaveBusy) "Saving to Cloud…" else "Save to Cloud", fontWeight = FontWeight.SemiBold)
+            }
+            if (cloudSaveBusy) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                    color = Forest,
+                    trackColor = ForestContainer
+                )
+                Text("Sine-save ang schedule at assignment history…", color = Muted, fontSize = 11.sp)
+            }
+            cloudSaveFeedback?.let { (message, success) ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Icon(
+                        if (success) Icons.TwoTone.CheckCircle else Icons.TwoTone.ErrorOutline,
+                        contentDescription = null,
+                        tint = if (success) Forest else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(17.dp)
+                    )
+                    Text(message, color = if (success) Forest else MaterialTheme.colorScheme.error, fontSize = 11.sp, lineHeight = 15.sp)
+                }
             }
         }
         if (canContinueExport) Button(
@@ -2483,7 +2555,7 @@ private fun rotationShortDate(value: String): String = runCatching {
 }.getOrDefault(value)
 
 @Composable
-private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, openingSong:String, closingSong:String, parts:List<Assignment>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, previewWebView:MutableState<WebView?>, allowExport:Boolean, onExportText:()->Unit, onPng:()->Unit) {
+private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, openingSong:String, closingSong:String, parts:List<Assignment>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, previewWebView:MutableState<WebView?>, allowExport:Boolean, exportBusyType:String?, onExportText:()->Unit, onPng:()->Unit) {
     val html=remember(weekStart,bible,openingSong,closingSong,parts.toList(),chairman,openingPrayer,adviser,audienceGroup) {
         buildOfficialScheduleHtml(weekStart,bible,openingSong,closingSong,parts,chairman,openingPrayer,adviser,audienceGroup)
     }
@@ -2494,20 +2566,46 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
         PageHeading("SCHEDULE TOOLS", "Preview & Export", "Official meeting schedule · tugma ang preview at PNG output.")
         if (allowExport) Row(modifier=Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
             FilledTonalButton(
-                onClick=onPng, enabled=previewReady, modifier=Modifier.weight(1f).height(48.dp),
+                onClick=onPng, enabled=previewReady && exportBusyType == null, modifier=Modifier.weight(1f).height(48.dp),
                 shape=RoundedCornerShape(16.dp), contentPadding=PaddingValues(horizontal=10.dp)
             ) {
-                Icon(Icons.TwoTone.Share, contentDescription=null, modifier=Modifier.size(18.dp))
+                if (exportBusyType == "png") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
+                else Icon(Icons.TwoTone.Share, contentDescription=null, modifier=Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Share PNG",fontSize=13.sp,maxLines=1)
+                Text(if (exportBusyType == "png") "Preparing…" else "Share PNG",fontSize=13.sp,maxLines=1)
             }
             OutlinedButton(
-                onClick=onExportText, modifier=Modifier.weight(1f).height(48.dp),
+                onClick=onExportText, enabled=exportBusyType == null, modifier=Modifier.weight(1f).height(48.dp),
                 shape=RoundedCornerShape(16.dp), contentPadding=PaddingValues(horizontal=10.dp)
             ) {
-                Icon(Icons.TwoTone.Description, contentDescription=null, modifier=Modifier.size(18.dp))
+                if (exportBusyType == "text") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
+                else Icon(Icons.TwoTone.Description, contentDescription=null, modifier=Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Export text",fontSize=13.sp,maxLines=1)
+                Text(if (exportBusyType == "text") "Preparing…" else "Export text",fontSize=13.sp,maxLines=1)
+            }
+        }
+        if (exportBusyType != null || !previewReady) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = ForestContainer,
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                        CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp, color = Forest)
+                        Text(
+                            when (exportBusyType) {
+                                "png" -> "Inihahanda ang high-resolution PNG…"
+                                "text" -> "Inihahanda ang export text…"
+                                else -> "Inihahanda ang schedule preview…"
+                            },
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Forest, trackColor = ForestContainer)
+                }
             }
         }
         Surface(
