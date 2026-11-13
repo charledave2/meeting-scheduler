@@ -161,6 +161,35 @@ class ShareTargetChosenReceiver : BroadcastReceiver() {
 }
 
 
+private fun fitScheduleWebView(
+    view: WebView,
+    targetWidthPx: Int,
+    targetHeightPx: Int,
+    density: Float,
+    onReady: () -> Unit,
+    onFailure: () -> Unit
+) {
+    fun measureContent(attempt: Int) {
+        val measureScript = "(document.fonts && document.fonts.status === 'loading') ? -1 : document.body.scrollHeight"
+        view.evaluateJavascript(measureScript) { rawHeight ->
+            val contentHeight = rawHeight?.trim()?.toFloatOrNull() ?: -1f
+            if (contentHeight <= 0f) {
+                if (attempt < 30) view.postDelayed({ measureContent(attempt + 1) }, 100L) else onFailure()
+                return@evaluateJavascript
+            }
+            val widthScale = targetWidthPx / (SCHEDULE_EXPORT_CSS_WIDTH * density)
+            val heightScale = targetHeightPx / (contentHeight * density)
+            val fitScale = minOf(widthScale, heightScale).coerceAtLeast(0.01f)
+            view.evaluateJavascript("document.body.style.zoom='$fitScale'; true") {
+                view.postVisualStateCallback(System.nanoTime(), object : WebView.VisualStateCallback() {
+                    override fun onComplete(requestId: Long) { view.postDelayed(onReady, 100L) }
+                })
+            }
+        }
+    }
+    measureContent(0)
+}
+
 private val DarkPalette = darkColorScheme(
     primary = Color(0xFFA8C3A4), onPrimary = Color(0xFF17301F),
     primaryContainer = Color(0xFF304536), onPrimaryContainer = Color(0xFFDDE9D9),
@@ -939,11 +968,9 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         if (exportBusyType != null) return
         exportBusyType = "png"
         val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
-        val exportZoom = SCHEDULE_EXPORT_WIDTH_PX / (SCHEDULE_EXPORT_CSS_WIDTH * density)
         val exportHtml = buildOfficialScheduleHtml(
             weekStart, bible, openingSong, closingSong, parts.toList(), chairman, openingPrayer, adviser, audienceGroup,
-            exportMode = true,
-            exportZoom = exportZoom
+            exportMode = true
         )
         val outputWidth = SCHEDULE_EXPORT_WIDTH_PX
         val outputHeight = SCHEDULE_EXPORT_HEIGHT_PX
@@ -963,7 +990,6 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         renderer.visibility = View.INVISIBLE
         activityRoot.addView(renderer, android.widget.FrameLayout.LayoutParams(outputWidth, outputHeight))
         var captureStarted = false
-        var pageLoadFinished = false
         fun removeRenderer(view: WebView) {
             (view.parent as? android.view.ViewGroup)?.removeView(view)
             runCatching { view.stopLoading(); view.destroy() }
@@ -1010,7 +1036,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         }
         renderer.apply {
             setBackgroundColor(android.graphics.Color.WHITE)
-            settings.javaScriptEnabled = false
+            settings.javaScriptEnabled = true
             settings.allowFileAccess = false
             settings.allowContentAccess = false
             settings.blockNetworkLoads = true
@@ -1023,13 +1049,21 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest): Boolean = true
                 override fun onPageFinished(view: WebView, url: String?) {
-                    pageLoadFinished = true
-                    view.postVisualStateCallback(System.nanoTime(), object : WebView.VisualStateCallback() {
-                        override fun onComplete(requestId: Long) {
-                            view.postDelayed({ captureRenderedSchedule(view) }, 180L)
+                    fitScheduleWebView(
+                        view = view,
+                        targetWidthPx = outputWidth,
+                        targetHeightPx = outputHeight,
+                        density = density,
+                        onReady = { captureRenderedSchedule(view) },
+                        onFailure = {
+                            if (!captureStarted) {
+                                captureStarted = true
+                                removeRenderer(view)
+                                exportBusyType = null
+                                toastMessage = "Hindi masukat ang buong schedule para sa PNG. Subukan muli."
+                            }
                         }
-                    })
-                    view.postDelayed({ captureRenderedSchedule(view) }, 1800L)
+                    )
                 }
             }
             measure(
@@ -1039,7 +1073,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             layout(0, 0, outputWidth, outputHeight)
             loadDataWithBaseURL("file:///android_asset/", exportHtml, "text/html", "UTF-8", null)
             postDelayed({
-                if (!pageLoadFinished && !captureStarted) {
+                if (!captureStarted) {
                     captureStarted = true
                     removeRenderer(this)
                     exportBusyType = null
@@ -1259,8 +1293,10 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         AnimatedContent(
             targetState = current,
             transitionSpec = {
-                (fadeIn(tween(120)) + slideInHorizontally(tween(140)) { it / 22 }) togetherWith
-                    (fadeOut(tween(80)) + slideOutHorizontally(tween(100)) { -it / 28 })
+                (fadeIn(tween(180, easing = FastOutSlowInEasing)) +
+                    slideInHorizontally(tween(220, easing = FastOutSlowInEasing)) { it / 18 }) togetherWith
+                    (fadeOut(tween(120)) +
+                        slideOutHorizontally(tween(180, easing = FastOutSlowInEasing)) { -it / 18 })
             },
             label = "screen transition"
         ) { destination -> when (destination) {
@@ -2557,11 +2593,13 @@ private fun rotationShortDate(value: String): String = runCatching {
 @Composable
 private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, openingSong:String, closingSong:String, parts:List<Assignment>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, previewWebView:MutableState<WebView?>, allowExport:Boolean, exportBusyType:String?, onExportText:()->Unit, onPng:()->Unit) {
     val html=remember(weekStart,bible,openingSong,closingSong,parts.toList(),chairman,openingPrayer,adviser,audienceGroup) {
-        buildOfficialScheduleHtml(weekStart,bible,openingSong,closingSong,parts,chairman,openingPrayer,adviser,audienceGroup)
+        buildOfficialScheduleHtml(weekStart,bible,openingSong,closingSong,parts,chairman,openingPrayer,adviser,audienceGroup,exportMode=true)
     }
     var previewReady by remember(html){mutableStateOf(false)}
     val landscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-    val previewHeight = (LocalConfiguration.current.screenHeightDp * 0.64f).coerceIn(240f, 700f).dp
+    val pageAspect = SCHEDULE_EXPORT_WIDTH_PX.toFloat() / SCHEDULE_EXPORT_HEIGHT_PX
+    val previewWidth = (LocalConfiguration.current.screenWidthDp - 36).coerceAtLeast(240).dp
+    val previewHeight = previewWidth / pageAspect
     val content: @Composable ColumnScope.() -> Unit = {
         PageHeading("SCHEDULE TOOLS", "Preview & Export", "Official meeting schedule · tugma ang preview at PNG output.")
         if (allowExport) Row(modifier=Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -2608,11 +2646,24 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
                 }
             }
         }
-        Surface(
-            color=Color.White, contentColor=Color(0xFF171717), shape=RoundedCornerShape(6.dp), shadowElevation=4.dp,
-            modifier=if (landscape) Modifier.weight(1f).fillMaxWidth() else Modifier.fillMaxWidth().height(previewHeight)
-        ) {
-            OfficialScheduleWebPreview(html,previewWebView,Modifier.fillMaxSize()){previewReady=true}
+        if (landscape) {
+            BoxWithConstraints(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                val pageWidth = minOf(maxWidth, maxHeight * pageAspect)
+                val pageHeight = pageWidth / pageAspect
+                Surface(
+                    color=Color.White, contentColor=Color(0xFF171717), shape=RoundedCornerShape(6.dp), shadowElevation=4.dp,
+                    modifier=Modifier.width(pageWidth).height(pageHeight)
+                ) {
+                    OfficialScheduleWebPreview(html,previewWebView,Modifier.fillMaxSize()){previewReady=true}
+                }
+            }
+        } else {
+            Surface(
+                color=Color.White, contentColor=Color(0xFF171717), shape=RoundedCornerShape(6.dp), shadowElevation=4.dp,
+                modifier=Modifier.fillMaxWidth().height(previewHeight)
+            ) {
+                OfficialScheduleWebPreview(html,previewWebView,Modifier.fillMaxSize()){previewReady=true}
+            }
         }
     }
     if (landscape) {
@@ -2630,7 +2681,7 @@ private fun OfficialScheduleWebPreview(html:String,previewWebView:MutableState<W
         factory = { context -> WebView(context).apply {
             setLayerType(View.LAYER_TYPE_HARDWARE, null)
             setBackgroundColor(android.graphics.Color.WHITE)
-            settings.javaScriptEnabled = false
+            settings.javaScriptEnabled = true
             settings.allowFileAccess = false
             settings.allowContentAccess = false
             settings.blockNetworkLoads = true
@@ -2643,9 +2694,18 @@ private fun OfficialScheduleWebPreview(html:String,previewWebView:MutableState<W
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest): Boolean = true
                 override fun onPageFinished(view: WebView, url: String?) {
-                    view.postVisualStateCallback(System.nanoTime(), object : WebView.VisualStateCallback() {
-                        override fun onComplete(requestId: Long) { pageRendered() }
-                    })
+                    fitScheduleWebView(
+                        view = view,
+                        targetWidthPx = view.width,
+                        targetHeightPx = view.height,
+                        density = view.resources.displayMetrics.density.coerceAtLeast(1f),
+                        onReady = {
+                            isVerticalScrollBarEnabled = false
+                            overScrollMode = View.OVER_SCROLL_NEVER
+                            pageRendered()
+                        },
+                        onFailure = pageRendered
+                    )
                 }
             }
             previewWebView.value = this
@@ -2757,7 +2817,7 @@ private const val SCHEDULE_EXPORT_DPI = 300
 private const val SCHEDULE_EXPORT_CSS_WIDTH = 397
 private const val SCHEDULE_EXPORT_CSS_HEIGHT = 562
 
-private fun buildOfficialScheduleHtml(weekStart:String,bible:String,openingSong:String,closingSong:String,parts:List<Assignment>,chairman:String,openingPrayer:String,adviser:String,audienceGroup:String,exportMode:Boolean=false,exportZoom:Float=1f):String {
+private fun buildOfficialScheduleHtml(weekStart:String,bible:String,openingSong:String,closingSong:String,parts:List<Assignment>,chairman:String,openingPrayer:String,adviser:String,audienceGroup:String,exportMode:Boolean=false):String {
     val start=runCatching{LocalDate.parse(weekStart)}.getOrDefault(LocalDate.now())
     val end=start.plusDays(6)
     val months=listOf("Enero","Pebrero","Marso","Abril","Mayo","Hunyo","Hulyo","Agosto","Setyembre","Oktubre","Nobyembre","Disyembre")
@@ -2781,7 +2841,7 @@ private fun buildOfficialScheduleHtml(weekStart:String,bible:String,openingSong:
         append("<!doctype html><html><head><meta name=\"viewport\" content=\"").append(viewport).append("\"><style>")
         append("@font-face{font-family:'Google Sans';src:url('fonts/GoogleSansFlex.ttf') format('truetype');font-style:normal;font-weight:100 900;font-display:block}")
         append("*{box-sizing:border-box}html,body{margin:0;background:#fff;color:#171717;font-family:'Google Sans','Google Sans Text',Roboto,Arial,sans-serif}body{padding:18px 20px 14px;font-size:6.4px;line-height:1.25")
-        if (exportMode) append(";width:${SCHEDULE_EXPORT_CSS_WIDTH}px;height:${SCHEDULE_EXPORT_CSS_HEIGHT}px;overflow:hidden;zoom:$exportZoom")
+        if (exportMode) append(";width:${SCHEDULE_EXPORT_CSS_WIDTH}px;min-height:${SCHEDULE_EXPORT_CSS_HEIGHT}px;overflow:visible;zoom:1")
         append("}.title{font-size:9.5px;font-weight:700;padding-bottom:5px;border-bottom:1px solid #252525}.sub{margin:7px 0 14px;color:#397782;font-size:7.2px}.toprow{display:grid;grid-template-columns:30px minmax(0,1fr) minmax(95px,.9fr);gap:5px;align-items:start;margin:0 0 5px}.time{white-space:nowrap}.bullet{font-size:6px;margin-right:3px}.role strong{margin-right:3px}.advisor{margin:7px 0 16px}.section{display:flex;align-items:center;gap:6px;margin:16px 0 8px;font-size:7.8px;font-weight:600}.badge{width:17px;height:17px;border-radius:4px;overflow:hidden;flex:0 0 17px}.badge img{display:block;width:100%;height:100%}.program{display:grid;grid-template-columns:30px minmax(80px,1.55fr) minmax(62px,1fr) minmax(62px,1fr);gap:5px;align-items:start;margin:0 0 8px}.part{overflow-wrap:anywhere}.dot{font-weight:bold;margin-right:3px}.hall{font-size:5.6px;color:#555;text-align:left;margin-bottom:2px}.name{font-size:6.4px;font-weight:700;overflow-wrap:anywhere}.assistant{font-size:5.8px;font-weight:400;color:#777;margin-top:2px;overflow-wrap:anywhere}.single{grid-column:3/5}.footer{border-top:1px solid #ddd;margin-top:14px;padding-top:8px}.footnote{text-align:right;color:#999;font-size:5px;margin-top:20px}@media print{body{padding:18px 20px 14px}}")
         append("</style></head><body>")
         append("<div class=\"title\">Iskedyul ng Pulong ng Gitnang Sanlinggo</div><div class=\"sub\">").append(weekText.htmlSafe()).append(" | <b>").append(bible.uppercase().htmlSafe()).append("</b></div>")
