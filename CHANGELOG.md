@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.45.7 — 2026-11-13
+
+- Keep saved Home, participant, and history data visible while refreshing, with clear loading, retry, and empty states.
+- Highlight the next meeting on Home and add accessible preview actions.
+- Cache participant sorting and search results between changes, and bring key controls to 48 dp touch targets.
+- Fit the complete A4 preview in the Home preview modal in both orientations; keep PNG dimensions and quality unchanged.
 ## v0.45.6 — 2026-11-14
 
 - Fit the entire schedule into a consistent A4 page in Preview & Export and shared PNGs, preventing long schedules from being clipped.
