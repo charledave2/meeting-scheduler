@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.45.6 — 2026-11-14
+
+- Fit the entire schedule into a consistent A4 page in Preview & Export and shared PNGs, preventing long schedules from being clipped.
+- Keep portrait and landscape previews proportional to the fixed 2480 × 3508 PNG canvas.
+- Refine the screen transition animation with a smoother, more visible motion.
+
 ## v0.45.5 — 2026-11-14
 
 - Show visible progress and success or error feedback while saving schedules, importing workbooks, and preparing exports.
