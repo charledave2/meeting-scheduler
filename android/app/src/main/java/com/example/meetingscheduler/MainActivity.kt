@@ -127,6 +127,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.text.font.FontWeight
@@ -702,6 +703,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     val history = remember(store) { mutableStateListOf<SavedSchedule>().apply { addAll(store.loadHistory()) } }
     var participantsLoaded by remember { mutableStateOf(false) }
     var participantsBusy by remember { mutableStateOf(false) }
+    var participantsLoadError by remember { mutableStateOf<String?>(null) }
     var rotationStats by remember { mutableStateOf<Map<Int, ParticipantRotation>>(emptyMap()) }
     var rotationBusy by remember { mutableStateOf(false) }
     var rotationError by remember { mutableStateOf<String?>(null) }
@@ -718,6 +720,9 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var remoteScheduleLoadedWeek by rememberSaveable { mutableStateOf("") }
     var weekLoadNonce by remember { mutableIntStateOf(0) }
     var historyLoaded by remember { mutableStateOf(false) }
+    var historyBusy by remember { mutableStateOf(false) }
+    var historyError by remember { mutableStateOf<String?>(null) }
+    var historyReloadTick by remember { mutableIntStateOf(0) }
     var remoteAccounts by remember { mutableStateOf<List<RemoteAccount>>(emptyList()) }
     var accountsLoaded by remember { mutableStateOf(false) }
     var accountsBusy by remember { mutableStateOf(false) }
@@ -828,12 +833,13 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     LaunchedEffect(signedIn, participantsLoaded) {
         if(signedIn && !participantsLoaded && !participantsBusy && (canAccess(Screen.PARTICIPANTS) || canAccess(Screen.ASSIGNMENTS))) {
             participantsBusy=true
+            participantsLoadError=null
             runCatching { api.members(includeInactive=true) }.onSuccess { response ->
                 participantAdmin=response.optBoolean("isAdmin",participantAdmin); participantCanEdit=response.optBoolean("canManageRoles",participantCanEdit)
                 val rows=response.optJSONArray("members") ?: JSONArray(); participants.clear()
                 for(i in 0 until rows.length()) rows.optJSONObject(i)?.let { row -> participants.add(Participant(row.optString("name"),row.optString("appointment"),row.optString("serviceStatus"),row.optString("gender").ifBlank{"unspecified"},row.optBoolean("active",true),row.optInt("id"),row.optBoolean("unbaptized",false))) }
-                store.saveParticipants(participants.toList()); participantsLoaded=true; cloudStatus="Nakuha ang participants mula sa website"
-            }.onFailure { cloudStatus="Hindi makuha ang participants: ${it.message ?: "server error"}"; participantsLoaded=true }
+                store.saveParticipants(participants.toList()); participantsLoaded=true; participantsLoadError=null; cloudStatus="Nakuha ang participants mula sa website"
+            }.onFailure { participantsLoadError=it.message ?: "Suriin ang internet at subukan ulit."; cloudStatus="Hindi makuha ang participants: ${it.message ?: "server error"}"; participantsLoaded=true }
             participantsBusy=false
         }
     }
@@ -1121,7 +1127,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     meta.optString("chairman"),
                     meta.optString("openingPrayer"),
                     meta.optString("adviser"),
-                    meta.optString("audienceGroup")
+                    meta.optString("audienceGroup"),
+                    exportMode = true
                 )
             }.onSuccess { homePreviewHtml = it }
                 .onFailure { toastMessage = it.message ?: "Hindi mabuksan ang preview."; homePreviewWeek = null }
@@ -1389,7 +1396,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 }, onPng = ::shareSchedulePng
             )
             Screen.PARTICIPANTS -> {
-                ParticipantsScreen(modifier = scroll, participants = participants,
+                ParticipantsScreen(modifier = scroll, participants = participants, loading = participantsBusy, loadError = participantsLoadError,
                     onAdd = { name -> participants.add(0, Participant(name)); store.saveParticipants(participants.toList()); toastMessage = "Naidagdag si $name" },
                     onToggle = { index -> participants[index] = participants[index].copy(enabled = !participants[index].enabled); store.saveParticipants(participants.toList()) },
                     onEdit = { original, changed -> authScope.launch {
@@ -1402,7 +1409,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     } },
                     isAdmin=participantAdmin,
                     canEdit=canEdit(Screen.PARTICIPANTS) && participantCanEdit,
-                    onRefresh={participantsLoaded=false},
+                    onRefresh={participantsLoadError=null;participantsLoaded=false},
                     onSetActive={ person,active -> authScope.launch {
                         runCatching { api.setMemberActive(person.id,active) }.onSuccess {
                             val i=participants.indexOfFirst { it.id==person.id }; if(i>=0){participants[i]=participants[i].copy(enabled=active);store.saveParticipants(participants.toList())};toastMessage=if(active)"Na-activate si ${person.name}" else "Ginawang inactive si ${person.name}"
@@ -1414,8 +1421,21 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     } })
             }
             Screen.HISTORY -> {
-                LaunchedEffect(current, signedIn, historyLoaded) { if (current == Screen.HISTORY && signedIn && !historyLoaded) runCatching { api.schedules() }.onSuccess { remoteRows = it; historyLoaded=true; cloudStatus = "History mula sa website" }.onFailure { cloudStatus = "Hindi makuha ang history: ${it.message}" } }
-                HistoryScreen(modifier = scroll, remoteSchedules = remoteRows, cloudStatus = cloudStatus, isAdmin=signedIn && identityRole=="admin", canEdit=canEdit(Screen.HISTORY), canCreate=canEdit(Screen.DETAILS), onView={loadRemoteSchedule(it,false)}, onEdit={loadRemoteSchedule(it,true)}, onDelete={remote -> authScope.launch { runCatching { api.deleteSchedule(remote.id) }.onSuccess { historyLoaded=false; toastMessage="Na-delete ang schedule" }.onFailure { toastMessage=it.message ?: "Hindi ma-delete" } }}, onNew = { editingRemoteId=0; navigateTo(Screen.DETAILS) })
+                LaunchedEffect(current, signedIn, historyReloadTick) {
+                    if (current == Screen.HISTORY && signedIn && !historyLoaded && !historyBusy) {
+                        historyBusy = true
+                        historyError = null
+                        runCatching { api.schedules() }
+                            .onSuccess { remoteRows = it; historyLoaded = true; cloudStatus = "History mula sa website" }
+                            .onFailure { historyError = it.message ?: "Suriin ang internet at subukan ulit."; cloudStatus = "Hindi makuha ang history: ${it.message}" }
+                        historyBusy = false
+                    }
+                }
+                HistoryScreen(modifier = scroll, remoteSchedules = remoteRows, cloudStatus = cloudStatus, loading = historyBusy, error = historyError,
+                    isAdmin=signedIn && identityRole=="admin", canEdit=canEdit(Screen.HISTORY), canCreate=canEdit(Screen.DETAILS),
+                    onRefresh={historyLoaded=false;historyReloadTick++}, onView={loadRemoteSchedule(it,false)}, onEdit={loadRemoteSchedule(it,true)},
+                    onDelete={remote -> authScope.launch { runCatching { api.deleteSchedule(remote.id) }.onSuccess { historyLoaded=false;historyReloadTick++;toastMessage="Na-delete ang schedule" }.onFailure { toastMessage=it.message ?: "Hindi ma-delete" } }},
+                    onNew = { editingRemoteId=0; navigateTo(Screen.DETAILS) })
             }
             Screen.ACCOUNTS -> {
                 LaunchedEffect(current, signedIn, accountsLoaded, accountReloadTick) {
@@ -1454,15 +1474,16 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     }
     if (homePreviewWeek != null) {
         val configuration = LocalConfiguration.current
-        val schedulePreviewHeight = (configuration.screenHeightDp * 0.64f).coerceIn(240f, 700f).dp
+        val dialogHeight = (configuration.screenHeightDp * 0.90f).coerceAtLeast(240f).coerceAtMost(configuration.screenHeightDp.toFloat()).dp
+        val pageAspect = SCHEDULE_EXPORT_WIDTH_PX.toFloat() / SCHEDULE_EXPORT_HEIGHT_PX
         Dialog(onDismissRequest = { homePreviewWeek = null; homePreviewHtml = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
             Surface(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp)
-                    .heightIn(max = (configuration.screenHeightDp * 0.92f).dp),
+                    .height(dialogHeight),
                 shape = RoundedCornerShape(24.dp),
                 color = AppSurface
             ) {
-                Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+                Column(Modifier.fillMaxSize().padding(bottom = 14.dp)) {
                     Row(
                         Modifier.fillMaxWidth().padding(start = 14.dp, end = 6.dp, top = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -1473,24 +1494,41 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                         }
                     }
                     Spacer(Modifier.height(8.dp))
-                    if (homePreviewLoading || homePreviewHtml == null) {
-                        Box(Modifier.fillMaxWidth().height(schedulePreviewHeight), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = Forest)
-                        }
-                    } else {
-                        key(homePreviewHtml) {
-                            AndroidView(
-                                factory = { viewContext -> WebView(viewContext).apply {
-                                    setBackgroundColor(android.graphics.Color.WHITE)
-                                    settings.javaScriptEnabled = false
-            settings.allowFileAccess = false
-            settings.allowContentAccess = false
-            settings.blockNetworkLoads = true
-            settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                                    loadDataWithBaseURL("file:///android_asset/", homePreviewHtml ?: "", "text/HTML", "UTF-8", null)
-                                } },
-                                modifier = Modifier.fillMaxWidth().height(schedulePreviewHeight)
-                            )
+                    BoxWithConstraints(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                        val pageWidth = minOf(maxWidth, maxHeight * pageAspect)
+                        val pageHeight = pageWidth / pageAspect
+                        Surface(color = Color.White, shape = RoundedCornerShape(5.dp), shadowElevation = 3.dp,
+                            modifier = Modifier.width(pageWidth).height(pageHeight)) {
+                            if (homePreviewLoading || homePreviewHtml == null) {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Forest) }
+                            } else key(homePreviewHtml, pageWidth, pageHeight) {
+                                AndroidView(
+                                    factory = { viewContext -> WebView(viewContext).apply {
+                                        setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                                        setBackgroundColor(android.graphics.Color.WHITE)
+                                        settings.javaScriptEnabled = true
+                                        settings.allowFileAccess = false
+                                        settings.allowContentAccess = false
+                                        settings.blockNetworkLoads = true
+                                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                                        settings.loadsImagesAutomatically = true
+                                        webViewClient = object : WebViewClient() {
+                                            override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest): Boolean = true
+                                            override fun onPageFinished(view: WebView, url: String?) {
+                                                view.post {
+                                                    fitScheduleWebView(
+                                                        view, view.width, view.height,
+                                                        view.resources.displayMetrics.density.coerceAtLeast(1f),
+                                                        onReady = {}, onFailure = {}
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        loadDataWithBaseURL("file:///android_asset/", homePreviewHtml ?: "", "text/html", "UTF-8", null)
+                                    } },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
                         }
                     }
                 }
@@ -2153,9 +2191,18 @@ private fun HomeScreen(
             IconButton(onClick = onRefresh) { Icon(Icons.TwoTone.Refresh, contentDescription = "Refresh upcoming meetings", tint = Forest) }
         }
         when {
-            loading -> Box(Modifier.fillMaxWidth().padding(28.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Forest) }
-            error != null -> Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
-                Text(error, color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
+            loading && upcoming.isEmpty() -> Surface(color = SurfaceContainer, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest)
+                    Column { Text("Checking your schedule", fontWeight = FontWeight.SemiBold, fontSize = 13.sp); Text("Loading upcoming meetings…", color = Muted, fontSize = 11.sp) }
+                }
+            }
+            error != null && upcoming.isEmpty() -> Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.TwoTone.ErrorOutline, contentDescription = "Schedule unavailable", tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(22.dp))
+                    Text(error, color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onRefresh) { Text("Retry", color = MaterialTheme.colorScheme.onErrorContainer) }
+                }
             }
             upcoming.isEmpty() -> Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = SurfaceContainer)) {
                 Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2168,9 +2215,35 @@ private fun HomeScreen(
                     }
                 }
             }
-            else -> upcoming.forEach { (date, remote) ->
+            else -> {
+                if (loading || error != null) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (loading) CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp, color = Forest)
+                    Text(if (loading) "Updating · showing saved meetings" else "Couldn’t refresh · showing saved meetings", color = Muted, fontSize = 11.sp)
+                    if (error != null) TextButton(onClick = onRefresh) { Text("Retry", fontSize = 11.sp) }
+                }
+                val (nextDate, nextSchedule) = upcoming.first()
                 Card(
-                    modifier = Modifier.fillMaxWidth().clickable { onOpenSchedule(remote) },
+                    modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "Preview ${nextSchedule.weekLabel}") { onOpenSchedule(nextSchedule) },
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(containerColor = ForestContainer),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(46.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.68f), RoundedCornerShape(15.dp)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(24.dp))
+                        }
+                        Column(Modifier.weight(1f).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text("NEXT MEETING", color = Forest, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
+                            Text(nextSchedule.weekLabel, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
+                            Text("${nextSchedule.reading} · ${nextDate.format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.ENGLISH))}", color = Muted, fontSize = 11.sp, maxLines = 1)
+                        }
+                        Icon(Icons.TwoTone.Preview, contentDescription = "Preview next meeting schedule", tint = Forest)
+                    }
+                }
+                if (upcoming.size > 1) Text("MORE UPCOMING", color = Forest, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(top = 2.dp))
+                upcoming.drop(1).forEach { (date, remote) ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "Preview ${remote.weekLabel}") { onOpenSchedule(remote) },
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(containerColor = SurfaceContainer),
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -2187,6 +2260,7 @@ private fun HomeScreen(
                         Icon(Icons.TwoTone.Preview, contentDescription = "Preview schedule", tint = Forest)
                     }
                 }
+            }
             }
         }
     }
@@ -2470,14 +2544,16 @@ private fun SlotPicker(
                     enabled = enabled,
                     onClick = { onPick(""); expanded = false; searchQuery = "" }
                 )
-                val orderedChoices = choices.sortedWith(
-                    compareBy<Participant> { participantRotationRank(rotation[it.id]) }
-                        .thenBy { it.name.lowercase(Locale.ROOT) }
-                )
+                val orderedChoices = remember(choices, rotation) {
+                    choices.sortedWith(compareBy<Participant> { participantRotationRank(rotation[it.id]) }.thenBy { it.name.lowercase(Locale.ROOT) })
+                }
                 val currentName = value.trim().lowercase(Locale.ROOT)
-                val filteredChoices = orderedChoices.filter {
-                    val key = it.name.trim().lowercase(Locale.ROOT)
-                    (key !in excludedNames || key == currentName) && it.name.contains(searchQuery.trim(), ignoreCase = true)
+                val filteredChoices = remember(orderedChoices, excludedNames, currentName, searchQuery) {
+                    val normalizedQuery = searchQuery.trim()
+                    orderedChoices.filter {
+                        val key = it.name.trim().lowercase(Locale.ROOT)
+                        (key !in excludedNames || key == currentName) && it.name.contains(normalizedQuery, ignoreCase = true)
+                    }
                 }
                 if (filteredChoices.isEmpty()) {
                     DropdownMenuItem(
@@ -2885,7 +2961,7 @@ private fun buildOfficialScheduleHtml(weekStart:String,bible:String,openingSong:
 private fun ParticipantsScreen(
     modifier: Modifier, participants: List<Participant>, onAdd: (String) -> Unit,
     onToggle: (Int) -> Unit, onEdit: (Participant, Participant) -> Unit,
-    isAdmin: Boolean, canEdit: Boolean, onRefresh: () -> Unit,
+    isAdmin: Boolean, canEdit: Boolean, loading: Boolean, loadError: String?, onRefresh: () -> Unit,
     onSetActive: (Participant, Boolean) -> Unit, onDelete: (Participant) -> Unit
 ) {
     var query by rememberSaveable { mutableStateOf("") }
@@ -2905,7 +2981,7 @@ private fun ParticipantsScreen(
     var editAppointment by remember { mutableStateOf("publisher") }
     var editService by remember { mutableStateOf("none") }
     var editUnbaptized by remember { mutableStateOf(false) }
-    val participantsSnapshot = participants.toList()
+    val participantsSnapshot by remember(participants) { derivedStateOf { participants.toList() } }
     val filtered = remember(participantsSnapshot, query, genderFilter, appointmentFilter, serviceFilter, baptismFilter, statusFilter, sortBy) {
         participantsSnapshot.withIndex().filter { (_, p) ->
             p.name.contains(query, true) && (statusFilter == "all" || (statusFilter == "active" && p.enabled) || (statusFilter == "inactive" && !p.enabled)) &&
@@ -2925,22 +3001,33 @@ private fun ParticipantsScreen(
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
             Column { Text("CLOUD DATA",color=Forest,fontSize=10.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.3.sp);Text("Participants",fontSize=25.sp,fontWeight=FontWeight.Bold) }
             Row(verticalAlignment=Alignment.CenterVertically) {
-                IconButton(onClick=onRefresh,modifier=Modifier.size(40.dp)){Icon(Icons.TwoTone.Refresh,contentDescription="Refresh participants",tint=Forest,modifier=Modifier.size(20.dp))}
-                if(canEdit) IconButton(onClick={showAdd=true},modifier=Modifier.size(40.dp)){Icon(Icons.TwoTone.PersonAdd,contentDescription="Add participant",tint=Forest,modifier=Modifier.size(22.dp))}
+                IconButton(onClick=onRefresh,modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(Icons.TwoTone.Refresh,contentDescription="Refresh participants",tint=Forest,modifier=Modifier.size(20.dp))}
+                if(canEdit) IconButton(onClick={showAdd=true},modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(Icons.TwoTone.PersonAdd,contentDescription="Add participant",tint=Forest,modifier=Modifier.size(22.dp))}
             }
         }
         Text("${participants.size} participants · ${filtered.size} shown",color=Muted,fontSize=12.sp)
+        if (loading && participants.isNotEmpty()) Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            CircularProgressIndicator(Modifier.size(15.dp),strokeWidth=2.dp,color=Forest)
+            Text("Updating participant list · showing saved data",color=Muted,fontSize=11.sp)
+        }
+        if (loadError != null) Surface(color=MaterialTheme.colorScheme.errorContainer,shape=RoundedCornerShape(15.dp),modifier=Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.TwoTone.ErrorOutline,contentDescription="Participant refresh failed",tint=MaterialTheme.colorScheme.onErrorContainer,modifier=Modifier.size(19.dp))
+                Text((if (participants.isEmpty()) "Could not load participants. " else "Showing saved participants. ") + loadError,color=MaterialTheme.colorScheme.onErrorContainer,fontSize=11.sp,modifier=Modifier.weight(1f))
+                TextButton(onClick=onRefresh,contentPadding=PaddingValues(horizontal=6.dp)){Text("Retry",color=MaterialTheme.colorScheme.onErrorContainer,fontSize=11.sp)}
+            }
+        }
         Card(Modifier.fillMaxWidth().weight(1f),shape=RoundedCornerShape(22.dp),colors=CardDefaults.cardColors(containerColor=SurfaceContainer),border=androidx.compose.foundation.BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
             Column(Modifier.fillMaxSize().padding(14.dp)) {
                 Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(query,{query=it},placeholder={Text("Search participant")},singleLine=true,shape=RoundedCornerShape(18.dp),modifier=Modifier.weight(1f),textStyle=MaterialTheme.typography.bodyMedium)
-                    IconButton(onClick={showFilters=true},modifier=Modifier.size(40.dp)){Icon(Icons.TwoTone.Sort,contentDescription="Filter and sort participants",tint=Forest,modifier=Modifier.size(22.dp))}
+                    OutlinedTextField(query,{query=it},placeholder={Text("Search participant")},singleLine=true,shape=RoundedCornerShape(16.dp),modifier=Modifier.weight(1f).heightIn(min=48.dp),textStyle=MaterialTheme.typography.bodyMedium)
+                    IconButton(onClick={showFilters=true},modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(Icons.TwoTone.Sort,contentDescription="Filter and sort participants",tint=Forest,modifier=Modifier.size(22.dp))}
                 }
                 LazyColumn(Modifier.weight(1f).fillMaxWidth(),contentPadding=PaddingValues(top=6.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
                     itemsIndexed(filtered,key={_,entry->if(entry.value.id>0)entry.value.id.toLong() else entry.index.toLong()}) { _,entry ->
                         val (index,p)=entry
                         HorizontalDivider(color=SurfaceContainer)
-                        Row(Modifier.fillMaxWidth().then(if(canEdit) Modifier.clickable { beginEdit(p) } else Modifier).padding(vertical=7.dp),verticalAlignment=Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().heightIn(min=52.dp).semantics { if (canEdit) role = Role.Button }.then(if(canEdit) Modifier.clickable { beginEdit(p) } else Modifier).padding(vertical=7.dp),verticalAlignment=Alignment.CenterVertically) {
                             Box(Modifier.size(38.dp).background(ForestContainer,CircleShape),contentAlignment=Alignment.Center){Text(p.name.split(" ").take(2).mapNotNull{it.firstOrNull()}.joinToString("").uppercase(),color=Forest,fontWeight=FontWeight.Bold,fontSize=11.sp)}
                             Column(Modifier.weight(1f).padding(start=10.dp)) {
                                 Text(p.name,fontWeight=FontWeight.SemiBold,fontSize=13.sp,maxLines=1)
@@ -2963,7 +3050,12 @@ private fun ParticipantsScreen(
                             }
                         }
                     }
-                    if(filtered.isEmpty()) item { Text("Walang participant na tugma sa search o filters.",color=Muted,fontSize=12.sp,modifier=Modifier.padding(vertical=12.dp)) }
+                    if (loading && participants.isEmpty()) item {
+                        Row(Modifier.fillMaxWidth().padding(vertical=20.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                            CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp,color=Forest)
+                            Text("Loading participants…",color=Muted,fontSize=12.sp)
+                        }
+                    } else if(filtered.isEmpty()) item { Text(if (query.isNotBlank() || genderFilter!="all" || appointmentFilter!="all" || serviceFilter!="all" || baptismFilter!="all") "No participants match the current search or filters." else if (canEdit) "No participants yet. Refresh the list or add a participant." else "No participants are available yet. Refresh the list to try again.",color=Muted,fontSize=12.sp,modifier=Modifier.padding(vertical=12.dp)) }
                 }
             }
         }
@@ -3029,12 +3121,15 @@ private fun HistoryScreen(
     modifier: Modifier,
     remoteSchedules: List<RemoteSchedule>,
     cloudStatus: String,
+    loading: Boolean,
+    error: String?,
     isAdmin: Boolean,
     canEdit: Boolean,
     canCreate: Boolean,
     onView: (RemoteSchedule) -> Unit,
     onEdit: (RemoteSchedule) -> Unit,
     onDelete: (RemoteSchedule) -> Unit,
+    onRefresh: () -> Unit,
     onNew: () -> Unit
 ) {
     var deleteTarget by remember { mutableStateOf<RemoteSchedule?>(null) }
@@ -3043,16 +3138,37 @@ private fun HistoryScreen(
         PageHeading("SAVED SCHEDULES", "Schedule History", "Mga schedule na naka-save sa cloud database.")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("${remoteSchedules.size} saved · newest first", color = Muted, fontSize = 12.sp)
-            if (canCreate) FilledTonalButton(onClick = onNew, shape = RoundedCornerShape(16.dp)) {
-                Icon(Icons.TwoTone.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("New schedule")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick=onRefresh,modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(Icons.TwoTone.Refresh,contentDescription="Refresh schedule history",tint=Forest,modifier=Modifier.size(20.dp))}
+                if (canCreate) FilledTonalButton(onClick = onNew, shape = RoundedCornerShape(16.dp)) {
+                    Icon(Icons.TwoTone.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("New schedule")
+                }
             }
         }
-        if (cloudStatus.isNotBlank()) Text(cloudStatus, color = Muted, fontSize = 11.sp)
+        if (loading && remoteSchedules.isNotEmpty()) Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            CircularProgressIndicator(Modifier.size(15.dp),strokeWidth=2.dp,color=Forest)
+            Text("Refreshing · showing saved schedules",color=Muted,fontSize=11.sp)
+        }
+        if (error != null) Surface(color=MaterialTheme.colorScheme.errorContainer,shape=RoundedCornerShape(15.dp),modifier=Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.TwoTone.ErrorOutline,contentDescription="History refresh failed",tint=MaterialTheme.colorScheme.onErrorContainer,modifier=Modifier.size(19.dp))
+                Text((if(remoteSchedules.isEmpty()) "Could not load history. " else "Showing saved history. ")+error,color=MaterialTheme.colorScheme.onErrorContainer,fontSize=11.sp,modifier=Modifier.weight(1f))
+                TextButton(onClick=onRefresh,contentPadding=PaddingValues(horizontal=6.dp)){Text("Retry",color=MaterialTheme.colorScheme.onErrorContainer,fontSize=11.sp)}
+            }
+        }
         M3Card {
             if (remoteSchedules.isEmpty()) {
-                Text("Wala pang schedule sa cloud database.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 14.dp))
+                if (loading) Row(Modifier.fillMaxWidth().padding(vertical=18.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                    CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp,color=Forest)
+                    Text("Loading saved schedules…",color=Muted,fontSize=12.sp)
+                } else if (error == null) Column(Modifier.fillMaxWidth().padding(vertical=18.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.TwoTone.CalendarMonth,contentDescription=null,tint=Forest,modifier=Modifier.size(28.dp))
+                    Text("No saved schedules yet",fontWeight=FontWeight.SemiBold,fontSize=14.sp)
+                    Text("Schedules saved to the cloud will appear here.",color=Muted,fontSize=12.sp)
+                    if(canCreate) FilledTonalButton(onClick=onNew,shape=RoundedCornerShape(14.dp)){Icon(Icons.TwoTone.Add,contentDescription=null,modifier=Modifier.size(17.dp));Spacer(Modifier.width(6.dp));Text("Create schedule")}
+                }
             }
             sortedSchedules.forEach { remote ->
                 HorizontalDivider(Modifier.padding(vertical = 6.dp), color = SurfaceContainer)
