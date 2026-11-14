@@ -3,9 +3,8 @@ import { getDb } from "../db";
 import { pushTokens } from "../db/schema";
 import { ensurePushTokenProviderStorage } from "./push-token-storage";
 
-// Sends push notifications via Expo's push service (https://exp.host). Works
-// for both iOS and Android without needing separate FCM/APNs setup, since the
-// mobile app is built with Expo and registers an Expo push token.
+// Legacy Expo delivery remains available for existing Expo installations. FCM
+// tokens are stored separately and are handled by the native FCM sender rollout.
 const EXPO_PUSH_ENDPOINT = "https://exp.host/--/api/v2/push/send";
 
 export async function sendPushToAccounts(
