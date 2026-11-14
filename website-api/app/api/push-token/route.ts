@@ -1,13 +1,14 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { pushTokens } from "../../../db/schema";
-import { getChatGPTUser } from "../../chatgpt-auth";
+import { assertSameOrigin, getChatGPTUser } from "../../chatgpt-auth";
 import { ensurePushTokenProviderStorage } from "../../push-token-storage";
 
 const validProvider = (value: unknown): value is "expo" | "fcm" =>
   value === "expo" || value === "fcm";
 
 export async function POST(request: Request) {
+  if (!assertSameOrigin(request)) return Response.json({ error: "Invalid request." }, { status: 403 });
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -41,6 +42,7 @@ export async function POST(request: Request) {
 // Called before sign-out / notification opt-out. Removal is scoped to the
 // authenticated account so one account cannot revoke another account's token.
 export async function DELETE(request: Request) {
+  if (!assertSameOrigin(request)) return Response.json({ error: "Invalid request." }, { status: 403 });
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
