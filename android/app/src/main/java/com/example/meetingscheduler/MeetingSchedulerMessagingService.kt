@@ -53,6 +53,9 @@ internal object MeetingPushNotifications {
 
     fun saveAndSyncRefreshToken(context: Context, token: String) {
         saveToken(context, token)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) return
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             runCatching { SchedulerApi(context).registerPushToken(token) }
         }
