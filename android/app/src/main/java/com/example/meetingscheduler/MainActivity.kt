@@ -615,7 +615,9 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     val context = LocalContext.current
     val api = remember(context) { SchedulerApi(context) }
     val authScope = rememberCoroutineScope()
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) MeetingPushNotifications.syncToken(context, api)
+    }
     var signedIn by rememberSaveable { mutableStateOf(false) }
     var authReady by rememberSaveable { mutableStateOf(false) }
     var loginBusy by remember { mutableStateOf(false) }
@@ -643,12 +645,13 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var showNotificationPermissionPrompt by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(signedIn, identityUsername, splashFinished) {
         if (!signedIn || identityUsername.isBlank() || !splashFinished) return@LaunchedEffect
-        MeetingPushNotifications.syncToken(context, api)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
             val permissionPrefs = context.getSharedPreferences("meeting_notification_permission", Context.MODE_PRIVATE)
             if (!permissionPrefs.getBoolean("asked", false)) showNotificationPermissionPrompt = true
+        } else {
+            MeetingPushNotifications.syncToken(context, api)
         }
     }
     LaunchedEffect(api) {
