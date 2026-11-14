@@ -1,6 +1,7 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { pushTokens } from "../db/schema";
+import { ensurePushTokenProviderStorage } from "./push-token-storage";
 
 // Sends push notifications via Expo's push service (https://exp.host). Works
 // for both iOS and Android without needing separate FCM/APNs setup, since the
@@ -12,13 +13,14 @@ export async function sendPushToAccounts(
   notification: { title: string; body: string; data?: Record<string, unknown> }
 ) {
   if (!accountIds.length) return { sent: 0 };
+  await ensurePushTokenProviderStorage();
   const db = getDb();
   const tokens: { expoPushToken: string }[] = [];
   for (const accountId of accountIds) {
     const rows = await db
       .select({ expoPushToken: pushTokens.expoPushToken })
       .from(pushTokens)
-      .where(eq(pushTokens.accountId, accountId));
+      .where(and(eq(pushTokens.accountId, accountId), eq(pushTokens.provider, "expo")));
     tokens.push(...rows);
   }
   if (!tokens.length) return { sent: 0 };
