@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.45.8 — 2026-11-14
+
+- Choose the next Home meeting by its Wednesday meeting date, so a week whose midweek meeting has passed is no longer shown as upcoming.
+- Show the actual midweek meeting date on upcoming schedule cards.
 ## v0.45.7 — 2026-11-13
 
 - Keep saved Home, participant, and history data visible while refreshing, with clear loading, retry, and empty states.
