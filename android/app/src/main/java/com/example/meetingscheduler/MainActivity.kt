@@ -2133,8 +2133,10 @@ private fun HomeScreen(
     val today = LocalDate.now()
     val upcoming = remember(schedules, today) {
         schedules.mapNotNull { remote ->
-            val start = scheduleStartDate(remote.weekLabel, remote.updatedAt) ?: return@mapNotNull null
-            if (start.plusDays(6).isBefore(today)) null else start to remote
+            val weekStart = scheduleStartDate(remote.weekLabel, remote.updatedAt) ?: return@mapNotNull null
+            // Workbook weeks are normalized to Monday; the midweek meeting is Wednesday.
+            val meetingDate = weekStart.plusDays(2)
+            if (meetingDate.isBefore(today)) null else meetingDate to remote
         }.sortedBy { it.first }.take(6)
     }
     PageColumn(modifier) {
@@ -2237,7 +2239,7 @@ private fun HomeScreen(
                         Column(Modifier.weight(1f).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text("NEXT MEETING", color = Forest, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
                             Text(nextSchedule.weekLabel, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
-                            Text("${nextSchedule.reading} · ${nextDate.format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.ENGLISH))}", color = Muted, fontSize = 11.sp, maxLines = 1)
+                            Text("${nextSchedule.reading} · ${nextDate.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH))}", color = Muted, fontSize = 11.sp, maxLines = 1)
                         }
                         Icon(Icons.TwoTone.Preview, contentDescription = "Preview next meeting schedule", tint = Forest)
                     }
@@ -2257,7 +2259,7 @@ private fun HomeScreen(
                         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                             Text(remote.weekLabel, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                             Text(remote.reading, color = Muted, fontSize = 12.sp)
-                            Text(date.format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.ENGLISH)), color = Forest, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                            Text(date.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH)), color = Forest, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                         }
                         Icon(Icons.TwoTone.Preview, contentDescription = "Preview schedule", tint = Forest)
                     }
