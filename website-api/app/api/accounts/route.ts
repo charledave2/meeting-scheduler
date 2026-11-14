@@ -1,6 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { getDb, getRuntimeEnv } from "../../../db";
-import { authAccounts, authSessions, users } from "../../../db/schema";
+import { authAccounts, authSessions, members, users } from "../../../db/schema";
+import { ensureAccountMemberStorage } from "../../account-member-storage";
 import { assertSameOrigin, getChatGPTUser, hashPassword, validPassword } from "../../chatgpt-auth";
 import { getToolAccessMap, saveToolAccessMap } from "../../permissions";
 
@@ -21,6 +22,7 @@ async function ensureAccountPhotosTable() {
 
 export async function GET() {
   if (!(await admin())) return Response.json({ error: "Admin only" }, { status: 403 });
+  await ensureAccountMemberStorage();
   const accounts = await getDb()
     .select({
       id: authAccounts.id,
@@ -30,9 +32,12 @@ export async function GET() {
       createdAt: authAccounts.createdAt,
       requestNote: authAccounts.requestNote,
       role: users.role,
+      memberId: authAccounts.memberId,
+      memberName: members.name,
     })
     .from(authAccounts)
     .leftJoin(users, eq(authAccounts.userId, users.id))
+    .leftJoin(members, eq(authAccounts.memberId, members.id))
     .orderBy(desc(authAccounts.createdAt));
   const photoDb = await ensureAccountPhotosTable();
   const photoRows = await photoDb.prepare("SELECT account_id, photo_data_url FROM account_profile_photos").all<{ account_id: number; photo_data_url: string }>();
@@ -50,15 +55,17 @@ export async function PATCH(request: Request) {
   if (!current) return Response.json({ error: "Admin only" }, { status: 403 });
   if (!assertSameOrigin(request)) return Response.json({ error: "Invalid request." }, { status: 403 });
 
+  await ensureAccountMemberStorage();
   const body = (await request.json()) as {
     id?: number;
+    memberId?: number | null;
     action?: string;
     temporaryPassword?: string;
     role?: AssignableRole;
     photoDataUrl?: string;
     toolAccess?: Record<string, unknown>;
   };
-  const allowedActions = ["approve", "reset", "disable", "enable", "decline", "change_role", "upload_photo", "update_tool_access"];
+  const allowedActions = ["approve", "reset", "disable", "enable", "decline", "change_role", "upload_photo", "update_tool_access", "link_member"];
   if (!body.id || !body.action || !allowedActions.includes(body.action)) {
     return Response.json({ error: "Invalid account action." }, { status: 400 });
   }
@@ -66,6 +73,24 @@ export async function PATCH(request: Request) {
   const db = getDb();
   const [account] = await db.select().from(authAccounts).where(eq(authAccounts.id, body.id)).limit(1);
   if (!account) return Response.json({ error: "Account not found." }, { status: 404 });
+  if (body.action === "link_member") {
+    if (!account.userId || account.status === "requested") return Response.json({ error: "Approve this account before linking a participant." }, { status: 400 });
+    if (body.memberId == null) {
+      await db.update(authAccounts).set({ memberId: null }).where(eq(authAccounts.id, account.id));
+      return Response.json({ message: "Participant link removed." });
+    }
+    if (!Number.isInteger(body.memberId) || body.memberId < 1) return Response.json({ error: "Choose a valid participant." }, { status: 400 });
+    const [member] = await db.select({ id: members.id, active: members.active }).from(members).where(eq(members.id, body.memberId)).limit(1);
+    if (!member || !member.active) return Response.json({ error: "Choose an active participant." }, { status: 400 });
+    try {
+      await db.update(authAccounts).set({ memberId: member.id }).where(eq(authAccounts.id, account.id));
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "";
+      if (/unique|constraint/i.test(detail)) return Response.json({ error: "This participant is already linked to another account." }, { status: 409 });
+      throw error;
+    }
+    return Response.json({ message: "Participant linked to account." });
+  }
   if (body.action === "update_tool_access") {
     if (!account.userId) return Response.json({ error: "Only approved accounts can have tool access customized." }, { status: 400 });
     const [target] = await db.select({ role: users.role }).from(users).where(eq(users.id, account.userId)).limit(1);
@@ -166,6 +191,7 @@ export async function DELETE(request: Request) {
   if (!current) return Response.json({ error: "Admin only" }, { status: 403 });
   if (!assertSameOrigin(request)) return Response.json({ error: "Invalid request." }, { status: 403 });
 
+  await ensureAccountMemberStorage();
   const id = Number(new URL(request.url).searchParams.get("id"));
   if (!Number.isInteger(id) || id < 1) return Response.json({ error: "Invalid account." }, { status: 400 });
 

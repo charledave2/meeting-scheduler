@@ -74,6 +74,7 @@ export const participantImportAudits = sqliteTable("participant_import_audits", 
 export const authAccounts = sqliteTable("auth_accounts", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   userId: integer("user_id").references(() => users.id),
+  memberId: integer("member_id").references(() => members.id, { onDelete: "set null" }),
   username: text("username").notNull(),
   displayName: text("display_name").notNull(),
   passwordHash: text("password_hash"),
@@ -89,6 +90,7 @@ export const authAccounts = sqliteTable("auth_accounts", {
 }, (t) => [
   uniqueIndex("auth_accounts_username_unique").on(t.username),
   uniqueIndex("auth_accounts_user_id_unique").on(t.userId),
+  uniqueIndex("auth_accounts_member_id_unique").on(t.memberId),
   index("auth_accounts_status_idx").on(t.status),
 ]);
 
