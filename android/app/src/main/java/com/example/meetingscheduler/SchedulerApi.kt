@@ -10,6 +10,7 @@ import org.json.JSONObject
 import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
 import java.time.format.DateTimeFormatter
@@ -49,6 +50,15 @@ internal class SchedulerApi(context: Context) {
     }
 
     suspend fun currentUser(): ApiIdentity = withContext(Dispatchers.IO) { meBlocking() }
+    suspend fun registerPushToken(token: String) = withContext(Dispatchers.IO) {
+        request("/api/push-token", "POST", JSONObject().put("token", token).put("provider", "fcm").put("platform", "android"))
+    }
+
+    suspend fun unregisterPushToken(token: String, sessionOverride: String?) = withContext(Dispatchers.IO) {
+        val encodedToken = URLEncoder.encode(token, "UTF-8")
+        request("/api/push-token?token=$encodedToken&provider=fcm", "DELETE", null, authorized = false, sessionOverride = sessionOverride)
+    }
+
     suspend fun changePassword(currentPassword: String, newPassword: String) = withContext(Dispatchers.IO) {
         request(
             "/api/auth/change-password",
