@@ -78,8 +78,7 @@ internal object MeetingPushNotifications {
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(context, CHANNEL_ID)
         } else {
-            @Suppress("DEPRECATION")
-            Notification.Builder(context).setPriority(Notification.PRIORITY_DEFAULT)
+            Notification.Builder(context)
         }
         val notification = builder
             .setSmallIcon(R.drawable.ic_notification)
