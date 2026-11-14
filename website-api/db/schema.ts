@@ -99,13 +99,13 @@ export const authSessions = sqliteTable("auth_sessions", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [index("auth_sessions_account_idx").on(t.accountId)]);
 
-// Expo push tokens registered by the native mobile app, one row per
-// account+device. Used to send real push notifications (e.g. "new schedule
-// published") via Expo's push service.
+// Push tokens registered by the native mobile app, one row per account+device.
+// The legacy column name is retained for database compatibility; `provider` identifies Expo vs FCM.
 export const pushTokens = sqliteTable("push_tokens", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   accountId: integer("account_id").notNull().references(() => authAccounts.id, { onDelete: "cascade" }),
   expoPushToken: text("expo_push_token").notNull(),
+  provider: text("provider", { enum: ["expo", "fcm"] }).notNull().default("expo"),
   platform: text("platform", { enum: ["ios", "android"] }).notNull().default("android"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
