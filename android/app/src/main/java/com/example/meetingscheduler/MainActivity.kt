@@ -2134,8 +2134,8 @@ private fun HomeScreen(
     val upcoming = remember(schedules, today) {
         schedules.mapNotNull { remote ->
             val weekStart = scheduleStartDate(remote.weekLabel, remote.updatedAt) ?: return@mapNotNull null
-            // Workbook weeks are normalized to Monday; the midweek meeting is Wednesday.
-            val meetingDate = weekStart.plusDays(2)
+            // Workbook weeks are normalized to Monday; this congregation meets midweek on Thursday.
+            val meetingDate = weekStart.plusDays(3)
             if (meetingDate.isBefore(today)) null else meetingDate to remote
         }.sortedBy { it.first }.take(6)
     }
