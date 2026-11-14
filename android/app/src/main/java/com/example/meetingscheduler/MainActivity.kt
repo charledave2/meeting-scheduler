@@ -1,5 +1,7 @@
 package com.example.meetingscheduler
 
+import android.Manifest
+
 import android.content.Context
 import android.content.Intent
 import android.content.BroadcastReceiver
@@ -17,6 +19,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import android.os.Bundle
+import android.os.Build
 import android.view.View
 import android.widget.Toast
 import androidx.fragment.app.FragmentActivity
@@ -244,6 +247,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        MeetingPushNotifications.createChannel(this)
         appLock = AppLockController(this)
         appLock.updatePrivacy()
         setContent { MeetingSchedulerRoot(window) }
@@ -611,6 +615,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     val context = LocalContext.current
     val api = remember(context) { SchedulerApi(context) }
     val authScope = rememberCoroutineScope()
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     var signedIn by rememberSaveable { mutableStateOf(false) }
     var authReady by rememberSaveable { mutableStateOf(false) }
     var loginBusy by remember { mutableStateOf(false) }
@@ -635,6 +640,17 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var cloudSaveFeedback by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     var participantAdmin by rememberSaveable { mutableStateOf(false) }
     var participantCanEdit by rememberSaveable { mutableStateOf(false) }
+    var showNotificationPermissionPrompt by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(signedIn, identityUsername, splashFinished) {
+        if (!signedIn || identityUsername.isBlank() || !splashFinished) return@LaunchedEffect
+        MeetingPushNotifications.syncToken(context, api)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            val permissionPrefs = context.getSharedPreferences("meeting_notification_permission", Context.MODE_PRIVATE)
+            if (!permissionPrefs.getBoolean("asked", false)) showNotificationPermissionPrompt = true
+        }
+    }
     LaunchedEffect(api) {
         runCatching { api.currentUser() }.onSuccess {
             identityName = store.profileName(it.username, it.name); identityUsername = it.username
@@ -642,6 +658,29 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             if (it.mustChangePassword) passwordChangeRequired = true else signedIn = true
         }
         authReady = true
+    }
+    if (showNotificationPermissionPrompt) {
+        AlertDialog(
+            onDismissRequest = {
+                showNotificationPermissionPrompt = false
+                context.getSharedPreferences("meeting_notification_permission", Context.MODE_PRIVATE).edit().putBoolean("asked", true).apply()
+            },
+            title = { Text("Get assignment notifications") },
+            text = { Text("We can notify you when a newly saved cloud schedule includes an assignment for you.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showNotificationPermissionPrompt = false
+                    context.getSharedPreferences("meeting_notification_permission", Context.MODE_PRIVATE).edit().putBoolean("asked", true).apply()
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }) { Text("Allow") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showNotificationPermissionPrompt = false
+                    context.getSharedPreferences("meeting_notification_permission", Context.MODE_PRIVATE).edit().putBoolean("asked", true).apply()
+                }) { Text("Not now") }
+            }
+        )
     }
     if (!splashFinished || !authReady) { MeetingSplashScreen(); return }
     if (!signedIn) {
@@ -1268,7 +1307,11 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                                 onSignOut = {
                                     profileDialogOpen = false
                                     val oldSession = api.signOut()
-                                    authScope.launch { api.revokeSession(oldSession) }
+                                    val pushToken = MeetingPushNotifications.savedToken(context)
+                                    authScope.launch {
+                                        if (!pushToken.isNullOrBlank()) runCatching { api.unregisterPushToken(pushToken, oldSession) }
+                                        api.revokeSession(oldSession)
+                                    }
                                     signedIn = false
                                     identityName = ""
                                     identityUsername = ""
