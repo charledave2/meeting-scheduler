@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.45.9 — 2026-11-14
+
+- Use Thursday as this congregation's midweek meeting date when choosing the next Home meeting.
+- Keep the schedule preview and PNG export on the bundled Google Sans Flex font.
 ## v0.45.8 — 2026-11-14
 
 - Choose the next Home meeting by its Wednesday meeting date, so a week whose midweek meeting has passed is no longer shown as upcoming.
