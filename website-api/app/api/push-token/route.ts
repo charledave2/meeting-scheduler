@@ -2,39 +2,59 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { pushTokens } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
+import { ensurePushTokenProviderStorage } from "../../push-token-storage";
 
-// Called by the mobile app after login (and whenever the Expo push token
-// changes) to register this device for push notifications.
+const validProvider = (value: unknown): value is "expo" | "fcm" =>
+  value === "expo" || value === "fcm";
+
 export async function POST(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = (await request.json()) as { token?: string; platform?: "ios" | "android" };
+  const body = (await request.json()) as {
+    token?: string;
+    provider?: "expo" | "fcm";
+    platform?: "ios" | "android";
+  };
   const token = body.token?.trim();
-  if (!token) return Response.json({ error: "A push token is required." }, { status: 400 });
+  const provider = body.provider ?? "expo";
   const platform = body.platform === "ios" ? "ios" : "android";
-
-  const db = getDb();
-  const [existing] = await db.select().from(pushTokens).where(eq(pushTokens.expoPushToken, token)).limit(1);
-  if (existing) {
-    await db
-      .update(pushTokens)
-      .set({ accountId: user.accountId, platform, updatedAt: new Date().toISOString() })
-      .where(eq(pushTokens.id, existing.id));
-  } else {
-    await db.insert(pushTokens).values({ accountId: user.accountId, expoPushToken: token, platform });
+  if (!token || token.length > 4096 || /\s/.test(token)) {
+    return Response.json({ error: "A valid push token is required." }, { status: 400 });
   }
-  return Response.json({ registered: true });
+  if (!validProvider(provider)) {
+    return Response.json({ error: "Unsupported push provider." }, { status: 400 });
+  }
+
+  await ensurePushTokenProviderStorage();
+  await getDb()
+    .insert(pushTokens)
+    .values({ accountId: user.accountId, expoPushToken: token, provider, platform, updatedAt: new Date().toISOString() })
+    .onConflictDoUpdate({
+      target: pushTokens.expoPushToken,
+      set: { accountId: user.accountId, provider, platform, updatedAt: new Date().toISOString() },
+    });
+
+  return Response.json({ registered: true }, { headers: { "cache-control": "no-store" } });
 }
 
-// Called on logout / notification opt-out to stop sending push to this device.
+// Called before sign-out / notification opt-out. Removal is scoped to the
+// authenticated account so one account cannot revoke another account's token.
 export async function DELETE(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
-  const token = new URL(request.url).searchParams.get("token");
+
+  const url = new URL(request.url);
+  const token = url.searchParams.get("token")?.trim();
+  const provider = url.searchParams.get("provider");
   if (!token) return Response.json({ error: "A push token is required." }, { status: 400 });
-  await getDb()
-    .delete(pushTokens)
-    .where(and(eq(pushTokens.expoPushToken, token), eq(pushTokens.accountId, user.accountId)));
-  return Response.json({ removed: true });
+  if (provider && !validProvider(provider)) {
+    return Response.json({ error: "Unsupported push provider." }, { status: 400 });
+  }
+
+  await ensurePushTokenProviderStorage();
+  const filters = [eq(pushTokens.expoPushToken, token), eq(pushTokens.accountId, user.accountId)];
+  if (provider) filters.push(eq(pushTokens.provider, provider));
+  await getDb().delete(pushTokens).where(and(...filters));
+  return Response.json({ removed: true }, { headers: { "cache-control": "no-store" } });
 }
