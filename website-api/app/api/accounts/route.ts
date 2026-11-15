@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { getDb, getRuntimeEnv } from "../../../db";
 import { authAccounts, authSessions, members, users } from "../../../db/schema";
 import { ensureAccountMemberStorage } from "../../account-member-storage";
@@ -47,7 +47,8 @@ export async function GET() {
     photoDataUrl: photos.get(account.id) ?? "",
     toolAccess: await getToolAccessMap({ accountId: account.id, role: account.role === "admin" ? "admin" : account.role === "scheduler" ? "scheduler" : "viewer" }),
   })));
-  return Response.json({ accounts: enriched });
+  const activeMembers = await getDb().select({ id: members.id, name: members.name }).from(members).where(eq(members.active, true)).orderBy(asc(members.name));
+  return Response.json({ accounts: enriched, activeMembers });
 }
 
 export async function PATCH(request: Request) {
