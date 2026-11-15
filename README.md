@@ -18,6 +18,15 @@ Then push to `main` or run **Deploy Cloudflare Worker** from the Actions tab. Th
 
 The Wrangler config contains the existing D1 database binding and Access application settings. The workflow does not run database migrations automatically. Apply any pending SQL migrations deliberately before deploying a schema-dependent change.
 
+### Firebase Cloud Messaging
+
+For server-side assignment notifications, set these as **Worker secrets** in Cloudflare (never commit the private key):
+
+- `FIREBASE_SERVICE_ACCOUNT_EMAIL` — the service account email for the Firebase project.
+- `FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY` — its PEM private key, stored as a secret. The Worker accepts either real newlines or escaped `\\n` sequences.
+
+The Worker sends through the FCM HTTP v1 API using the `jwmeeting-scheduler` project by default. The service account must be allowed to send Firebase Cloud Messaging messages. Until both secrets are configured, schedule saves still succeed but FCM delivery is skipped. Android also needs a Firebase app configuration matching the build's application ID; the existing `google-services.json` is for the release ID `com.example.meetingscheduler`.
+
 ## Android build
 
 Open `android/` in Android Studio, or build with JDK 17+, Android SDK Platform 35, and Gradle 8.10.2+:
