@@ -22,7 +22,8 @@ import javax.crypto.SecretKey
 internal data class ApiIdentity(val name: String, val username: String, val role: String, val mustChangePassword: Boolean, val photoDataUrl: String = "", val toolAccess: Map<String, String> = emptyMap())
 internal data class WorkbookImport(val link: String, val meta: JSONObject, val parts: List<JSONObject>)
 internal data class RemoteSchedule(val id: Int, val weekLabel: String, val reading: String, val updatedAt: String)
-internal data class RemoteAccount(val id: Int, val displayName: String, val username: String, val status: String, val role: String, val createdAt: String, val requestNote: String, val photoDataUrl: String = "", val toolAccess: Map<String, String> = emptyMap())
+internal data class RemoteAccount(val id: Int, val displayName: String, val username: String, val status: String, val role: String, val createdAt: String, val requestNote: String, val photoDataUrl: String = "", val toolAccess: Map<String, String> = emptyMap(), val memberId: Int? = null, val memberName: String = "")
+internal data class AccountLinkParticipant(val id: Int, val name: String)
 internal data class ParticipantRotation(
     val memberId: Int, val mainThisMonth: Int, val assistantThisMonth: Int, val totalThisMonth: Int,
     val lastAssignmentDate: String?, val nextEligibleDate: String?, val eligible: Boolean, val exempt: Boolean,
@@ -137,8 +138,21 @@ internal class SchedulerApi(context: Context) {
     suspend fun accounts(): List<RemoteAccount> = withContext(Dispatchers.IO) {
         val rows = request("/api/accounts", "GET", null).optJSONArray("accounts") ?: JSONArray()
         (0 until rows.length()).mapNotNull { i -> rows.optJSONObject(i)?.let { row ->
-            RemoteAccount(row.optInt("id"), row.optString("displayName"), row.optString("username"), row.optString("status"), row.optString("role", "viewer"), row.optString("createdAt"), row.optString("requestNote"), row.optString("photoDataUrl"), row.optJSONObject("toolAccess")?.let { access -> buildMap { access.keys().forEach { key -> put(key, access.optString(key, "hidden")) } } } ?: emptyMap())
+            RemoteAccount(row.optInt("id"), row.optString("displayName"), row.optString("username"), row.optString("status"), row.optString("role", "viewer"), row.optString("createdAt"), row.optString("requestNote"), row.optString("photoDataUrl"), row.optJSONObject("toolAccess")?.let { access -> buildMap { access.keys().forEach { key -> put(key, access.optString(key, "hidden")) } } } ?: emptyMap(), row.optInt("memberId").takeIf { it > 0 }, row.optString("memberName"))
         } }
+    }
+
+    suspend fun accountLinkParticipants(): List<AccountLinkParticipant> = withContext(Dispatchers.IO) {
+        val rows = request("/api/accounts", "GET", null).optJSONArray("activeMembers") ?: JSONArray()
+        (0 until rows.length()).mapNotNull { index ->
+            rows.optJSONObject(index)?.let { row -> AccountLinkParticipant(row.optInt("id"), row.optString("name")) }
+        }
+    }
+
+    suspend fun linkAccountParticipant(accountId: Int, memberId: Int?): JSONObject = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("id", accountId).put("action", "link_member")
+        if (memberId != null) body.put("memberId", memberId) else body.put("memberId", JSONObject.NULL)
+        request("/api/accounts", "PATCH", body)
     }
 
     suspend fun updateAccountToolAccess(id: Int, toolAccess: Map<String, String>): JSONObject = withContext(Dispatchers.IO) {
