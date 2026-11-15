@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.12 — 2026-11-15
+
+- Fix Account & Settings loading being cancelled during screen transitions.
+- Load accounts and active participants together so the participant link picker receives the list reliably.
+
 ## v0.45.11 — 2026-11-15
 
 - Add participant linking to the Android admin account screen for FCM assignment notifications.
