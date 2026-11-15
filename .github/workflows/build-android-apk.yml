@@ -81,6 +81,14 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: gradle --no-daemon :app:assembleRelease
+      - name: Upload signed release APK
+        if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release:')
+        uses: actions/upload-artifact@v4
+        with:
+          name: meeting-scheduler-android-release-v${{ steps.meta.outputs.version }}
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 90
       - name: Package Android project source
         if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release:')
         run: zip -rq ../meeting-scheduler-android-source.zip . -x "*/build/*" ".gradle/*" "*/.gradle/*" "*/release-keystore.jks"
@@ -99,5 +107,3 @@ jobs:
       - name: Remove temporary signing key
         if: always()
         run: rm -f app/release-keystore.jks
-
-
