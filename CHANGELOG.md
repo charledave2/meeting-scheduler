@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.14 — 2026-11-16
+
+- Open the exact saved schedule preview when an assignment notification is tapped, including when the app starts from the notification.
+- Keep test notifications opening the app normally.
+
 ## v0.45.13 — 2026-11-16
 
 - Add a test FCM notification button to Account & Settings for every signed-in account.
