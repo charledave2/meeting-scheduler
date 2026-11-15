@@ -1265,6 +1265,24 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             navigateTo(it)
         }
     }
+    LaunchedEffect(current, signedIn, identityRole, accountReloadTick) {
+        if (current == Screen.ACCOUNTS && signedIn && identityRole.equals("admin", true) && !accountsLoaded) {
+            accountsBusy = true
+            accountsError = null
+            try {
+                val data = api.accountsWithParticipants()
+                remoteAccounts = data.first
+                accountLinkParticipants = data.second
+                accountsLoaded = true
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                accountsError = error.message ?: "Hindi makuha ang accounts at participants."
+            } finally {
+                accountsBusy = false
+            }
+        }
+    }
+
     Scaffold(
         containerColor = AppSurface,
         topBar = {
@@ -1489,16 +1507,6 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     onNew = { editingRemoteId=0; navigateTo(Screen.DETAILS) })
             }
             Screen.ACCOUNTS -> {
-                LaunchedEffect(current, signedIn, accountsLoaded, accountReloadTick) {
-                    if(current==Screen.ACCOUNTS && signedIn && identityRole.equals("admin", true) && !accountsLoaded && !accountsBusy) {
-                        accountsBusy=true; accountsError=null
-                        try {
-                            runCatching { api.accounts() }.onSuccess { remoteAccounts=it; accountsLoaded=true }
-                            runCatching { api.accountLinkParticipants() }.onSuccess { accountLinkParticipants=it }
-                                .onFailure { accountsError=it.message ?: "Hindi makuha ang accounts." }
-                        } finally { accountsBusy=false }
-                    }
-                }
                 AccountsScreen(
                     modifier=scroll, accounts=remoteAccounts, linkParticipants=accountLinkParticipants, loading=accountsBusy, error=accountsError,
                     currentUsername=identityUsername, isAdmin=identityRole.equals("admin", true),
