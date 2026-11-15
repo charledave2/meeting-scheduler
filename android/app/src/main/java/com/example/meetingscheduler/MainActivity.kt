@@ -111,6 +111,7 @@ import androidx.compose.material.icons.twotone.Sort
 import androidx.compose.material.icons.twotone.AdminPanelSettings
 import androidx.compose.material.icons.twotone.Search
 import androidx.compose.material.icons.twotone.Block
+import androidx.compose.material.icons.twotone.NotificationsActive
 import androidx.compose.material.icons.twotone.SystemUpdateAlt
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.*
@@ -177,6 +178,8 @@ private fun fitScheduleWebView(
     onReady: () -> Unit,
     onFailure: () -> Unit
 ) {
+    var widthExpanded = false
+    var layoutWidthCss = SCHEDULE_EXPORT_CSS_WIDTH.toFloat()
     fun measureContent(attempt: Int) {
         val measureScript = "(document.fonts && document.fonts.status === 'loading') ? -1 : document.body.scrollHeight"
         view.evaluateJavascript(measureScript) { rawHeight ->
@@ -185,7 +188,21 @@ private fun fitScheduleWebView(
                 if (attempt < 30) view.postDelayed({ measureContent(attempt + 1) }, 100L) else onFailure()
                 return@evaluateJavascript
             }
-            val widthScale = targetWidthPx / (SCHEDULE_EXPORT_CSS_WIDTH * density)
+            if (!widthExpanded) {
+                widthExpanded = true
+                // A tall schedule used to shrink the fixed-width page, leaving a blank
+                // strip on the right. Give its columns that space before fitting to A4.
+                val pageWidthCss = (targetWidthPx * contentHeight / targetHeightPx)
+                    .coerceIn(SCHEDULE_EXPORT_CSS_WIDTH.toFloat(), SCHEDULE_EXPORT_CSS_WIDTH * 1.8f)
+                if (pageWidthCss > SCHEDULE_EXPORT_CSS_WIDTH + 1f) {
+                    layoutWidthCss = pageWidthCss
+                    view.evaluateJavascript("document.body.style.width='${pageWidthCss}px'; true") {
+                        measureContent(attempt + 1)
+                    }
+                    return@evaluateJavascript
+                }
+            }
+            val widthScale = targetWidthPx / (layoutWidthCss * density)
             val heightScale = targetHeightPx / (contentHeight * density)
             val fitScale = minOf(widthScale, heightScale).coerceAtLeast(0.01f)
             view.evaluateJavascript("document.body.style.zoom='$fitScale'; true") {
@@ -774,6 +791,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var accountsLoaded by remember { mutableStateOf(false) }
     var accountsBusy by remember { mutableStateOf(false) }
     var accountsError by remember { mutableStateOf<String?>(null) }
+    var testNotificationBusy by remember { mutableStateOf(false) }
+    var testNotificationFeedback by remember { mutableStateOf<String?>(null) }
     var accountReloadTick by remember { mutableIntStateOf(0) }
     var accountPhotoTarget by remember { mutableStateOf<RemoteAccount?>(null) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
@@ -1509,6 +1528,29 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             Screen.ACCOUNTS -> {
                 AccountsScreen(
                     modifier=scroll, accounts=remoteAccounts, linkParticipants=accountLinkParticipants, loading=accountsBusy, error=accountsError,
+                    testNotificationBusy=testNotificationBusy, testNotificationFeedback=testNotificationFeedback,
+                    onTestNotification={
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                        ) {
+                            testNotificationFeedback = "Payagan muna ang notifications, pagkatapos ay pindutin ulit ang Test notification."
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else if (!testNotificationBusy) authScope.launch {
+                            testNotificationBusy = true
+                            testNotificationFeedback = null
+                            try {
+                                val token = MeetingPushNotifications.savedToken(context)
+                                    ?: throw IllegalStateException("Kinukuha pa ang FCM token. Subukan muli makalipas ang ilang segundo.")
+                                api.registerPushToken(token)
+                                val sent = api.sendTestNotification()
+                                testNotificationFeedback = if (sent > 0) "Naipadala ang test notification sa account na ito." else "Walang naipadalang test notification."
+                            } catch (error: Exception) {
+                                testNotificationFeedback = error.message ?: "Hindi naipadala ang test notification."
+                            } finally {
+                                testNotificationBusy = false
+                            }
+                        }
+                    },
                     currentUsername=identityUsername, isAdmin=identityRole.equals("admin", true),
                     fontScale=fontScale, onFontScaleChange=onFontScaleChange,
                     darkMode=darkMode, onToggleTheme=onToggleTheme, appLock=appLock,
@@ -3308,7 +3350,8 @@ private fun scheduleStartDate(label:String, updatedAt:String=""): LocalDate? = r
 
 @Composable
 private fun AccountsScreen(
-    modifier: Modifier, accounts: List<RemoteAccount>, linkParticipants: List<AccountLinkParticipant>, loading: Boolean, error: String?, currentUsername: String,
+    modifier: Modifier, accounts: List<RemoteAccount>, linkParticipants: List<AccountLinkParticipant>, loading: Boolean, error: String?,
+    testNotificationBusy: Boolean, testNotificationFeedback: String?, onTestNotification: () -> Unit, currentUsername: String,
     isAdmin: Boolean, fontScale: Float, onFontScaleChange: (Float) -> Unit,
     darkMode: Boolean, onToggleTheme: () -> Unit, appLock: AppLockController,
     onRefresh: () -> Unit, onUploadPhoto: (RemoteAccount) -> Unit,
@@ -3368,6 +3411,22 @@ private fun AccountsScreen(
             }
             Slider(value = fontScale, onValueChange = onFontScaleChange, valueRange = 0.85f..1.35f, steps = 9)
             Text("Applies across the app and is saved on this device.", color = Muted, fontSize = 11.sp)
+        }
+        M3Card {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.TwoTone.NotificationsActive, contentDescription = null, tint = Forest, modifier = Modifier.size(22.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Test notification", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text("Send an FCM test to this signed-in account.", color = Muted, fontSize = 11.sp)
+                }
+            }
+            OutlinedButton(onClick = onTestNotification, enabled = !testNotificationBusy, modifier = Modifier.fillMaxWidth()) {
+                if (testNotificationBusy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                else Icon(Icons.TwoTone.NotificationsActive, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (testNotificationBusy) "Sending…" else "Send test notification")
+            }
+            if (testNotificationFeedback != null) Text(testNotificationFeedback, color = Muted, fontSize = 11.sp)
         }
         if (isAdmin) M3Card {
             if (loading && accounts.isEmpty()) Box(Modifier.fillMaxWidth().padding(22.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Forest, modifier = Modifier.size(24.dp), strokeWidth = 2.dp) }
