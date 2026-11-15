@@ -74,6 +74,7 @@ export const participantImportAudits = sqliteTable("participant_import_audits", 
 export const authAccounts = sqliteTable("auth_accounts", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   userId: integer("user_id").references(() => users.id),
+  memberId: integer("member_id").references(() => members.id, { onDelete: "set null" }),
   username: text("username").notNull(),
   displayName: text("display_name").notNull(),
   passwordHash: text("password_hash"),
@@ -89,6 +90,7 @@ export const authAccounts = sqliteTable("auth_accounts", {
 }, (t) => [
   uniqueIndex("auth_accounts_username_unique").on(t.username),
   uniqueIndex("auth_accounts_user_id_unique").on(t.userId),
+  uniqueIndex("auth_accounts_member_id_unique").on(t.memberId),
   index("auth_accounts_status_idx").on(t.status),
 ]);
 
@@ -99,13 +101,13 @@ export const authSessions = sqliteTable("auth_sessions", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (t) => [index("auth_sessions_account_idx").on(t.accountId)]);
 
-// Expo push tokens registered by the native mobile app, one row per
-// account+device. Used to send real push notifications (e.g. "new schedule
-// published") via Expo's push service.
+// Push tokens registered by the native mobile app, one row per account+device.
+// The legacy column name is retained for database compatibility; `provider` identifies Expo vs FCM.
 export const pushTokens = sqliteTable("push_tokens", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   accountId: integer("account_id").notNull().references(() => authAccounts.id, { onDelete: "cascade" }),
   expoPushToken: text("expo_push_token").notNull(),
+  provider: text("provider", { enum: ["expo", "fcm"] }).notNull().default("expo"),
   platform: text("platform", { enum: ["ios", "android"] }).notNull().default("android"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),

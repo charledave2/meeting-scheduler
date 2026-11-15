@@ -8,6 +8,9 @@ type RuntimeEnv = {
   CF_ACCESS_AUD?: string;
   GOOGLE_SERVICE_ACCOUNT_EMAIL?: string;
   GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?: string;
+  FIREBASE_PROJECT_ID?: string;
+  FIREBASE_SERVICE_ACCOUNT_EMAIL?: string;
+  FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY?: string;
 };
 
 export function getRuntimeEnv(): RuntimeEnv {
