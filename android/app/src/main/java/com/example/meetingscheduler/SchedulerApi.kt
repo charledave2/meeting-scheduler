@@ -55,6 +55,10 @@ internal class SchedulerApi(context: Context) {
         request("/api/push-token", "POST", JSONObject().put("token", token).put("provider", "fcm").put("platform", "android"))
     }
 
+    suspend fun sendTestNotification(): Int = withContext(Dispatchers.IO) {
+        request("/api/push-token/test", "POST", JSONObject()).optInt("sent")
+    }
+
     suspend fun unregisterPushToken(token: String, sessionOverride: String?) = withContext(Dispatchers.IO) {
         val encodedToken = URLEncoder.encode(token, "UTF-8")
         request("/api/push-token?token=$encodedToken&provider=fcm", "DELETE", null, authorized = false, sessionOverride = sessionOverride)
