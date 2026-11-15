@@ -61,17 +61,18 @@ internal object MeetingPushNotifications {
         }
     }
 
-    fun show(context: Context, title: String, body: String) {
+    fun show(context: Context, title: String, body: String, scheduleId: Int? = null) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return
         createChannel(context)
         val openApp = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            if (scheduleId != null && scheduleId > 0) putExtra("scheduleId", scheduleId.toString())
         }
         val pendingIntent = PendingIntent.getActivity(
             context,
-            4201,
+            scheduleId?.takeIf { it > 0 } ?: 4201,
             openApp,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -106,6 +107,6 @@ class MeetingSchedulerMessagingService : FirebaseMessagingService() {
             ?: message.data["body"]
             ?: message.data["weekLabel"]
             ?: "Buksan ang JW Meeting Scheduler para tingnan ang iskedyul."
-        MeetingPushNotifications.show(applicationContext, title, body)
+        MeetingPushNotifications.show(applicationContext, title, body, message.data["scheduleId"]?.toIntOrNull())
     }
 }
