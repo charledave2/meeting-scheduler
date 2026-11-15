@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.11 — 2026-11-15
+
+- Add participant linking to the Android admin account screen for FCM assignment notifications.
+- Improve Gradle dependency resolution by using the official Google and Maven Central repositories first.
+
 ## v0.45.9 — 2026-11-14
 
 - Use Thursday as this congregation's midweek meeting date when choosing the next Home meeting.
