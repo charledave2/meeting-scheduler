@@ -261,15 +261,35 @@ private val Ink @Composable get() = MaterialTheme.colorScheme.onSurface
 private val Muted @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 
 class MainActivity : FragmentActivity() {
+    internal var pendingSchedulePreviewId by mutableIntStateOf(0)
+        private set
+
+    private fun scheduleIdFromIntent(openIntent: Intent?): Int {
+        val raw = runCatching { openIntent?.getStringExtra("scheduleId")?.toIntOrNull() }.getOrNull()
+            ?: runCatching { openIntent?.getIntExtra("scheduleId", 0) ?: 0 }.getOrDefault(0)
+        return raw.takeIf { it > 0 } ?: 0
+    }
+
+    internal fun consumeSchedulePreview(id: Int) {
+        if (pendingSchedulePreviewId == id) pendingSchedulePreviewId = 0
+    }
+
     internal lateinit var appLock: AppLockController
         private set
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingSchedulePreviewId = scheduleIdFromIntent(intent)
         MeetingPushNotifications.createChannel(this)
         appLock = AppLockController(this)
         appLock.updatePrivacy()
         setContent { MeetingSchedulerRoot(window) }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingSchedulePreviewId = scheduleIdFromIntent(intent)
     }
 
     override fun onResume() {
@@ -1181,9 +1201,10 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             runCatching {
                 val saved = api.schedule(remote.id)
                 val meta = saved.optJSONObject("meta") ?: JSONObject()
+                homePreviewWeek = meta.optString("date").ifBlank { remote.weekLabel.ifBlank { "Schedule preview" } }
                 val rawParts = saved.optJSONArray("parts") ?: JSONArray()
                 val assignments = (0 until rawParts.length()).mapNotNull { rawParts.optJSONObject(it)?.toAssignment() }
-                val start = meta.optString("weekStart").ifBlank { scheduleStartDate(remote.weekLabel, remote.updatedAt)?.toString() ?: LocalDate.now().toString() }
+                val start = meta.optString("weekStart").ifBlank { scheduleStartDate(meta.optString("date").ifBlank { remote.weekLabel }, remote.updatedAt)?.toString() ?: LocalDate.now().toString() }
                 buildOfficialScheduleHtml(
                     start,
                     meta.optString("reading", remote.reading),
@@ -1199,6 +1220,15 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             }.onSuccess { homePreviewHtml = it }
                 .onFailure { toastMessage = it.message ?: "Hindi mabuksan ang preview."; homePreviewWeek = null }
             homePreviewLoading = false
+        }
+    }
+
+    val notificationActivity = context as? MainActivity
+    val notificationScheduleId = notificationActivity?.pendingSchedulePreviewId ?: 0
+    LaunchedEffect(notificationScheduleId, signedIn) {
+        if (signedIn && notificationScheduleId > 0) {
+            notificationActivity?.consumeSchedulePreview(notificationScheduleId)
+            openUpcomingPreview(RemoteSchedule(notificationScheduleId, "Schedule preview", "", ""))
         }
     }
 
