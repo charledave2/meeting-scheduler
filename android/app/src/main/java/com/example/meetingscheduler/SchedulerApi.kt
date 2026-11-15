@@ -135,19 +135,20 @@ internal class SchedulerApi(context: Context) {
         request("/api/members?id=$id", "DELETE", null)
     }
 
-    suspend fun accounts(): List<RemoteAccount> = withContext(Dispatchers.IO) {
-        val rows = request("/api/accounts", "GET", null).optJSONArray("accounts") ?: JSONArray()
-        (0 until rows.length()).mapNotNull { i -> rows.optJSONObject(i)?.let { row ->
+    suspend fun accountsWithParticipants(): Pair<List<RemoteAccount>, List<AccountLinkParticipant>> = withContext(Dispatchers.IO) {
+        val response = request("/api/accounts", "GET", null)
+        val rows = response.optJSONArray("accounts") ?: JSONArray()
+        val accounts = (0 until rows.length()).mapNotNull { i -> rows.optJSONObject(i)?.let { row ->
             RemoteAccount(row.optInt("id"), row.optString("displayName"), row.optString("username"), row.optString("status"), row.optString("role", "viewer"), row.optString("createdAt"), row.optString("requestNote"), row.optString("photoDataUrl"), row.optJSONObject("toolAccess")?.let { access -> buildMap { access.keys().forEach { key -> put(key, access.optString(key, "hidden")) } } } ?: emptyMap(), row.optInt("memberId").takeIf { it > 0 }, row.optString("memberName"))
         } }
+        val members = response.optJSONArray("activeMembers") ?: JSONArray()
+        val participants = (0 until members.length()).mapNotNull { index ->
+            members.optJSONObject(index)?.let { row -> AccountLinkParticipant(row.optInt("id"), row.optString("name")) }
+        }
+        accounts to participants
     }
 
-    suspend fun accountLinkParticipants(): List<AccountLinkParticipant> = withContext(Dispatchers.IO) {
-        val rows = request("/api/accounts", "GET", null).optJSONArray("activeMembers") ?: JSONArray()
-        (0 until rows.length()).mapNotNull { index ->
-            rows.optJSONObject(index)?.let { row -> AccountLinkParticipant(row.optInt("id"), row.optString("name")) }
-        }
-    }
+    suspend fun accounts(): List<RemoteAccount> = accountsWithParticipants().first
 
     suspend fun linkAccountParticipant(accountId: Int, memberId: Int?): JSONObject = withContext(Dispatchers.IO) {
         val body = JSONObject().put("id", accountId).put("action", "link_member")
