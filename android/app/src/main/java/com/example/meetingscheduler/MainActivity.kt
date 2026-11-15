@@ -3434,7 +3434,7 @@ private fun AccountsScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("Linked participant", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             Box {
-                                OutlinedButton(onClick = { participantMenuExpanded = true }, enabled = !accountsBusy, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                                OutlinedButton(onClick = { participantMenuExpanded = true }, enabled = !loading, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
                                     Text(
                                         linkParticipants.firstOrNull { it.id == linkedParticipantId }?.name
                                             ?: if (account.memberId == null && linkedParticipantId == 0) "Select a participant" else "Choose participant",
@@ -3460,7 +3460,7 @@ private fun AccountsScreen(
                             }
                             Button(
                                 onClick = { onLinkParticipant(account, linkedParticipantId.takeIf { it > 0 }) },
-                                enabled = !accountsBusy && (linkedParticipantId != (account.memberId ?: 0)),
+                                enabled = !loading && (linkedParticipantId != (account.memberId ?: 0)),
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = ButtonDefaults.buttonColors(containerColor = Forest),
                                 shape = RoundedCornerShape(14.dp)
