@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb, getRuntimeEnv } from "../db";
-import { authAccounts, pushTokens } from "../db/schema";
+import { authAccounts, members, pushTokens } from "../db/schema";
 import { ensurePushTokenProviderStorage } from "./push-token-storage";
 import { ensureAccountMemberStorage } from "./account-member-storage";
 
@@ -48,7 +48,7 @@ async function sendFcm(token: string, notification: { title: string; body: strin
   const response = await fetch(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`, {
     method: "POST",
     headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
-    body: JSON.stringify({ message: { token, notification: { title: notification.title, body: notification.body }, data, android: { priority: "high", notification: { channel_id: "assignments" } } } }),
+    body: JSON.stringify({ message: { token, notification: { title: notification.title, body: notification.body }, data, android: { priority: "high", notification: { channel_id: "meeting_assignments" } } } }),
   });
   if (response.ok) return true;
   const error = await response.json().catch(() => ({})) as { error?: { status?: string } };
@@ -84,7 +84,9 @@ export async function sendPushToAssignedMembers(memberIds: number[], notificatio
   const uniqueMemberIds = [...new Set(memberIds.filter(id => Number.isInteger(id) && id > 0))];
   if (!uniqueMemberIds.length) return { sent: 0, recipients: 0 };
   await ensureAccountMemberStorage();
-  const linked = await getDb().select({ id: authAccounts.id }).from(authAccounts).where(and(eq(authAccounts.status, "active"), inArray(authAccounts.memberId, uniqueMemberIds)));
+  const linked = await getDb().select({ id: authAccounts.id }).from(authAccounts)
+    .innerJoin(members, eq(authAccounts.memberId, members.id))
+    .where(and(eq(authAccounts.status, "active"), eq(members.active, true), inArray(authAccounts.memberId, uniqueMemberIds)));
   const accountIds = [...new Set(linked.map(account => account.id))];
   return sendPushToAccounts(accountIds, notification);
 }
