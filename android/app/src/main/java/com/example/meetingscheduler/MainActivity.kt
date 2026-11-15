@@ -80,6 +80,7 @@ import androidx.compose.material.icons.twotone.CalendarMonth
 import androidx.compose.material.icons.twotone.AutoStories
 import androidx.compose.material.icons.twotone.Refresh
 import androidx.compose.material.icons.twotone.ArrowForward
+import androidx.compose.material.icons.twotone.ArrowDropDown
 import androidx.compose.material.icons.twotone.CloudUpload
 import androidx.compose.material.icons.twotone.CheckCircle
 import androidx.compose.material.icons.twotone.Menu
@@ -116,6 +117,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -768,6 +770,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var historyError by remember { mutableStateOf<String?>(null) }
     var historyReloadTick by remember { mutableIntStateOf(0) }
     var remoteAccounts by remember { mutableStateOf<List<RemoteAccount>>(emptyList()) }
+    var accountLinkParticipants by remember { mutableStateOf<List<AccountLinkParticipant>>(emptyList()) }
     var accountsLoaded by remember { mutableStateOf(false) }
     var accountsBusy by remember { mutableStateOf(false) }
     var accountsError by remember { mutableStateOf<String?>(null) }
@@ -1490,18 +1493,26 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     if(current==Screen.ACCOUNTS && signedIn && identityRole.equals("admin", true) && !accountsLoaded && !accountsBusy) {
                         accountsBusy=true; accountsError=null
                         try {
-                            runCatching { api.accounts() }.onSuccess { remoteAccounts=it;accountsLoaded=true }
+                            runCatching { api.accounts() }.onSuccess { remoteAccounts=it; accountsLoaded=true }
+                            runCatching { api.accountLinkParticipants() }.onSuccess { accountLinkParticipants=it }
                                 .onFailure { accountsError=it.message ?: "Hindi makuha ang accounts." }
                         } finally { accountsBusy=false }
                     }
                 }
                 AccountsScreen(
-                    modifier=scroll, accounts=remoteAccounts, loading=accountsBusy, error=accountsError,
+                    modifier=scroll, accounts=remoteAccounts, linkParticipants=accountLinkParticipants, loading=accountsBusy, error=accountsError,
                     currentUsername=identityUsername, isAdmin=identityRole.equals("admin", true),
                     fontScale=fontScale, onFontScaleChange=onFontScaleChange,
                     darkMode=darkMode, onToggleTheme=onToggleTheme, appLock=appLock,
                     onRefresh={accountsLoaded=false;accountReloadTick++},
                     onUploadPhoto={ account -> accountPhotoTarget=account; accountPhotoPicker.launch("image/*") },
+                    onLinkParticipant={ account, memberId -> authScope.launch {
+                        accountsBusy=true; accountsError=null
+                        runCatching { api.linkAccountParticipant(account.id, memberId) }
+                            .onSuccess { response -> toastMessage=response.optString("message","Participant link updated."); accountsLoaded=false; accountReloadTick++ }
+                            .onFailure { accountsError=it.message ?: "Hindi na-link ang participant." }
+                        accountsBusy=false
+                    } },
                     onAction={ account,action,role,password -> authScope.launch {
                         accountsBusy=true;accountsError=null
                         runCatching { api.accountAction(account.id,action,role,password) }
@@ -3289,10 +3300,11 @@ private fun scheduleStartDate(label:String, updatedAt:String=""): LocalDate? = r
 
 @Composable
 private fun AccountsScreen(
-    modifier: Modifier, accounts: List<RemoteAccount>, loading: Boolean, error: String?, currentUsername: String,
+    modifier: Modifier, accounts: List<RemoteAccount>, linkParticipants: List<AccountLinkParticipant>, loading: Boolean, error: String?, currentUsername: String,
     isAdmin: Boolean, fontScale: Float, onFontScaleChange: (Float) -> Unit,
     darkMode: Boolean, onToggleTheme: () -> Unit, appLock: AppLockController,
     onRefresh: () -> Unit, onUploadPhoto: (RemoteAccount) -> Unit,
+    onLinkParticipant: (RemoteAccount, Int?) -> Unit,
     onAction: (RemoteAccount, String, String, String) -> Unit,
     onUpdateToolAccess: (RemoteAccount, Map<String, String>) -> Unit
 ) {
@@ -3397,6 +3409,8 @@ private fun AccountsScreen(
     }
     selectedAccount?.let { selected ->
         val account = accounts.firstOrNull { it.id == selected.id } ?: selected
+        var linkedParticipantId by remember(account.id, account.memberId) { mutableIntStateOf(account.memberId ?: 0) }
+        var participantMenuExpanded by remember(account.id) { mutableStateOf(false) }
         val roleName = when (account.role.lowercase()) { "admin" -> "Administrator"; "scheduler" -> "Scheduler"; "viewer" -> "Viewer"; else -> account.role.replaceFirstChar { it.uppercase() } }
         val statusName = when (account.status.lowercase()) { "requested" -> "Requested"; "active" -> "Active"; "disabled" -> "Disabled"; else -> account.status.replaceFirstChar { it.uppercase() } }
         val isSelf = account.username.equals(currentUsername, true) || account.role == "admin"
@@ -3416,6 +3430,43 @@ private fun AccountsScreen(
                     AccountInfoLine("Username", "@" + account.username)
                     AccountInfoLine("Role", roleName)
                     AccountInfoLine("Status", statusName, if (account.status == "requested") MaterialTheme.colorScheme.error else Forest)
+                    if (account.status == "active" && account.role != "admin" && !isSelf) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Linked participant", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Box {
+                                OutlinedButton(onClick = { participantMenuExpanded = true }, enabled = !accountsBusy, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                                    Text(
+                                        linkParticipants.firstOrNull { it.id == linkedParticipantId }?.name
+                                            ?: if (account.memberId == null && linkedParticipantId == 0) "Select a participant" else "Choose participant",
+                                        modifier = Modifier.weight(1f),
+                                        textAlign = TextAlign.Start,
+                                        color = Ink,
+                                        fontSize = 13.sp
+                                    )
+                                    Icon(Icons.TwoTone.ArrowDropDown, contentDescription = null, tint = Forest)
+                                }
+                                DropdownMenu(expanded = participantMenuExpanded, onDismissRequest = { participantMenuExpanded = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text("No participant linked") },
+                                        onClick = { linkedParticipantId = 0; participantMenuExpanded = false }
+                                    )
+                                    linkParticipants.forEach { participant ->
+                                        DropdownMenuItem(
+                                            text = { Text(participant.name) },
+                                            onClick = { linkedParticipantId = participant.id; participantMenuExpanded = false }
+                                        )
+                                    }
+                                }
+                            }
+                            Button(
+                                onClick = { onLinkParticipant(account, linkedParticipantId.takeIf { it > 0 }) },
+                                enabled = !accountsBusy && (linkedParticipantId != (account.memberId ?: 0)),
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Forest),
+                                shape = RoundedCornerShape(14.dp)
+                            ) { Text("Save participant link", color = Color.White, fontSize = 12.sp) }
+                        }
+                    }
                     if (account.status == "requested") {
                         Text("Message for Administrator", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                         Surface(color = SurfaceContainer, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
