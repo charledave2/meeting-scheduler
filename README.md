@@ -25,7 +25,7 @@ For server-side assignment notifications, set these as **Worker secrets** in Clo
 - `FIREBASE_SERVICE_ACCOUNT_EMAIL` — the service account email for the Firebase project.
 - `FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY` — its PEM private key, stored as a secret. The Worker accepts either real newlines or escaped `\\n` sequences.
 
-The Worker sends through the FCM HTTP v1 API using the `jwmeeting-scheduler` project by default. The service account must be allowed to send Firebase Cloud Messaging messages. Until both secrets are configured, schedule saves still succeed but FCM delivery is skipped. Android also needs a Firebase app configuration matching the build's application ID; the existing `google-services.json` is for the release ID `com.example.meetingscheduler`.
+The Worker sends through the FCM HTTP v1 API using the `jwmeeting-scheduler` project by default. The service account must be allowed to send Firebase Cloud Messaging messages. Until both secrets are configured, schedule saves still succeed but FCM delivery is skipped. Android Firebase configuration is included for both build IDs: the release app uses `android/app/google-services.json`, and the preview app uses `android/app/src/debug/google-services.json`.
 
 ## Android build
 
