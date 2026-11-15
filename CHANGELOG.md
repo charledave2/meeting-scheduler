@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.13 — 2026-11-16
+
+- Add a test FCM notification button to Account & Settings for every signed-in account.
+- Use the available A4 page width in schedule preview and PNG export on tablets.
+
 ## v0.45.12 — 2026-11-15
 
 - Fix Account & Settings loading being cancelled during screen transitions.
