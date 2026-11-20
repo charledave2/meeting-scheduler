@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.17 — 2026-11-20
+
+- Show each part's number, title, and duration on portrait assignment slips in PDF and PNG; keep long labels readable across two lines.
+- Put the part number inside the colored circle in the midweek schedule preview and PNG export.
+
 ## v0.45.16 — 2026-11-20
 
 - Add portrait PNG image export for assignment slips, four slips per A4 page; use the same layout for PDF.
