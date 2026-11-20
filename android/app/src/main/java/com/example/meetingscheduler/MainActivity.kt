@@ -831,7 +831,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         val callback = Intent(context, ShareTargetChosenReceiver::class.java)
             .setAction(SHARE_CHOSEN_ACTION)
             .putExtra("share_type", type)
-        val requestCode = if (type == "png") 451 else 452
+        val requestCode = when (type) { "png" -> 451; "slips" -> 453; else -> 452 }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
             requestCode,
@@ -1055,6 +1055,35 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             }
         }
         web.loadDataWithBaseURL("file:///android_asset/", html, "text/HTML", "UTF-8", null)
+    }
+    fun shareAssignmentSlips() {
+        if (exportBusyType != null) return
+        val date = runCatching { LocalDate.parse(weekStart).plusDays(3) }.getOrNull()
+        if (date == null) { toastMessage = "Hindi mabasa ang meeting date."; return }
+        val dateText = date.format(DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.ENGLISH))
+        val slips = parts.flatMapIndexed { index, part ->
+            val number = (part.id.takeIf { it > 0 } ?: index + 1).toString()
+            buildList {
+                if (part.person.isNotBlank()) add(AssignmentSlip(part.person, part.assistant, dateText, number, "Main Hall"))
+                if (part.secondaryAssignee.isNotBlank()) add(AssignmentSlip(part.secondaryAssignee, part.secondaryAssistant, dateText, number, "Second Hall"))
+            }
+        }
+        if (slips.isEmpty()) { toastMessage = "Magtalaga muna ng participant para sa assignment slips."; return }
+        exportBusyType = "slips"
+        authScope.launch {
+            runCatching {
+                val file = withContext(Dispatchers.IO) { createAssignmentSlipsPdf(context, slips, weekStart) }
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+                Intent(Intent.ACTION_SEND).apply {
+                    type = "application/pdf"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_SUBJECT, "Meeting assignment slips · $weekLabel")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    clipData = android.content.ClipData.newUri(context.contentResolver, "Assignment slips PDF", uri)
+                }
+            }.onSuccess { intent -> launchScheduleShare(intent, "slips", "Share assignment slips PDF") }
+                .onFailure { exportBusyType = null; toastMessage = "Hindi mabuo ang assignment slips PDF: ${it.message ?: "subukan muli"}" }
+        }
     }
     fun shareSchedulePng() {
         if (exportBusyType != null) return
@@ -1511,7 +1540,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                                 .onFailure { exportBusyType = null; toastMessage = "Hindi mabuo ang export text: ${it.message ?: "subukan muli"}" }
                         }
                     }
-                }, onPng = ::shareSchedulePng
+                }, onPng = ::shareSchedulePng, onAssignmentSlips = ::shareAssignmentSlips
             )
             Screen.PARTICIPANTS -> {
                 ParticipantsScreen(modifier = scroll, participants = participants, loading = participantsBusy, loadError = participantsLoadError,
@@ -1736,7 +1765,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             onDismissRequest = { shareSuccessType = null },
             icon = { Icon(Icons.TwoTone.CheckCircle, contentDescription = null, tint = Forest, modifier = Modifier.size(28.dp)) },
             title = { Text("Matagumpay ang pag-share", fontWeight = FontWeight.Bold) },
-            text = { Text(if (type == "png") "Naibahagi ang schedule PNG." else "Naibahagi ang schedule text.") },
+            text = { Text(when (type) { "png" -> "Naibahagi ang schedule PNG."; "slips" -> "Naibahagi ang assignment slips PDF."; else -> "Naibahagi ang schedule text." }) },
             confirmButton = { TextButton(onClick = { shareSuccessType = null }) { Text("Okay", color = Forest) } },
             containerColor = AppSurface,
             titleContentColor = Ink,
@@ -2808,7 +2837,7 @@ private fun rotationShortDate(value: String): String = runCatching {
 }.getOrDefault(value)
 
 @Composable
-private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, openingSong:String, closingSong:String, parts:List<Assignment>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, previewWebView:MutableState<WebView?>, allowExport:Boolean, exportBusyType:String?, onExportText:()->Unit, onPng:()->Unit) {
+private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, openingSong:String, closingSong:String, parts:List<Assignment>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, previewWebView:MutableState<WebView?>, allowExport:Boolean, exportBusyType:String?, onExportText:()->Unit, onPng:()->Unit, onAssignmentSlips:()->Unit) {
     val html=remember(weekStart,bible,openingSong,closingSong,parts.toList(),chairman,openingPrayer,adviser,audienceGroup) {
         buildOfficialScheduleHtml(weekStart,bible,openingSong,closingSong,parts,chairman,openingPrayer,adviser,audienceGroup,exportMode=true)
     }
@@ -2839,6 +2868,17 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
                 Text(if (exportBusyType == "text") "Preparing…" else "Export text",fontSize=13.sp,maxLines=1)
             }
         }
+        if (allowExport) OutlinedButton(
+            onClick = onAssignmentSlips,
+            enabled = exportBusyType == null && parts.any { it.person.isNotBlank() || it.secondaryAssignee.isNotBlank() },
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            if (exportBusyType == "slips") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
+            else Icon(Icons.TwoTone.Description, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(if (exportBusyType == "slips") "Preparing PDF…" else "Share assignment slips PDF", fontSize = 13.sp)
+        }
         if (exportBusyType != null || !previewReady) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -2852,6 +2892,7 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
                             when (exportBusyType) {
                                 "png" -> "Inihahanda ang high-resolution PNG…"
                                 "text" -> "Inihahanda ang export text…"
+                                "slips" -> "Inihahanda ang assignment slips PDF…"
                                 else -> "Inihahanda ang schedule preview…"
                             },
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
