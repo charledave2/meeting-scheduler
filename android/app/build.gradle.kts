@@ -53,8 +53,8 @@ android {
         applicationId = "com.example.meetingscheduler"
         minSdk = 24
         targetSdk = 35
-        versionCode = 79
-        versionName = "0.45.16"
+        versionCode = 80
+        versionName = "0.45.17"
         resValue("string", "app_name", "JW Meeting Scheduler")
     }
     buildFeatures { compose = true; buildConfig = true }
