@@ -45,17 +45,34 @@ private fun renderSlipPage(context: Context, canvas: Canvas, slips: List<Assignm
         canvas.drawText(value, x, y, paint)
     }
 
-    fun field(label: String, value: String, x: Float, y: Float, w: Float) {
+    fun field(label: String, value: String, x: Float, y: Float, w: Float, wrap: Boolean = false) {
         text(label, x + 7f, y + 14f, 9.4f, 60f, strong = true)
+        val height = if (wrap) 32f else 21f
         paint.color = pale
         paint.style = Paint.Style.FILL
-        canvas.drawRoundRect(x + 68f, y, x + w - 8f, y + 21f, 2f, 2f, paint)
-        if (value.isNotBlank()) text(value, x + 73f, y + 14f, 9.4f, w - 86f)
+        canvas.drawRoundRect(x + 68f, y, x + w - 8f, y + height, 2f, 2f, paint)
+        if (value.isNotBlank()) {
+            if (wrap) {
+                paint.typeface = regular
+                paint.textSize = 8.2f
+                val available = w - 86f
+                val words = value.split(" ")
+                var first = ""
+                var next = ""
+                for (word in words) {
+                    val candidate = if (first.isEmpty()) word else "$first $word"
+                    if (next.isEmpty() && paint.measureText(candidate) <= available) first = candidate
+                    else next = if (next.isEmpty()) word else "$next $word"
+                }
+                text(first, x + 73f, y + 12f, 8.2f, available)
+                if (next.isNotBlank()) text(next, x + 73f, y + 23f, 8.2f, available)
+            } else text(value, x + 73f, y + 14f, 9.4f, w - 86f)
+        }
         paint.color = forest
         paint.strokeWidth = 0.6f
         paint.style = Paint.Style.STROKE
         paint.pathEffect = DashPathEffect(floatArrayOf(2f, 2f), 0f)
-        canvas.drawLine(x + 68f, y + 21f, x + w - 8f, y + 21f, paint)
+        canvas.drawLine(x + 68f, y + height, x + w - 8f, y + height, paint)
         paint.pathEffect = null
         paint.style = Paint.Style.FILL
     }
@@ -78,7 +95,7 @@ private fun renderSlipPage(context: Context, canvas: Canvas, slips: List<Assignm
         // The Assistant line intentionally stays empty when no partner is assigned.
         field("Assistant:", slip.assistant, x, y + 80f, w)
         field("Date:", slip.date, x, y + 109f, w)
-        field("Part no.:", slip.partNumber, x, y + 138f, w)
+        field("Part no.:", slip.partNumber, x, y + 138f, w, wrap = true)
         text("To be given in:", x + 7f, y + 188f, 10f, w - 15f, strong = true)
         check("Main Hall", slip.hall == "Main Hall", x + 20f, y + 210f)
         check("Second Hall", slip.hall == "Second Hall", x + 20f, y + 229f)
