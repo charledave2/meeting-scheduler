@@ -831,7 +831,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         val callback = Intent(context, ShareTargetChosenReceiver::class.java)
             .setAction(SHARE_CHOSEN_ACTION)
             .putExtra("share_type", type)
-        val requestCode = when (type) { "png" -> 451; "slips" -> 453; "slips_image" -> 454; else -> 452 }
+        val requestCode = when (type) { "png" -> 451; "slips_image" -> 454; else -> 452 }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
             requestCode,
@@ -1081,26 +1081,6 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 if (part.person.isNotBlank()) add(AssignmentSlip(part.person, part.assistant, dateText, label, "Main Hall"))
                 if (part.secondaryAssignee.isNotBlank()) add(AssignmentSlip(part.secondaryAssignee, part.secondaryAssistant, dateText, label, "Second Hall"))
             }
-        }
-    }
-    fun shareAssignmentSlips() {
-        if (exportBusyType != null) return
-        val slips = assignmentSlips()
-        if (slips.isEmpty()) { toastMessage = "Magtalaga muna ng participant para sa assignment slips."; return }
-        exportBusyType = "slips"
-        authScope.launch {
-            runCatching {
-                val file = withContext(Dispatchers.IO) { createAssignmentSlipsPdf(context, slips, weekStart) }
-                val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
-                Intent(Intent.ACTION_SEND).apply {
-                    type = "application/pdf"
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    putExtra(Intent.EXTRA_SUBJECT, "Meeting assignment slips · $weekLabel")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    clipData = android.content.ClipData.newUri(context.contentResolver, "Assignment slips PDF", uri)
-                }
-            }.onSuccess { intent -> launchScheduleShare(intent, "slips", "Share assignment slips PDF") }
-                .onFailure { exportBusyType = null; toastMessage = "Hindi mabuo ang assignment slips PDF: ${it.message ?: "subukan muli"}" }
         }
     }
     fun shareAssignmentSlipsImages() {
@@ -1582,7 +1562,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                                 .onFailure { exportBusyType = null; toastMessage = "Hindi mabuo ang export text: ${it.message ?: "subukan muli"}" }
                         }
                     }
-                }, onPng = ::shareSchedulePng, onAssignmentSlips = ::shareAssignmentSlips, onAssignmentSlipImages = ::shareAssignmentSlipsImages
+                }, onPng = ::shareSchedulePng, onAssignmentSlipImages = ::shareAssignmentSlipsImages
             )
             Screen.PARTICIPANTS -> {
                 ParticipantsScreen(modifier = scroll, participants = participants, loading = participantsBusy, loadError = participantsLoadError,
@@ -1807,7 +1787,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             onDismissRequest = { shareSuccessType = null },
             icon = { Icon(Icons.TwoTone.CheckCircle, contentDescription = null, tint = Forest, modifier = Modifier.size(28.dp)) },
             title = { Text("Matagumpay ang pag-share", fontWeight = FontWeight.Bold) },
-            text = { Text(when (type) { "png" -> "Naibahagi ang schedule PNG."; "slips" -> "Naibahagi ang assignment slips PDF."; "slips_image" -> "Naibahagi ang assignment slip images."; else -> "Naibahagi ang schedule text." }) },
+            text = { Text(when (type) { "png" -> "Naibahagi ang schedule PNG."; "slips_image" -> "Naibahagi ang assignment slip images."; else -> "Naibahagi ang schedule text." }) },
             confirmButton = { TextButton(onClick = { shareSuccessType = null }) { Text("Okay", color = Forest) } },
             containerColor = AppSurface,
             titleContentColor = Ink,
@@ -2879,7 +2859,7 @@ private fun rotationShortDate(value: String): String = runCatching {
 }.getOrDefault(value)
 
 @Composable
-private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, openingSong:String, closingSong:String, parts:List<Assignment>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, previewWebView:MutableState<WebView?>, allowExport:Boolean, exportBusyType:String?, onExportText:()->Unit, onPng:()->Unit, onAssignmentSlips:()->Unit, onAssignmentSlipImages:()->Unit) {
+private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, openingSong:String, closingSong:String, parts:List<Assignment>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, previewWebView:MutableState<WebView?>, allowExport:Boolean, exportBusyType:String?, onExportText:()->Unit, onPng:()->Unit, onAssignmentSlipImages:()->Unit) {
     val html=remember(weekStart,bible,openingSong,closingSong,parts.toList(),chairman,openingPrayer,adviser,audienceGroup) {
         buildOfficialScheduleHtml(weekStart,bible,openingSong,closingSong,parts,chairman,openingPrayer,adviser,audienceGroup,exportMode=true)
     }
@@ -2913,17 +2893,6 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
         val hasAssignmentSlips = parts.any { it.person.isNotBlank() || it.secondaryAssignee.isNotBlank() } ||
             chairman.isNotBlank() || openingPrayer.isNotBlank() || adviser.isNotBlank()
         if (allowExport) OutlinedButton(
-            onClick = onAssignmentSlips,
-            enabled = exportBusyType == null && hasAssignmentSlips,
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            if (exportBusyType == "slips") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
-            else Icon(Icons.TwoTone.Description, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(if (exportBusyType == "slips") "Preparing PDF…" else "Share assignment slips PDF", fontSize = 13.sp)
-        }
-        if (allowExport) OutlinedButton(
             onClick = onAssignmentSlipImages,
             enabled = exportBusyType == null && hasAssignmentSlips,
             modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -2947,7 +2916,6 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
                             when (exportBusyType) {
                                 "png" -> "Inihahanda ang high-resolution PNG…"
                                 "text" -> "Inihahanda ang export text…"
-                                "slips" -> "Inihahanda ang assignment slips PDF…"
                                 "slips_image" -> "Inihahanda ang assignment slip images…"
                                 else -> "Inihahanda ang schedule preview…"
                             },
@@ -3156,7 +3124,7 @@ private fun buildOfficialScheduleHtml(weekStart:String,bible:String,openingSong:
         append("@font-face{font-family:'Google Sans';src:url('fonts/GoogleSansFlex.ttf') format('truetype');font-style:normal;font-weight:100 900;font-display:block}")
         append("*{box-sizing:border-box}html,body{margin:0;background:#fff;color:#171717;font-family:'Google Sans','Google Sans Text',Roboto,Arial,sans-serif}body{padding:18px 20px 14px;font-size:6.4px;line-height:1.25")
         if (exportMode) append(";width:${SCHEDULE_EXPORT_CSS_WIDTH}px;min-height:${SCHEDULE_EXPORT_CSS_HEIGHT}px;overflow:visible;zoom:1")
-        append("}.title{font-size:9.5px;font-weight:700;padding-bottom:5px;border-bottom:1px solid #252525}.sub{margin:7px 0 14px;color:#397782;font-size:7.2px}.toprow{display:grid;grid-template-columns:30px minmax(0,1fr) minmax(95px,.9fr);gap:5px;align-items:start;margin:0 0 5px}.time{white-space:nowrap}.bullet{font-size:6px;margin-right:3px}.role strong{margin-right:3px}.advisor{margin:7px 0 16px}.section{display:flex;align-items:center;gap:6px;margin:16px 0 8px;font-size:7.8px;font-weight:600}.badge{width:17px;height:17px;border-radius:4px;overflow:hidden;flex:0 0 17px}.badge img{display:block;width:100%;height:100%}.program{display:grid;grid-template-columns:30px minmax(80px,1.55fr) minmax(62px,1fr) minmax(62px,1fr);gap:5px;align-items:start;margin:0 0 8px}.part{overflow-wrap:anywhere}.part-number{display:inline-block;min-width:9px;color:inherit;font-size:7.2px;font-weight:700;line-height:1;margin-right:4px;vertical-align:baseline}.hall{font-size:5.6px;color:#555;text-align:left;margin-bottom:2px}.name{font-size:6.4px;font-weight:700;overflow-wrap:anywhere}.assistant{font-size:5.8px;font-weight:400;color:#777;margin-top:2px;overflow-wrap:anywhere}.single{grid-column:3/5}.footer{border-top:1px solid #ddd;margin-top:14px;padding-top:8px}.footnote{text-align:right;color:#999;font-size:5px;margin-top:20px}@media print{body{padding:18px 20px 14px}}")
+        append("}.title{font-size:9.5px;font-weight:700;padding-bottom:5px;border-bottom:1px solid #252525}.sub{margin:7px 0 14px;color:#397782;font-size:7.2px}.toprow{display:grid;grid-template-columns:30px minmax(0,1fr) minmax(95px,.9fr);gap:5px;align-items:start;margin:0 0 5px}.time{white-space:nowrap}.bullet{font-size:6px;margin-right:3px}.role strong{margin-right:3px}.advisor{margin:7px 0 16px}.section{display:flex;align-items:center;gap:6px;margin:16px 0 8px;font-size:7.8px;font-weight:600}.badge{width:17px;height:17px;border-radius:4px;overflow:hidden;flex:0 0 17px}.badge img{display:block;width:100%;height:100%}.program{display:grid;grid-template-columns:30px minmax(80px,1.55fr) minmax(62px,1fr) minmax(62px,1fr);gap:5px;align-items:start;margin:0 0 8px}.part{overflow-wrap:anywhere}.part-dot{font-size:6px;line-height:1;margin-right:2px;vertical-align:middle}.part-number{font-size:7px;font-weight:400;line-height:1;margin-right:3px}.hall{font-size:5.6px;color:#555;text-align:left;margin-bottom:2px}.name{font-size:6.4px;font-weight:700;overflow-wrap:anywhere}.assistant{font-size:5.8px;font-weight:400;color:#777;margin-top:2px;overflow-wrap:anywhere}.single{grid-column:3/5}.footer{border-top:1px solid #ddd;margin-top:14px;padding-top:8px}.footnote{text-align:right;color:#999;font-size:5px;margin-top:20px}@media print{body{padding:18px 20px 14px}}")
         append("</style></head><body>")
         append("<div class=\"title\">Iskedyul ng Pulong ng Gitnang Sanlinggo</div><div class=\"sub\">").append(weekText.htmlSafe()).append(" | <b>").append(bible.uppercase().htmlSafe()).append("</b></div>")
         append("<div class=\"toprow\"><div class=\"time\">").append(clock(firstMinute-6)).append("</div><div><span class=\"bullet\">●</span>Awit ").append(openingSong.htmlSafe()).append(" at Panalangin</div><div class=\"role\"><strong>Panalangin :</strong> ").append(openingPrayer.ifBlank{"—"}.htmlSafe()).append("</div></div>")
@@ -3170,7 +3138,7 @@ private fun buildOfficialScheduleHtml(weekStart:String,bible:String,openingSong:
             rows.forEach { p ->
                 val bulletColor=meta.second
                 val partNumber = p.id.takeIf { it > 0 } ?: (parts.indexOf(p) + 1)
-                append("<div class=\"program\"><div class=\"time\">").append(p.time.ifBlank{"—"}.htmlSafe()).append("</div><div class=\"part\"><span class=\"part-number\" style=\"color:").append(bulletColor).append("\">").append(partNumber).append("</span>").append(p.title.replaceFirst(Regex("^\\s*\\d+\\.\\s*"),"").htmlSafe())
+                append("<div class=\"program\"><div class=\"time\">").append(p.time.ifBlank{"—"}.htmlSafe()).append("</div><div class=\"part\"><span class=\"part-dot\" style=\"color:").append(bulletColor).append("\">●</span><span class=\"part-number\">").append(partNumber).append(".</span>").append(p.title.replaceFirst(Regex("^\\s*\\d+\\.\\s*"),"").htmlSafe())
                 if(p.duration.isNotBlank()) append(" (").append(p.duration.htmlSafe()).append(")")
                 if(p.detail.isNotBlank()) append(" ").append(p.detail.htmlSafe())
                 append("</div>")
