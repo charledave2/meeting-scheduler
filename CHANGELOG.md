@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.45.18 — 2026-11-20
+
+- Export each assignment slip as its own full-size portrait A4 PNG, sharing multiple image files when needed.
+- Remove pale green field fills and dashed underlines from assignment slips; use a clean thin solid line.
+- Show a balanced colored part number without a circular badge in the schedule preview and PNG.
+
 ## v0.45.17 — 2026-11-20
 
 - Show each part's number, title, and duration on portrait assignment slips in PDF and PNG; keep long labels readable across two lines.
