@@ -24,13 +24,12 @@ private const val PAGE_HEIGHT = 842
 private const val IMAGE_WIDTH = 2480
 private const val IMAGE_HEIGHT = 3508
 
-private fun renderSlipPage(context: Context, canvas: Canvas, slips: List<AssignmentSlip>) {
+private fun renderSlipPage(context: Context, canvas: Canvas, slips: List<AssignmentSlip>, individual: Boolean = false) {
     val regular = runCatching { Typeface.createFromAsset(context.assets, "fonts/GoogleSansFlex.ttf") }
         .getOrDefault(Typeface.create("sans-serif", Typeface.NORMAL))
     val bold = Typeface.create(regular, Typeface.BOLD)
     val ink = Color.rgb(27, 35, 29)
     val forest = Color.rgb(45, 95, 61)
-    val pale = Color.rgb(239, 246, 240)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     val note = "The source material and study point for your assignment can be found in the Life and Ministry Meeting Workbook. Please review the instructions for the part as outlined in Instructions for Our Christian Life and Ministry Meeting (S-38)."
     canvas.drawColor(Color.WHITE)
@@ -48,9 +47,6 @@ private fun renderSlipPage(context: Context, canvas: Canvas, slips: List<Assignm
     fun field(label: String, value: String, x: Float, y: Float, w: Float, wrap: Boolean = false) {
         text(label, x + 7f, y + 14f, 9.4f, 60f, strong = true)
         val height = if (wrap) 32f else 21f
-        paint.color = pale
-        paint.style = Paint.Style.FILL
-        canvas.drawRoundRect(x + 68f, y, x + w - 8f, y + height, 2f, 2f, paint)
         if (value.isNotBlank()) {
             if (wrap) {
                 paint.typeface = regular
@@ -68,13 +64,9 @@ private fun renderSlipPage(context: Context, canvas: Canvas, slips: List<Assignm
                 if (next.isNotBlank()) text(next, x + 73f, y + 23f, 8.2f, available)
             } else text(value, x + 73f, y + 14f, 9.4f, w - 86f)
         }
-        paint.color = forest
+        paint.color = Color.rgb(207, 211, 207)
         paint.strokeWidth = 0.6f
-        paint.style = Paint.Style.STROKE
-        paint.pathEffect = DashPathEffect(floatArrayOf(2f, 2f), 0f)
         canvas.drawLine(x + 68f, y + height, x + w - 8f, y + height, paint)
-        paint.pathEffect = null
-        paint.style = Paint.Style.FILL
     }
 
     fun check(label: String, active: Boolean, x: Float, y: Float) {
@@ -118,15 +110,23 @@ private fun renderSlipPage(context: Context, canvas: Canvas, slips: List<Assignm
         text("S-89-E  ·  JW Meeting Scheduler", x + 7f, y + 365f, 7f, w - 14f, color = forest)
     }
 
-    val cells = arrayOf(24f to 25f, 305f to 25f, 24f to 430f, 305f to 430f)
-    slips.forEachIndexed { index, slip -> slip(slip, cells[index].first, cells[index].second) }
-    paint.color = Color.LTGRAY
-    paint.style = Paint.Style.STROKE
-    paint.strokeWidth = 0.6f
-    paint.pathEffect = DashPathEffect(floatArrayOf(4f, 4f), 0f)
-    canvas.drawLine(297f, 18f, 297f, 822f, paint)
-    canvas.drawLine(18f, 421f, 577f, 421f, paint)
-    paint.pathEffect = null
+    if (individual) {
+        // A full-size portrait slip on one A4 canvas, with even margins.
+        canvas.save()
+        canvas.scale(2.05f, 2.05f)
+        slip(slips.single(), 12f, 8f)
+        canvas.restore()
+    } else {
+        val cells = arrayOf(24f to 25f, 305f to 25f, 24f to 430f, 305f to 430f)
+        slips.forEachIndexed { index, slip -> slip(slip, cells[index].first, cells[index].second) }
+        paint.color = Color.LTGRAY
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 0.6f
+        paint.pathEffect = DashPathEffect(floatArrayOf(4f, 4f), 0f)
+        canvas.drawLine(297f, 18f, 297f, 822f, paint)
+        canvas.drawLine(18f, 421f, 577f, 421f, paint)
+        paint.pathEffect = null
+    }
 }
 
 internal fun createAssignmentSlipsPdf(context: Context, slips: List<AssignmentSlip>, weekStart: String): File {
@@ -149,13 +149,13 @@ internal fun createAssignmentSlipsPdf(context: Context, slips: List<AssignmentSl
 internal fun createAssignmentSlipsImages(context: Context, slips: List<AssignmentSlip>, weekStart: String): List<File> {
     require(slips.isNotEmpty()) { "Walang nakatalagang participant para sa assignment slips." }
     val directory = File(context.cacheDir, "exports").apply { mkdirs() }
-    return slips.chunked(4).mapIndexed { index, pageSlips ->
+    return slips.mapIndexed { index, slip ->
         val bitmap = Bitmap.createBitmap(IMAGE_WIDTH, IMAGE_HEIGHT, Bitmap.Config.ARGB_8888)
         try {
             val canvas = Canvas(bitmap)
             canvas.scale(IMAGE_WIDTH.toFloat() / PAGE_WIDTH, IMAGE_HEIGHT.toFloat() / PAGE_HEIGHT)
-            renderSlipPage(context, canvas, pageSlips)
-            val output = File(directory, "assignment-slips-" + weekStart + "-page-" + (index + 1) + ".png")
+            renderSlipPage(context, canvas, listOf(slip), individual = true)
+            val output = File(directory, "assignment-slip-" + weekStart + "-" + (index + 1) + ".png")
             FileOutputStream(output).use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
             output
         } finally {
