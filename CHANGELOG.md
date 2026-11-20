@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.45.15 — 2026-11-20
+
+- Add printable assignment slip PDF export to Preview & Export, with two slips per A4 page.
+- Fill each slip from its assigned participant, optional assistant, Thursday meeting date, part number, and Main Hall or Second Hall.
+- Leave the assistant value blank when no partner is assigned.
+
 ## v0.45.14 — 2026-11-16
 
 - Open the exact saved schedule preview when an assignment notification is tapped, including when the app starts from the notification.
