@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.19 — 2026-11-21
+
+- Show a small colored dot followed by the part number and period in the midweek schedule preview and PNG, matching the reference.
+- Remove assignment slip PDF export and keep individual A4 PNG slips.
+
 ## v0.45.18 — 2026-11-20
 
 - Export each assignment slip as its own full-size portrait A4 PNG, sharing multiple image files when needed.
