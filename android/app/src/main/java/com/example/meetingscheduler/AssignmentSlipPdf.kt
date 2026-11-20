@@ -4,10 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Typeface
-import android.graphics.pdf.PdfDocument
 import java.io.File
 import java.io.FileOutputStream
 
@@ -24,7 +22,7 @@ private const val PAGE_HEIGHT = 842
 private const val IMAGE_WIDTH = 2480
 private const val IMAGE_HEIGHT = 3508
 
-private fun renderSlipPage(context: Context, canvas: Canvas, slips: List<AssignmentSlip>, individual: Boolean = false) {
+private fun renderSlipImage(context: Context, canvas: Canvas, assignment: AssignmentSlip) {
     val regular = runCatching { Typeface.createFromAsset(context.assets, "fonts/GoogleSansFlex.ttf") }
         .getOrDefault(Typeface.create("sans-serif", Typeface.NORMAL))
     val bold = Typeface.create(regular, Typeface.BOLD)
@@ -110,40 +108,11 @@ private fun renderSlipPage(context: Context, canvas: Canvas, slips: List<Assignm
         text("S-89-E  ·  JW Meeting Scheduler", x + 7f, y + 365f, 7f, w - 14f, color = forest)
     }
 
-    if (individual) {
-        // A full-size portrait slip on one A4 canvas, with even margins.
-        canvas.save()
-        canvas.scale(2.05f, 2.05f)
-        slip(slips.single(), 12f, 8f)
-        canvas.restore()
-    } else {
-        val cells = arrayOf(24f to 25f, 305f to 25f, 24f to 430f, 305f to 430f)
-        slips.forEachIndexed { index, slip -> slip(slip, cells[index].first, cells[index].second) }
-        paint.color = Color.LTGRAY
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 0.6f
-        paint.pathEffect = DashPathEffect(floatArrayOf(4f, 4f), 0f)
-        canvas.drawLine(297f, 18f, 297f, 822f, paint)
-        canvas.drawLine(18f, 421f, 577f, 421f, paint)
-        paint.pathEffect = null
-    }
-}
-
-internal fun createAssignmentSlipsPdf(context: Context, slips: List<AssignmentSlip>, weekStart: String): File {
-    require(slips.isNotEmpty()) { "Walang nakatalagang participant para sa assignment slips." }
-    val document = PdfDocument()
-    try {
-        slips.chunked(4).forEachIndexed { index, pageSlips ->
-            val page = document.startPage(PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, index + 1).create())
-            renderSlipPage(context, page.canvas, pageSlips)
-            document.finishPage(page)
-        }
-        val output = File(File(context.cacheDir, "exports").apply { mkdirs() }, "assignment-slips-" + weekStart + ".pdf")
-        FileOutputStream(output).use { document.writeTo(it) }
-        return output
-    } finally {
-        document.close()
-    }
+    // A full-size portrait slip on one A4 canvas, with even margins.
+    canvas.save()
+    canvas.scale(2.05f, 2.05f)
+    slip(assignment, 12f, 8f)
+    canvas.restore()
 }
 
 internal fun createAssignmentSlipsImages(context: Context, slips: List<AssignmentSlip>, weekStart: String): List<File> {
@@ -154,7 +123,7 @@ internal fun createAssignmentSlipsImages(context: Context, slips: List<Assignmen
         try {
             val canvas = Canvas(bitmap)
             canvas.scale(IMAGE_WIDTH.toFloat() / PAGE_WIDTH, IMAGE_HEIGHT.toFloat() / PAGE_HEIGHT)
-            renderSlipPage(context, canvas, listOf(slip), individual = true)
+            renderSlipImage(context, canvas, slip)
             val output = File(directory, "assignment-slip-" + weekStart + "-" + (index + 1) + ".png")
             FileOutputStream(output).use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
             output
