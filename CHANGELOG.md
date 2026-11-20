@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.45.16 — 2026-11-20
+
+- Add portrait PNG image export for assignment slips, four slips per A4 page; use the same layout for PDF.
+- Include Chairman, Opening Prayer, Second Hall Adviser, and every assigned main or second-hall part, without a separate Closing Prayer slip.
+- Label Parts 1, 2, and 8 by their meeting section or title; leave Assistant blank without a partner.
+
 ## v0.45.15 — 2026-11-20
 
 - Add printable assignment slip PDF export to Preview & Export, with two slips per A4 page.
