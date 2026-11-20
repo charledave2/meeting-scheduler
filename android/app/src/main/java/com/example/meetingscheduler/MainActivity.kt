@@ -1065,11 +1065,18 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             if (adviser.isNotBlank()) add(AssignmentSlip(adviser, "", dateText, "Second Hall Adviser", "Second Hall"))
             parts.forEachIndexed { index, part ->
                 val number = part.id.takeIf { it > 0 } ?: index + 1
-                val label = when (number) {
-                    1 -> "1 - Kayamanan Mula sa Salita ng Diyos"
-                    2 -> "2 - Espirituwal na Hiyas"
-                    8 -> "8 - Pag-aaral ng Kongregasyon sa Bibliya"
-                    else -> number.toString()
+                val partTitle = when (number) {
+                    1 -> "Kayamanan Mula sa Salita ng Diyos"
+                    2 -> "Espirituwal na Hiyas"
+                    8 -> "Pag-aaral ng Kongregasyon sa Bibliya"
+                    else -> part.title.replaceFirst(Regex("^\\s*\\d+\\.\\s*"), "").trim()
+                }
+                val duration = part.duration.trim()
+                val label = buildString {
+                    append(number).append(". ").append(partTitle)
+                    if (duration.isNotBlank() && !partTitle.contains(duration, ignoreCase = true)) {
+                        append(" (").append(duration).append(")")
+                    }
                 }
                 if (part.person.isNotBlank()) add(AssignmentSlip(part.person, part.assistant, dateText, label, "Main Hall"))
                 if (part.secondaryAssignee.isNotBlank()) add(AssignmentSlip(part.secondaryAssignee, part.secondaryAssistant, dateText, label, "Second Hall"))
@@ -3149,7 +3156,7 @@ private fun buildOfficialScheduleHtml(weekStart:String,bible:String,openingSong:
         append("@font-face{font-family:'Google Sans';src:url('fonts/GoogleSansFlex.ttf') format('truetype');font-style:normal;font-weight:100 900;font-display:block}")
         append("*{box-sizing:border-box}html,body{margin:0;background:#fff;color:#171717;font-family:'Google Sans','Google Sans Text',Roboto,Arial,sans-serif}body{padding:18px 20px 14px;font-size:6.4px;line-height:1.25")
         if (exportMode) append(";width:${SCHEDULE_EXPORT_CSS_WIDTH}px;min-height:${SCHEDULE_EXPORT_CSS_HEIGHT}px;overflow:visible;zoom:1")
-        append("}.title{font-size:9.5px;font-weight:700;padding-bottom:5px;border-bottom:1px solid #252525}.sub{margin:7px 0 14px;color:#397782;font-size:7.2px}.toprow{display:grid;grid-template-columns:30px minmax(0,1fr) minmax(95px,.9fr);gap:5px;align-items:start;margin:0 0 5px}.time{white-space:nowrap}.bullet{font-size:6px;margin-right:3px}.role strong{margin-right:3px}.advisor{margin:7px 0 16px}.section{display:flex;align-items:center;gap:6px;margin:16px 0 8px;font-size:7.8px;font-weight:600}.badge{width:17px;height:17px;border-radius:4px;overflow:hidden;flex:0 0 17px}.badge img{display:block;width:100%;height:100%}.program{display:grid;grid-template-columns:30px minmax(80px,1.55fr) minmax(62px,1fr) minmax(62px,1fr);gap:5px;align-items:start;margin:0 0 8px}.part{overflow-wrap:anywhere}.dot{font-weight:bold;margin-right:3px}.hall{font-size:5.6px;color:#555;text-align:left;margin-bottom:2px}.name{font-size:6.4px;font-weight:700;overflow-wrap:anywhere}.assistant{font-size:5.8px;font-weight:400;color:#777;margin-top:2px;overflow-wrap:anywhere}.single{grid-column:3/5}.footer{border-top:1px solid #ddd;margin-top:14px;padding-top:8px}.footnote{text-align:right;color:#999;font-size:5px;margin-top:20px}@media print{body{padding:18px 20px 14px}}")
+        append("}.title{font-size:9.5px;font-weight:700;padding-bottom:5px;border-bottom:1px solid #252525}.sub{margin:7px 0 14px;color:#397782;font-size:7.2px}.toprow{display:grid;grid-template-columns:30px minmax(0,1fr) minmax(95px,.9fr);gap:5px;align-items:start;margin:0 0 5px}.time{white-space:nowrap}.bullet{font-size:6px;margin-right:3px}.role strong{margin-right:3px}.advisor{margin:7px 0 16px}.section{display:flex;align-items:center;gap:6px;margin:16px 0 8px;font-size:7.8px;font-weight:600}.badge{width:17px;height:17px;border-radius:4px;overflow:hidden;flex:0 0 17px}.badge img{display:block;width:100%;height:100%}.program{display:grid;grid-template-columns:30px minmax(80px,1.55fr) minmax(62px,1fr) minmax(62px,1fr);gap:5px;align-items:start;margin:0 0 8px}.part{overflow-wrap:anywhere}.part-number{display:inline-flex;align-items:center;justify-content:center;width:10px;height:10px;border-radius:50%;color:#fff;font-size:5.7px;font-weight:700;line-height:1;margin-right:4px;vertical-align:middle}.hall{font-size:5.6px;color:#555;text-align:left;margin-bottom:2px}.name{font-size:6.4px;font-weight:700;overflow-wrap:anywhere}.assistant{font-size:5.8px;font-weight:400;color:#777;margin-top:2px;overflow-wrap:anywhere}.single{grid-column:3/5}.footer{border-top:1px solid #ddd;margin-top:14px;padding-top:8px}.footnote{text-align:right;color:#999;font-size:5px;margin-top:20px}@media print{body{padding:18px 20px 14px}}")
         append("</style></head><body>")
         append("<div class=\"title\">Iskedyul ng Pulong ng Gitnang Sanlinggo</div><div class=\"sub\">").append(weekText.htmlSafe()).append(" | <b>").append(bible.uppercase().htmlSafe()).append("</b></div>")
         append("<div class=\"toprow\"><div class=\"time\">").append(clock(firstMinute-6)).append("</div><div><span class=\"bullet\">●</span>Awit ").append(openingSong.htmlSafe()).append(" at Panalangin</div><div class=\"role\"><strong>Panalangin :</strong> ").append(openingPrayer.ifBlank{"—"}.htmlSafe()).append("</div></div>")
@@ -3162,7 +3169,8 @@ private fun buildOfficialScheduleHtml(weekStart:String,bible:String,openingSong:
             append("<div class=\"section\" style=\"color:").append(meta.second).append("\"><span class=\"badge\"><img src=\"section-icons/").append(meta.third).append(".svg\" alt=\"\"></span>").append(meta.first).append("</div>")
             rows.forEach { p ->
                 val bulletColor=meta.second
-                append("<div class=\"program\"><div class=\"time\">").append(p.time.ifBlank{"—"}.htmlSafe()).append("</div><div class=\"part\"><span class=\"dot\" style=\"color:").append(bulletColor).append("\">●</span>").append(p.title.replaceFirst(Regex("^\\s*\\d+\\.\\s*"),"").htmlSafe())
+                val partNumber = p.id.takeIf { it > 0 } ?: (parts.indexOf(p) + 1)
+                append("<div class=\"program\"><div class=\"time\">").append(p.time.ifBlank{"—"}.htmlSafe()).append("</div><div class=\"part\"><span class=\"part-number\" style=\"background:").append(bulletColor).append("\">").append(partNumber).append("</span>").append(p.title.replaceFirst(Regex("^\\s*\\d+\\.\\s*"),"").htmlSafe())
                 if(p.duration.isNotBlank()) append(" (").append(p.duration.htmlSafe()).append(")")
                 if(p.detail.isNotBlank()) append(" ").append(p.detail.htmlSafe())
                 append("</div>")
