@@ -1,6 +1,7 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { sendScheduledAssignmentReminders } from "../app/assignment-reminders";
 
 interface Env {
   ASSETS: Fetcher;
@@ -27,6 +28,10 @@ interface ExecutionContext {
 // const imageConfig: ImageConfig = { dangerouslyAllowSVG: true };
 
 const worker = {
+  async scheduled(event: { scheduledTime: number }, env: Env, ctx: ExecutionContext): Promise<void> {
+    (globalThis as typeof globalThis & { __MEETING_SCHEDULER_ENV__?: Env }).__MEETING_SCHEDULER_ENV__ = env;
+    ctx.waitUntil(sendScheduledAssignmentReminders(event.scheduledTime));
+  },
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     (globalThis as typeof globalThis & { __MEETING_SCHEDULER_ENV__?: Env }).__MEETING_SCHEDULER_ENV__ = env;
     const url = new URL(request.url);
