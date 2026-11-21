@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.20 — 2026-11-21
+
+- Fix Schedule History sorting for weeks that cross into January, including Dec 28 – Jan 3, 2027.
+- Prepare Monday and Wednesday assignment FCM reminders at 08:00 Philippine time; the Cloudflare cron trigger must be enabled before automatic sends start.
+
 ## v0.45.19 — 2026-11-21
 
 - Show a small colored dot followed by the part number and period in the midweek schedule preview and PNG, matching the reference.
