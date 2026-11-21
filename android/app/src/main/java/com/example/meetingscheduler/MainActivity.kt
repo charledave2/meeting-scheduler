@@ -3436,7 +3436,7 @@ private fun scheduleStartDate(label:String, updatedAt:String=""): LocalDate? = r
     } else {
         fun monthValue(raw:String):Int {
             val normalized=raw.lowercase(Locale.ROOT).take(3)
-            return when(normalized){"ene"->1;"feb","peb"->2;"mar"->3;"abr"->4;"may"->5;"jun","hun"->6;"jul","hul"->7;"ago"->8;"sep","set"->9;"oct","okt"->10;"nov","nob"->11;"dec","dic","dis"->12;else->Month.valueOf(normalized.uppercase(Locale.US)).value}
+            return when(normalized){"jan","ene"->1;"feb","peb"->2;"mar"->3;"apr","abr"->4;"may"->5;"jun","hun"->6;"jul","hul"->7;"aug","ago"->8;"sep","set"->9;"oct","okt"->10;"nov","nob"->11;"dec","dic","dis"->12;else->throw IllegalArgumentException("Unknown month: $raw")}
         }
         val startMonth=monthValue(match.groupValues[1]); val endMonth=monthValue(match.groupValues[3].ifBlank { match.groupValues[1] })
         val year=match.groupValues[5].toIntOrNull() ?: updatedAt.take(4).toIntOrNull() ?: LocalDate.now().year
