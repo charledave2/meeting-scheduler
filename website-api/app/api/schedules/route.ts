@@ -11,7 +11,7 @@ import { canAccessAnyTool } from "../../permissions";
 type Part={id?:number;title?:string;time?:string;section?:string;hasSecondary?:boolean;assignee?:string;assistant?:string;secondaryAssignee?:string;secondaryAssistant?:string};
 async function currentUser(){const auth=await getChatGPTUser();if(!auth)return null;const db=getDb();let [user]=await db.select().from(users).where(eq(users.email,auth.email)).limit(1);const adminEmail=(getRuntimeEnv().ADMIN_EMAIL||"").toLowerCase();if(!user){[user]=await db.insert(users).values({email:auth.email,displayName:auth.displayName,role:auth.email.toLowerCase()===adminEmail?"admin":"viewer"}).returning();}return { ...user, accountId: auth.accountId };}
 async function scheduleMemberIds(scheduleId:number){await ensureAssignmentHistoryStorage();const rows=await getDb().select({memberId:assignmentHistory.memberId}).from(assignmentHistory).where(eq(assignmentHistory.scheduleId,scheduleId));return [...new Set(rows.map(row=>row.memberId))];}
-async function assignedMemberDetails(meta:Record<string,string>,parts:Part[]){
+export async function assignedMemberDetails(meta:Record<string,string>,parts:Part[]){
   const rows=await getDb().select({id:members.id,name:members.name}).from(members);
   const byName=new Map(rows.map(member=>[member.name.trim().toLocaleLowerCase("tl"),member.id]));
   const details=new Map<number,string[]>();
