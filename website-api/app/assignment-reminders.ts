@@ -1,7 +1,7 @@
 import { isNull } from "drizzle-orm";
 import { getDb, getRuntimeEnv } from "../db";
 import { schedules } from "../db/schema";
-import { assignedMemberDetails } from "./api/schedules/route";
+import { assignmentNoticeDetails, assignmentNoticeText } from "./assignment-notification-content";
 import { sendPushToAssignedMembers } from "./push-notifications";
 
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -43,16 +43,21 @@ export async function sendScheduledAssignmentReminders(scheduledTime: number) {
       seenWeeks.add(meta.weekStart);
       const parts = JSON.parse(row.assignmentsJson);
       if (!Array.isArray(parts)) continue;
-      const recipients = await assignedMemberDetails(meta, parts);
-      for (const [memberId, details] of recipients) {
+      const recipients = await assignmentNoticeDetails(meta, parts);
+      for (const [memberId, notice] of recipients) {
         const claim = await database.prepare(
           "INSERT OR IGNORE INTO assignment_reminder_deliveries (schedule_id, member_id, reminder_date) VALUES (?, ?, ?)"
         ).bind(row.id, memberId, reminderDate).run();
         if (!claim.meta.changes) continue;
         try {
+          const notification = assignmentNoticeText(
+            notice.name,
+            meta,
+            notice.lines,
+            day === 1 ? "monday" : "wednesday",
+          );
           const result = await sendPushToAssignedMembers([memberId], {
-            title: day === 1 ? "Paalala: May bahagi ka sa Huwebes" : "Paalala: Bukas na ang bahagi mo",
-            body: `${row.weekLabel} · ${details.join(" • ")}`,
+            ...notification,
             data: { scheduleId: String(row.id) },
           });
           // Allow a later retry if this account has no active device token or the send failed.
