@@ -49,7 +49,7 @@ internal class AppLockController(private val activity: FragmentActivity) {
 
     fun openSecuritySettings() {
         runCatching { activity.startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS)) }
-            .onFailure { error = "Hindi mabuksan ang Android security settings." }
+            .onFailure { error = "Could not open Android security settings." }
     }
 
     fun updatePrivacy() {
@@ -74,7 +74,7 @@ internal class AppLockController(private val activity: FragmentActivity) {
         }
         val availability = BiometricManager.from(activity).canAuthenticate(authenticators)
         if (availability != BiometricManager.BIOMETRIC_SUCCESS) {
-            error = "Hindi magamit ang authentication ngayon. Subukan ulit o tingnan ang Android security settings."
+            error = "Authentication is unavailable. Try again or open Android security settings."
             return
         }
         val attempt = session.begin(action) ?: return
@@ -106,7 +106,7 @@ internal class AppLockController(private val activity: FragmentActivity) {
                 override fun onAuthenticationFailed() {
                     if (state.attempt != attempt) return
                     // A mismatch is never treated as success; Android keeps the prompt available.
-                    error = "Hindi nakilala. Subukan muli ang fingerprint, face, o screen lock."
+                    error = "Could not verify your identity. Try your fingerprint, face, or screen lock again."
                 }
             })
         prompt = newPrompt
@@ -124,7 +124,7 @@ internal class AppLockController(private val activity: FragmentActivity) {
         }.onFailure {
             session.failed(attempt)
             publish()
-            error = "Hindi mabuksan ang authentication. Subukan ulit."
+            error = "Could not start authentication. Try again."
         }
     }
 }

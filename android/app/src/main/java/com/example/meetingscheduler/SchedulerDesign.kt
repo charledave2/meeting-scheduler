@@ -1,5 +1,7 @@
 package com.example.meetingscheduler
 
+import android.content.Context
+import android.util.Base64
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
@@ -66,3 +68,22 @@ internal fun AdaptivePair(
         }
     }
 }
+
+
+// WebView previews and PNG exports use the same font files as Compose.
+@Volatile private var cachedScheduleFontCss: String? = null
+
+internal fun scheduleFontCss(context: Context): String = cachedScheduleFontCss ?: buildString {
+    for ((weight, resource) in listOf(
+        400 to R.font.scheduler_regular,
+        600 to R.font.scheduler_semibold,
+        700 to R.font.scheduler_bold
+    )) {
+        val data = context.resources.openRawResource(resource).use {
+            Base64.encodeToString(it.readBytes(), Base64.NO_WRAP)
+        }
+        append("@font-face{font-family:'Google Sans';src:url(data:font/ttf;base64,")
+        append(data).append(") format('truetype');font-weight:").append(weight)
+        append(";font-style:normal;font-display:block}")
+    }
+}.also { cachedScheduleFontCss = it }

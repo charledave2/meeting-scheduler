@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.45.22 — 2026-11-23
+
+- Use bundled Google Sans in the app, schedule previews, PNG exports, and assignment slips.
+- Keep the Home schedule preview centered and fit the full page to the screen.
+- Allow active brothers to be picked for Bible Reading, including those marked unbaptized. Show why unavailable matches cannot be selected.
+- Keep Android sign-in sessions across app restarts when Keystore is unavailable.
+- Clarify participant options and notification test results, and use consistent English copy in sign-in and biometric screens.
+
 ## v0.45.21 — 2026-11-23
 
 - Recover from unusable Android Keystore keys during sign-in. If secure storage is unavailable, keep the session in memory until Android closes the app process.

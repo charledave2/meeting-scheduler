@@ -13,6 +13,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.security.KeyStore
+import java.security.SecureRandom
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
 import java.time.format.DateTimeFormatter
@@ -42,15 +43,15 @@ internal class SchedulerApi(context: Context) {
         val response = try {
             request("/api/auth/login", "POST", JSONObject().put("username", username).put("password", password), authorized = false, captureCookie = true)
         } catch (error: Exception) {
-            val detail = error.message?.takeIf { it.isNotBlank() } ?: "walang karagdagang detalye"
-            throw IllegalStateException("Hindi natapos ang login request (${error.javaClass.simpleName}): $detail", error)
+            val detail = error.message?.takeIf { it.isNotBlank() } ?: "No additional details"
+            throw IllegalStateException("Could not complete sign-in (${error.javaClass.simpleName}): $detail", error)
         }
-        if (!response.optString("redirectTo").startsWith("/")) throw IllegalStateException("Tinanggap ng server ang request pero walang login confirmation.")
+        if (!response.optString("redirectTo").startsWith("/")) throw IllegalStateException("The server did not confirm sign-in.")
         try {
             meBlocking()
         } catch (error: Exception) {
-            val detail = error.message?.takeIf { it.isNotBlank() } ?: "walang karagdagang detalye"
-            throw IllegalStateException("Tinanggap ang login pero pumalya ang session check (${error.javaClass.simpleName}): $detail", error)
+            val detail = error.message?.takeIf { it.isNotBlank() } ?: "No additional details"
+            throw IllegalStateException("Could not verify the sign-in session (${error.javaClass.simpleName}): $detail", error)
         }
     }
 
@@ -317,15 +318,16 @@ private class SessionVault(context: Context) {
         val encrypted = prefs.getString("cookie", null) ?: return@synchronized null
         try {
             val bytes = Base64.decode(encrypted, Base64.NO_WRAP)
-            val legacyKey = legacyPrefs.getString("aes_key", null)?.let { encoded ->
+            val encodedKey = prefs.getString("software_key", null)
+                ?: if (!prefs.contains("session_format")) legacyPrefs.getString("aes_key", null) else null
+            val softwareKey = encodedKey?.let { encoded ->
                 Base64.decode(encoded, Base64.NO_WRAP).takeIf { it.size == 32 }
                     ?.let { SecretKeySpec(it, KeyProperties.KEY_ALGORITHM_AES) }
             }
-            val key = legacyKey ?: keyStore().getKey(ALIAS, null) as? SecretKey ?: return@synchronized null
+            val key = softwareKey ?: keyStore().getKey(ALIAS, null) as? SecretKey ?: return@synchronized null
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, bytes.copyOfRange(0, NONCE_BYTES)))
             val cookie = String(cipher.doFinal(bytes.copyOfRange(NONCE_BYTES, bytes.size)), Charsets.UTF_8)
-            if (legacyKey != null) write(cookie)
             cookie
         } catch (_: Exception) {
             null
@@ -336,14 +338,28 @@ private class SessionVault(context: Context) {
         synchronized(lock) {
             val encrypted = tryEncrypt(cookie, replaceKey = false)
                 ?: tryEncrypt(cookie, replaceKey = true)
-            if (encrypted == null) {
-                // A successful sign-in can continue without writing the session to disk.
-                clearStoredCookie()
-                inMemoryCookie = cookie
+            val stored = if (encrypted != null) {
+                prefs.edit().putString("cookie", encrypted).putInt("session_format", 2).remove("software_key").commit()
             } else {
-                prefs.edit().putString("cookie", encrypted).apply()
+                // Store the session and its per-install key in one private, non-backed-up record.
+                // On affected devices, Android's app sandbox is the protection for this record.
+                try {
+                    val keyBytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
+                    val key = SecretKeySpec(keyBytes, KeyProperties.KEY_ALGORITHM_AES)
+                    prefs.edit().putString("cookie", encrypt(cookie, key)).putInt("session_format", 2)
+                        .putString("software_key", Base64.encodeToString(keyBytes, Base64.NO_WRAP))
+                        .commit()
+                } catch (error: Exception) {
+                    Log.w("SchedulerSession", "Could not save private session storage (${error.javaClass.simpleName}).")
+                    false
+                }
+            }
+            if (stored) {
                 legacyPrefs.edit().remove("aes_key").apply()
                 inMemoryCookie = null
+            } else {
+                clearStoredCookie()
+                inMemoryCookie = cookie
             }
         }
     }
@@ -356,7 +372,7 @@ private class SessionVault(context: Context) {
     }
 
     private fun clearStoredCookie() {
-        prefs.edit().remove("cookie").apply()
+        prefs.edit().remove("cookie").remove("software_key").remove("session_format").apply()
         legacyPrefs.edit().remove("aes_key").apply()
     }
 
@@ -366,13 +382,18 @@ private class SessionVault(context: Context) {
         val store = keyStore()
         if (replaceKey) store.deleteEntry(ALIAS)
         val key = (store.getKey(ALIAS, null) as? SecretKey) ?: generateKey()
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, key)
-        val encrypted = cipher.iv + cipher.doFinal(cookie.toByteArray(Charsets.UTF_8))
-        Base64.encodeToString(encrypted, Base64.NO_WRAP)
+        encrypt(cookie, key)
     } catch (error: Exception) {
         Log.w("SchedulerSession", "Secure session storage unavailable (${error.javaClass.simpleName}).")
         null
+    }
+
+    private fun encrypt(cookie: String, key: SecretKey): String {
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, key)
+        check(cipher.iv.size == NONCE_BYTES)
+        val encrypted = cipher.iv + cipher.doFinal(cookie.toByteArray(Charsets.UTF_8))
+        return Base64.encodeToString(encrypted, Base64.NO_WRAP)
     }
 
     private fun generateKey(): SecretKey {
