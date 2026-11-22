@@ -174,18 +174,19 @@ export async function POST(request: Request) {
     if (body.action !== "approve") return Response.json({ preview });
     if (body.approved !== true) return Response.json({ error: "You must accept the disclaimer first." }, { status: 400 });
     const db = getDb();
-    for (const row of preview.added) await db.insert(members).values({ name: row.name, appointment: row.appointment, serviceStatus: row.serviceStatus, gender: row.gender, active: true, createdBy: admin.id });
-    for (const row of preview.updated) {
-      const [member] = await db.select().from(members).where(eq(members.name, row.name)).limit(1);
-      if (member) await db.update(members).set({ appointment: row.appointment, serviceStatus: row.serviceStatus, gender: row.gender, active: true }).where(eq(members.id, member.id));
-      else {
-        const all = await db.select().from(members);
-        const matched = all.find((item) => item.name.trim().toLocaleLowerCase() === row.name.toLocaleLowerCase());
-        if (matched) await db.update(members).set({ appointment: row.appointment, serviceStatus: row.serviceStatus, gender: row.gender, active: true }).where(eq(members.id, matched.id));
-      }
-    }
+    const existing = await db.select().from(members);
+    const byName = new Map(existing.map((member) => [member.name.trim().toLocaleLowerCase(), member]));
+    const operations = [
+      ...preview.added.map((row) => db.insert(members).values({ name: row.name, appointment: row.appointment, serviceStatus: row.serviceStatus, gender: row.gender, active: true, createdBy: admin.id })),
+      ...preview.updated.flatMap((row) => {
+        const member = byName.get(row.name.toLocaleLowerCase());
+        return member ? [db.update(members).set({ appointment: row.appointment, serviceStatus: row.serviceStatus, gender: row.gender, active: true }).where(eq(members.id, member.id))] : [];
+      }),
+    ];
     const result = { added: preview.added.length, updated: preview.updated.length, unchanged: preview.unchanged.length, skipped: preview.skipped.length };
-    await db.insert(participantImportAudits).values({ sourceUrl: body.url, sheetTitle: preview.sheetTitle, tabName: preview.tabName, addedCount: result.added, updatedCount: result.updated, unchangedCount: result.unchanged, skippedCount: result.skipped, detailsJson: JSON.stringify(preview), importedBy: admin.id });
+    const audit = db.insert(participantImportAudits).values({ sourceUrl: body.url, sheetTitle: preview.sheetTitle, tabName: preview.tabName, addedCount: result.added, updatedCount: result.updated, unchangedCount: result.unchanged, skippedCount: result.skipped, detailsJson: JSON.stringify(preview), importedBy: admin.id });
+    // D1 runs a batch as one atomic transaction, including its audit record.
+    await db.batch([...operations, audit] as [typeof operations[number], ...typeof operations[number][]]);
     return Response.json({ result });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unable to import participants." }, { status: 400 });
