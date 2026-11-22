@@ -42,6 +42,7 @@ export default function SchedulerApp({ user, signOutPath }: { user: { name: stri
   const [canManageRoles, setCanManageRoles] = useState(false);
   const [history, setHistory] = useState<SavedSchedule[]>([]);
   const [rotation,setRotation]=useState<Record<number,RotationStat>>({});
+  const rotationLoaded=useRef(false);
   const [activeScheduleId,setActiveScheduleId]=useState<number|null>(null);
   const [newMember, setNewMember] = useState("");
   const [busy, setBusy] = useState("");
@@ -109,9 +110,9 @@ export default function SchedulerApp({ user, signOutPath }: { user: { name: stri
   const setPart = (id: number, key: keyof Part, value: string) => setParts((all) => all.map((p) => p.id === id ? { ...p, [key]: value } : p));
 
   useEffect(() => { void refreshCloudData(); }, []);
-  useEffect(()=>{const timer=window.setTimeout(()=>void refreshRotation(meta.date),250);return()=>window.clearTimeout(timer);},[meta.date]);
-  async function refreshRotation(date=meta.date){const r=await fetch(`/api/rotation?date=${encodeURIComponent(date)}`);if(r.ok){const data=await r.json();setRotation(Object.fromEntries((data.stats as RotationStat[]).map(stat=>[stat.memberId,stat])));}}
-  async function refreshCloudData() { const [m,s,r]=await Promise.all([fetch("/api/members"),fetch("/api/schedules"),fetch(`/api/rotation?date=${encodeURIComponent(meta.date)}`)]); if(m.ok){const data=await m.json();setMembers(data.members);setCanManageRoles(data.canManageRoles);} if(s.ok)setHistory((await s.json()).schedules);if(r.ok){const data=await r.json();setRotation(Object.fromEntries((data.stats as RotationStat[]).map(stat=>[stat.memberId,stat])));} }
+  useEffect(()=>{if(!rotationLoaded.current)return;const timer=window.setTimeout(()=>void refreshRotation(meta.date),250);return()=>window.clearTimeout(timer);},[meta.date]);
+  async function refreshRotation(date=meta.date){const r=await fetch(`/api/rotation?date=${encodeURIComponent(date)}`);if(r.ok){const data=await r.json();setRotation(Object.fromEntries((data.stats as RotationStat[]).map(stat=>[stat.memberId,stat])));rotationLoaded.current=true;}}
+  async function refreshCloudData() { const [m,s,r]=await Promise.all([fetch("/api/members"),fetch("/api/schedules"),fetch(`/api/rotation?date=${encodeURIComponent(meta.date)}`)]); if(m.ok){const data=await m.json();setMembers(data.members);setCanManageRoles(data.canManageRoles);} if(s.ok)setHistory((await s.json()).schedules);if(r.ok){const data=await r.json();setRotation(Object.fromEntries((data.stats as RotationStat[]).map(stat=>[stat.memberId,stat])));rotationLoaded.current=true;} }
   async function importWorkbook() { setBusy("import");setNotice("");try{const r=await fetch("/api/import-workbook",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({url:link})});const d=await r.json();if(!r.ok)throw new Error(d.error||"Unable to import the workbook.");setMeta((old)=>({...old,...d.meta}));setParts(d.parts);setActiveScheduleId(null);setImported(true);setNotice(`Imported ${d.parts.length} parts.`);}catch(e){setNotice(e instanceof Error?e.message:"Import failed.");}finally{setBusy("");}}
   async function addMember(){if(!newMember.trim())return;setBusy("member");const r=await fetch("/api/members",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:newMember})});const d=await r.json();if(r.ok){setMembers((all)=>[...all,d.member].sort((a,b)=>a.name.localeCompare(b.name)));setNewMember("");setNotice("Participant added.");}else setNotice(d.error||"Unable to save participant.");setBusy("");}
   async function setAppointment(id:number,appointment:Member["appointment"]){const r=await fetch("/api/members",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({id,appointment})});const d=await r.json();if(r.ok){setMembers(all=>all.map(m=>m.id===id?d.member:m));setNotice("Appointment updated.");}else setNotice(d.error||"Unable to update appointment.");}
