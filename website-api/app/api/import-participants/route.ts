@@ -186,7 +186,7 @@ export async function POST(request: Request) {
     const result = { added: preview.added.length, updated: preview.updated.length, unchanged: preview.unchanged.length, skipped: preview.skipped.length };
     const audit = db.insert(participantImportAudits).values({ sourceUrl: body.url, sheetTitle: preview.sheetTitle, tabName: preview.tabName, addedCount: result.added, updatedCount: result.updated, unchangedCount: result.unchanged, skippedCount: result.skipped, detailsJson: JSON.stringify(preview), importedBy: admin.id });
     // D1 runs a batch as one atomic transaction, including its audit record.
-    await db.batch([...operations, audit] as [typeof operations[number], ...typeof operations[number][]]);
+    await db.batch([...operations, audit] as any);
     return Response.json({ result });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unable to import participants." }, { status: 400 });
