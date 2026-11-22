@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.23 — 2026-11-23
+
+- Apply Google Sans to the Workbook capture log.
+- Allow the centered Home preview to dismiss when tapping outside the card.
+
 ## v0.45.22 — 2026-11-23
 
 - Use bundled Google Sans in the app, schedule previews, PNG exports, and assignment slips.
