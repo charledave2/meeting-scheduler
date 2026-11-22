@@ -18,13 +18,13 @@ export type AssignmentNotice = {
 export type ReminderKind = "assigned" | "updated" | "monday" | "wednesday";
 
 function meetingDateLabel(meta: Record<string, string>) {
-  const weekStart = /^\d{4}-\d{2}-\d{2}$/.test(meta.weekStart || "")
-    ? meta.weekStart
-    : meetingDateFromLabel(meta.date || "");
-  if (!weekStart) return meta.date || "ang susunod na pulong";
+  const weekStart = /^\d{4}-\d{2}-\d{2}$/.test(meta.weekStart || "") ? meta.weekStart : null;
+  const parsedDate = weekStart ? null : meetingDateFromLabel(meta.date || "");
+  const date = weekStart || parsedDate;
+  if (!date) return meta.date || "ang susunod na pulong";
 
-  const [year, month, day] = weekStart.split("-").map(Number);
-  const meetingDate = new Date(Date.UTC(year, month - 1, day + 3));
+  const [year, month, day] = date.split("-").map(Number);
+  const meetingDate = new Date(Date.UTC(year, month - 1, day + (weekStart ? 3 : 0)));
   return new Intl.DateTimeFormat("en-US", {
     month: "long",
     day: "numeric",
