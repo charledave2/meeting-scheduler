@@ -75,9 +75,9 @@ internal fun AppLockScreen(lock: AppLockController) {
                     Icon(Icons.TwoTone.Lock, contentDescription = null,
                         tint = colors.primary, modifier = Modifier.padding(16.dp).size(28.dp))
                 }
-                Text("Naka-lock ang iyong workspace", textAlign = TextAlign.Center,
+                Text("Your workspace is locked", textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold, color = colors.onSurface)
-                Text("Gamitin ang fingerprint, face, o PIN / pattern / password ng phone para magpatuloy.",
+                Text("Use your fingerprint, face, or device screen lock to continue.",
                     fontSize = 13.sp, textAlign = TextAlign.Center, color = colors.onSurfaceVariant)
                 lock.error?.let {
                     Text(it, fontSize = 12.sp, color = colors.error, textAlign = TextAlign.Center)

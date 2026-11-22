@@ -739,7 +739,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     loginBusy = true; loginError = null
                     runCatching { api.changePassword(currentPassword, newPassword) }
                         .onSuccess { passwordChangeRequired = false; signedIn = true }
-                        .onFailure { loginError = it.message ?: "Hindi mapalitan ang password." }
+                        .onFailure { loginError = it.message ?: "Could not change your password." }
                     loginBusy = false
                 }
             },
@@ -752,7 +752,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                             profilePhotoPath = store.profilePhoto(it.username); profilePhotoDataUrl = it.photoDataUrl; identityRole = it.role
                             if (it.mustChangePassword) passwordChangeRequired = true else signedIn = true
                         }
-                        .onFailure { loginError = it.message ?: "Hindi makapag-sign in." }
+                        .onFailure { loginError = it.message ?: "Could not sign in." }
                     loginBusy = false
                 }
             }
@@ -799,6 +799,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var homeBusy by remember { mutableStateOf(false) }
     var homeError by remember { mutableStateOf<String?>(null) }
     var homePreviewHtml by remember { mutableStateOf<String?>(null) }
+    var homePreviewRequest by remember { mutableIntStateOf(0) }
     var homePreviewWeek by remember { mutableStateOf<String?>(null) }
     var homePreviewLoading by remember { mutableStateOf(false) }
     var editingRemoteId by rememberSaveable { mutableIntStateOf(0) }
@@ -815,7 +816,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var accountsBusy by remember { mutableStateOf(false) }
     var accountsError by remember { mutableStateOf<String?>(null) }
     var testNotificationBusy by remember { mutableStateOf(false) }
-    var testNotificationFeedback by remember { mutableStateOf<String?>(null) }
+    var testNotificationFeedback by remember { mutableStateOf<NotificationFeedback?>(null) }
     var accountReloadTick by remember { mutableIntStateOf(0) }
     var accountPhotoTarget by remember { mutableStateOf<RemoteAccount?>(null) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
@@ -854,7 +855,6 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
     var accessNotice by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     val week = remember(weekStart) { runCatching { LocalDate.parse(weekStart) }.getOrDefault(LocalDate.of(2026,11,9)) }
     val weekLabel = remember(week) { week.format(DateTimeFormatter.ofPattern("MMM d")) + " – " + week.plusDays(6).format(DateTimeFormatter.ofPattern("MMM d, yyyy")) }
-    val eligible = participants.filter { it.enabled }
     fun toolKey(screen: Screen): String = when (screen) {
         Screen.HOME -> "home"
         Screen.DETAILS -> "workbook"
@@ -1048,7 +1048,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         toastMessage = "Na-save ang draft sa device"
     }
     fun printSchedule() {
-        val html = buildOfficialScheduleHtml(weekStart, bible, openingSong, closingSong, parts.toList(), chairman, openingPrayer, adviser, audienceGroup)
+        val html = buildOfficialScheduleHtml(context, weekStart, bible, openingSong, closingSong, parts.toList(), chairman, openingPrayer, adviser, audienceGroup)
         val web = WebView(context)
         web.webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest): Boolean = true
@@ -1115,7 +1115,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         exportBusyType = "png"
         val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
         val exportHtml = buildOfficialScheduleHtml(
-            weekStart, bible, openingSong, closingSong, parts.toList(), chairman, openingPrayer, adviser, audienceGroup,
+            context, weekStart, bible, openingSong, closingSong, parts.toList(), chairman, openingPrayer, adviser, audienceGroup,
             exportMode = true
         )
         val outputWidth = SCHEDULE_EXPORT_WIDTH_PX
@@ -1247,20 +1247,29 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         runCatching { applyRemoteSchedule(remote,navigate=true,edit=edit) }.onFailure { toastMessage=it.message ?: "Hindi mabuksan ang schedule" }
     } }
 
+    fun closeHomePreview() {
+        homePreviewRequest++
+        homePreviewWeek = null
+        homePreviewHtml = null
+        homePreviewLoading = false
+    }
+
     fun openUpcomingPreview(remote: RemoteSchedule) {
+        val request = ++homePreviewRequest
         homePreviewWeek = remote.weekLabel
         homePreviewHtml = null
         homePreviewLoading = true
         authScope.launch {
             runCatching {
                 val saved = api.schedule(remote.id)
+                if (request != homePreviewRequest) return@launch
                 val meta = saved.optJSONObject("meta") ?: JSONObject()
                 homePreviewWeek = meta.optString("date").ifBlank { remote.weekLabel.ifBlank { "Schedule preview" } }
                 val rawParts = saved.optJSONArray("parts") ?: JSONArray()
                 val assignments = (0 until rawParts.length()).mapNotNull { rawParts.optJSONObject(it)?.toAssignment() }
                 val start = meta.optString("weekStart").ifBlank { scheduleStartDate(meta.optString("date").ifBlank { remote.weekLabel }, remote.updatedAt)?.toString() ?: LocalDate.now().toString() }
                 buildOfficialScheduleHtml(
-                    start,
+                    context, start,
                     meta.optString("reading", remote.reading),
                     meta.optString("openingSong", "27"),
                     meta.optString("closingSong", "132"),
@@ -1271,9 +1280,12 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     meta.optString("audienceGroup"),
                     exportMode = true
                 )
-            }.onSuccess { homePreviewHtml = it }
-                .onFailure { toastMessage = it.message ?: "Hindi mabuksan ang preview."; homePreviewWeek = null }
-            homePreviewLoading = false
+            }.onSuccess { if (request == homePreviewRequest) homePreviewHtml = it }
+                .onFailure { if (request == homePreviewRequest) {
+                    toastMessage = it.message ?: "Could not open the schedule preview."
+                    closeHomePreview()
+                } }
+            if (request == homePreviewRequest) homePreviewLoading = false
         }
     }
 
@@ -1502,7 +1514,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 onNext = { navigateTo(Screen.ASSIGNMENTS) }
             )
             Screen.ASSIGNMENTS -> AssignmentsScreen(
-                modifier = scroll, parts = parts, eligible = eligible, rotation = rotationStats,
+                modifier = scroll, parts = parts, participants = participants, rotation = rotationStats,
                 rotationBusy = rotationBusy, rotationError = rotationError,
                 chairman=chairman, openingPrayer=openingPrayer, adviser=adviser, audienceGroup=audienceGroup,
                 onRole = { role, value ->
@@ -1616,8 +1628,10 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
                         ) {
-                            testNotificationFeedback = "Payagan muna ang notifications, pagkatapos ay pindutin ulit ang Test notification."
+                            testNotificationFeedback = NotificationFeedback(false, "Allow notifications, then tap Send test notification again.")
                             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else if (!androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+                            testNotificationFeedback = NotificationFeedback(false, "Turn on notifications in Android Settings, then try again.")
                         } else if (!testNotificationBusy) authScope.launch {
                             testNotificationBusy = true
                             testNotificationFeedback = null
@@ -1626,9 +1640,9 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                                     ?: throw IllegalStateException("Notifications are still being set up. Try again in a few seconds.")
                                 api.registerPushToken(token)
                                 val sent = api.sendTestNotification()
-                                testNotificationFeedback = if (sent > 0) "Test notification sent to this account." else "No test notification was sent."
+                                testNotificationFeedback = if (sent > 0) NotificationFeedback(true, "Test notification sent to this account.") else NotificationFeedback(false, "No test notification was sent. Check app notifications and try again.")
                             } catch (error: Exception) {
-                                testNotificationFeedback = error.message ?: "Could not send the test notification."
+                                testNotificationFeedback = NotificationFeedback(false, error.message ?: "Could not send the test notification. Try again.")
                             } finally {
                                 testNotificationBusy = false
                             }
@@ -1665,62 +1679,41 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         } }
     }
     if (homePreviewWeek != null) {
-        val configuration = LocalConfiguration.current
-        val dialogHeight = (configuration.screenHeightDp * 0.90f).coerceAtLeast(240f).coerceAtMost(configuration.screenHeightDp.toFloat()).dp
         val pageAspect = SCHEDULE_EXPORT_WIDTH_PX.toFloat() / SCHEDULE_EXPORT_HEIGHT_PX
-        Dialog(onDismissRequest = { homePreviewWeek = null; homePreviewHtml = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-            Surface(
-                modifier = Modifier.widthIn(max = 880.dp).fillMaxWidth().padding(horizontal = 18.dp)
-                    .height(dialogHeight),
-                shape = MaterialTheme.shapes.extraLarge,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
-            ) {
-                Column(Modifier.fillMaxSize().padding(bottom = 14.dp)) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(start = 14.dp, end = 6.dp, top = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(homePreviewWeek ?: "Schedule preview", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { homePreviewWeek = null; homePreviewHtml = null }) {
-                            Icon(Icons.TwoTone.Close, contentDescription = "Close preview", tint = Forest)
+        val previewView = remember { mutableStateOf<WebView?>(null) }
+        Dialog(
+            onDismissRequest = ::closeHomePreview,
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp), contentAlignment = Alignment.Center) {
+                val pageWidth = minOf(maxWidth - 24.dp, maxHeight * 0.72f * pageAspect, 580.dp)
+                    .coerceAtLeast(1.dp)
+                Surface(
+                    modifier = Modifier.width(pageWidth + 24.dp),
+                    shape = MaterialTheme.shapes.extraLarge,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(homePreviewWeek.orEmpty(), modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            IconButton(onClick = ::closeHomePreview) {
+                                Icon(Icons.TwoTone.Close, contentDescription = "Close preview")
+                            }
                         }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 14.dp)
-                        .verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
-                        val pageWidth = maxWidth
-                        val pageHeight = pageWidth / pageAspect
-                        Surface(color = Color.White, shape = RoundedCornerShape(5.dp), shadowElevation = 3.dp,
-                            modifier = Modifier.width(pageWidth).height(pageHeight)) {
-                            if (homePreviewLoading || homePreviewHtml == null) {
-                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Forest) }
-                            } else key(homePreviewHtml, pageWidth, pageHeight) {
-                                AndroidView(
-                                    factory = { viewContext -> WebView(viewContext).apply {
-                                        setLayerType(View.LAYER_TYPE_HARDWARE, null)
-                                        setBackgroundColor(android.graphics.Color.WHITE)
-                                        settings.javaScriptEnabled = true
-                                        settings.allowFileAccess = false
-                                        settings.allowContentAccess = false
-                                        settings.blockNetworkLoads = true
-                                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                                        settings.loadsImagesAutomatically = true
-                                        webViewClient = object : WebViewClient() {
-                                            override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest): Boolean = true
-                                            override fun onPageFinished(view: WebView, url: String?) {
-                                                view.post {
-                                                    fitScheduleWebView(
-                                                        view, view.width, view.height,
-                                                        view.resources.displayMetrics.density.coerceAtLeast(1f),
-                                                        onReady = {}, onFailure = {}
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        loadDataWithBaseURL("file:///android_asset/", homePreviewHtml ?: "", "text/html", "UTF-8", null)
-                                    } },
-                                    modifier = Modifier.fillMaxSize()
-                                )
+                        Surface(
+                            color = Color.White,
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.width(pageWidth).aspectRatio(pageAspect)
+                        ) {
+                            val html = homePreviewHtml
+                            if (homePreviewLoading || html == null) {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(color = Forest)
+                                }
+                            } else {
+                                OfficialScheduleWebPreview(html, previewView, Modifier.fillMaxSize()) {}
                             }
                         }
                     }
@@ -2013,7 +2006,7 @@ private fun LoginScreen(
                         Column(Modifier.fillMaxWidth().padding(if (compact) 18.dp else 22.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
                             Text("ACCOUNT ACCESS", color = Forest, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.6.sp)
                             Text("Welcome back", fontSize = 27.sp, fontWeight = FontWeight.Bold)
-                            Text("Mag-sign in gamit ang account mo.", color = Muted, fontSize = 13.sp)
+                            Text("Sign in with your account.", color = Muted, fontSize = 13.sp)
                             OutlinedTextField(
                                 username,
                                 { username = it },
@@ -2057,7 +2050,7 @@ private fun LoginScreen(
                             }
                             HorizontalDivider(Modifier.padding(vertical = 2.dp), color = MaterialTheme.colorScheme.outlineVariant)
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                                Text("Wala ka pang account?", color = Muted, fontSize = 12.sp)
+                                Text("Don’t have an account?", color = Muted, fontSize = 12.sp)
                                 TextButton(onClick = { requestError = null; requestOpen = true }) {
                                     Text("Request Access", color = Forest, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                                 }
@@ -2076,13 +2069,13 @@ private fun LoginScreen(
             title = { Text("Set a new password", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Temporary password ang gamit mo. Gumawa ng bagong password para ma-access ang app.", color = Muted, fontSize = 12.sp)
+                    Text("You’re using a temporary password. Choose a new password to continue.", color = Muted, fontSize = 12.sp)
                     OutlinedTextField(currentTemporaryPassword, { currentTemporaryPassword = it; changePasswordError = null }, label = { Text("Temporary password") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(newPassword, { newPassword = it; changePasswordError = null }, label = { Text("New password") }, singleLine = true, visualTransformation = if (showNewPassword) VisualTransformation.None else PasswordVisualTransformation(), trailingIcon = { IconButton(onClick = { showNewPassword = !showNewPassword }) { Icon(if (showNewPassword) Icons.TwoTone.VisibilityOff else Icons.TwoTone.Visibility, contentDescription = "Toggle password visibility", tint = Forest) } }, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(confirmNewPassword, { confirmNewPassword = it; changePasswordError = null }, label = { Text("Confirm new password") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
                     (changePasswordError ?: error)?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
                     if (newPassword.isNotBlank() && newPassword.length < 10) Text("Use at least 10 characters.", color = Muted, fontSize = 11.sp)
-                    else if (confirmNewPassword.isNotBlank() && confirmNewPassword != newPassword) Text("Hindi magkapareho ang bagong password.", color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
+                    else if (confirmNewPassword.isNotBlank() && confirmNewPassword != newPassword) Text("The new passwords do not match.", color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
                 }
             },
             confirmButton = {
@@ -2102,7 +2095,7 @@ private fun LoginScreen(
             title = { Text("Request Access", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Ipadala ang iyong pangalan, username, at mensahe sa administrator.", color = Muted, fontSize = 12.sp)
+                    Text("Send your name, username, and a message to the administrator.", color = Muted, fontSize = 12.sp)
                     OutlinedTextField(requestName, { requestName = it; requestError = null }, label = { Text("Name") }, singleLine = true, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(requestUsername, { requestUsername = it; requestError = null }, label = { Text("Username") }, singleLine = true, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(requestMessage, { requestMessage = it; requestError = null }, label = { Text("Message for Administrator") }, minLines = 2, maxLines = 4, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
@@ -2135,7 +2128,7 @@ private fun LoginScreen(
             Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
                 Row(Modifier.padding(horizontal = 22.dp, vertical = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Icon(Icons.TwoTone.CheckCircle, contentDescription = "Success", tint = Forest, modifier = Modifier.size(28.dp))
-                    Text("Success! wait for Administrator Approval.", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text("Request sent. Waiting for administrator approval.", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 }
             }
         }
@@ -2489,10 +2482,12 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
                 Text("Change", color = Forest, fontSize = 12.sp)
             }
             OutlinedTextField(bible, onBible, enabled=!readOnly, label = { Text("Bible reading") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(openingSong, onOpeningSong, enabled=!readOnly, label = { Text("Opening song") }, singleLine = true, modifier = Modifier.weight(1f))
-                OutlinedTextField(closingSong, onClosingSong, enabled=!readOnly, label = { Text("Closing song") }, singleLine = true, modifier = Modifier.weight(1f))
-            }
+            AdaptivePair(
+                { field -> OutlinedTextField(openingSong, onOpeningSong, enabled = !readOnly,
+                    label = { Text("Opening song") }, singleLine = true, modifier = field) },
+                { field -> OutlinedTextField(closingSong, onClosingSong, enabled = !readOnly,
+                    label = { Text("Closing song") }, singleLine = true, modifier = field) }
+            )
         }
         val fetchError = workbookStatus.contains("hindi", ignoreCase = true) || workbookStatus.contains("wala", ignoreCase = true) || workbookStatus.contains("permission", ignoreCase = true)
         M3Card {
@@ -2504,7 +2499,7 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
                     Label("JW.ORG WORKBOOK")
                     Text("Weekly program", fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 }
-                IconButton(onClick = onImport, enabled = !workbookBusy && !readOnly, modifier = Modifier.size(48.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(Icons.TwoTone.Refresh, contentDescription = "I-refresh ang weekly program", tint = Forest, modifier = Modifier.size(23.dp)) }
+                IconButton(onClick = onImport, enabled = !workbookBusy && !readOnly, modifier = Modifier.size(48.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(Icons.TwoTone.Refresh, contentDescription = "Refresh weekly program", tint = Forest, modifier = Modifier.size(23.dp)) }
             }
             if (workbookBusy) {
                 LinearProgressIndicator(
@@ -2547,7 +2542,8 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
 }
 
 @Composable
-private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligible: List<Participant>, rotation: Map<Int, ParticipantRotation>, rotationBusy: Boolean, rotationError: String?, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, isAdmin:Boolean, readOnly:Boolean, canContinueExport:Boolean, cloudSaveBusy:Boolean, cloudSaveFeedback:Pair<String,Boolean>?, onRole:(String,String)->Unit, onAssign: (Int,String,String) -> Unit, onSaveCloud: () -> Unit, onContinueExport: () -> Unit) {
+private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, participants: List<Participant>, rotation: Map<Int, ParticipantRotation>, rotationBusy: Boolean, rotationError: String?, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, isAdmin:Boolean, readOnly:Boolean, canContinueExport:Boolean, cloudSaveBusy:Boolean, cloudSaveFeedback:Pair<String,Boolean>?, onRole:(String,String)->Unit, onAssign: (Int,String,String) -> Unit, onSaveCloud: () -> Unit, onContinueExport: () -> Unit) {
+    val eligible = participants.filter { it.enabled }
     val selectedNames = buildSet {
         listOf(chairman, openingPrayer, adviser).forEach { name ->
             name.trim().takeIf { it.isNotEmpty() }?.let { add(it.lowercase(Locale.ROOT)) }
@@ -2594,7 +2590,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
                 Column(Modifier.fillMaxWidth().padding(top=6.dp)) {
                     parts.forEachIndexed { index, part ->
                         if(index>0) HorizontalDivider(Modifier.padding(vertical=6.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                        AssignmentPicker(index, part, eligible, rotation, readOnly, selectedNames) { slot, name -> onAssign(index,slot,name) }
+                        AssignmentPicker(index, part, participants, rotation, readOnly, selectedNames) { slot, name -> onAssign(index,slot,name) }
                     }
                 }
             }
@@ -2647,7 +2643,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
 }
 
 @Composable
-private fun AssignmentPicker(index: Int, part: Assignment, eligible: List<Participant>, rotation: Map<Int, ParticipantRotation>, readOnly:Boolean, excludedNames: Set<String> = emptySet(), onAssign: (String,String) -> Unit) {
+private fun AssignmentPicker(index: Int, part: Assignment, participants: List<Participant>, rotation: Map<Int, ParticipantRotation>, readOnly:Boolean, excludedNames: Set<String> = emptySet(), onAssign: (String,String) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             val darkBadges = MaterialTheme.colorScheme.background == DarkPalette.background
@@ -2664,16 +2660,40 @@ private fun AssignmentPicker(index: Int, part: Assignment, eligible: List<Partic
         }
         val title=part.title.lowercase(Locale.ROOT); val bibleReading=title.contains("pagbabasa ng bibliya"); val bibleStudy=title.contains("pag-aaral ng kongregasyon sa bibliya"); val what=title.contains("ano ang sasabihin mo")
         val qualified=!what && (part.section=="living" || (part.section=="treasures" && !bibleReading))
-        val brothers=eligible.filter{it.isBrother() && !it.unbaptized}; val elders=brothers.filter{it.isAppointedBrother()}
+        val eligible = participants.filter { it.enabled }
+        val brothers = eligible.filter { it.isBrother() && !it.unbaptized }
+        val elders = brothers.filter { it.isAppointedBrother() }
+        // Bible Reading is a student part. The Congregation Bible Study reader uses a separate rule.
+        val bibleReaders = eligible.filter { it.isBrother() }
         if(bibleStudy) {
             AdaptivePair(
                 { field -> SlotPicker("Conductor", part.person, elders, field, rotation, enabled = !readOnly, excludedNames = excludedNames) { onAssign("main", it) } },
                 { field -> SlotPicker("Reader", part.assistant, brothers, field, rotation, enabled = !readOnly, excludedNames = excludedNames) { onAssign("assistant", it) } }
             )
         } else if((part.section=="ministry"&&!what)||bibleReading) {
+            val speakers = if (bibleReading) bibleReaders else eligible
+            val unavailable = if (bibleReading) participants else emptyList()
             AdaptivePair(
-                { field -> Column(field, verticalArrangement = Arrangement.spacedBy(6.dp)){SlotPicker("Main Hall",part.person,if(qualified) elders else if(bibleReading) brothers else eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("main",it)}; if(part.hasAssistant) SlotPicker("Assistant",part.assistant,eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("assistant",it)} } },
-                { field -> Column(field, verticalArrangement = Arrangement.spacedBy(6.dp)){SlotPicker("Second Hall",part.secondaryAssignee,if(qualified) elders else if(bibleReading) brothers else eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("secondary",it)}; if(part.hasSecondaryAssistant) SlotPicker("Assistant",part.secondaryAssistant,eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("secondaryAssistant",it)} } }
+                first = { field ->
+                    Column(field, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        SlotPicker("Main Hall", part.person, speakers, rotation = rotation, enabled = !readOnly,
+                            excludedNames = excludedNames, unavailableChoices = unavailable) { onAssign("main", it) }
+                        if (part.hasAssistant) {
+                            SlotPicker("Assistant", part.assistant, eligible, rotation = rotation, enabled = !readOnly,
+                                excludedNames = excludedNames) { onAssign("assistant", it) }
+                        }
+                    }
+                },
+                second = { field ->
+                    Column(field, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        SlotPicker("Second Hall", part.secondaryAssignee, speakers, rotation = rotation, enabled = !readOnly,
+                            excludedNames = excludedNames, unavailableChoices = unavailable) { onAssign("secondary", it) }
+                        if (part.hasSecondaryAssistant) {
+                            SlotPicker("Assistant", part.secondaryAssistant, eligible, rotation = rotation, enabled = !readOnly,
+                                excludedNames = excludedNames) { onAssign("secondaryAssistant", it) }
+                        }
+                    }
+                }
             )
         } else {
             SlotPicker(if(what) "Brother" else if(qualified) "Qualified brother" else "Participant",part.person,if(what) eligible.filter { it.isBrother() } else if(qualified) elders else eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("main",it)}
@@ -2691,6 +2711,7 @@ private fun SlotPicker(
     rotation: Map<Int, ParticipantRotation> = emptyMap(),
     enabled: Boolean = true,
     excludedNames: Set<String> = emptySet(),
+    unavailableChoices: List<Participant> = emptyList(),
     onPick: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -2763,9 +2784,27 @@ private fun SlotPicker(
                         (key !in excludedNames || key == currentName) && it.name.contains(normalizedQuery, ignoreCase = true)
                     }
                 }
-                if (filteredChoices.isEmpty()) {
+                val query = searchQuery.trim()
+                val unavailableMatches = if (query.isNotEmpty()) unavailableChoices.mapNotNull { participant ->
+                    val nameKey = participant.name.trim().lowercase(Locale.ROOT)
+                    if (!participant.name.contains(query, ignoreCase = true)) return@mapNotNull null
+                    val reason = when {
+                        !participant.enabled -> "Inactive participant"
+                        participant.gender.isBlank() || participant.gender.equals("unspecified", true) ->
+                            "Set the participant’s Brother / Sister status in Participants"
+                        !participant.isBrother() -> "This part is set up for brothers"
+                        nameKey != currentName && nameKey in excludedNames -> "Already assigned this meeting"
+                        else -> return@mapNotNull null
+                    }
+                    participant.name to reason
+                } else emptyList()
+                unavailableMatches.forEach { (name, reason) ->
+                    Text("$name · $reason", color = Muted, style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                }
+                if (filteredChoices.isEmpty() && unavailableMatches.isEmpty()) {
                     DropdownMenuItem(
-                        text = { Text("Walang kapatid na tumutugma.", color = Muted, fontSize = 12.sp) },
+                        text = { Text("No matching participants.", color = Muted, fontSize = 12.sp) },
                         enabled = false,
                         onClick = {}
                     )
@@ -2780,7 +2819,7 @@ private fun SlotPicker(
                                 Column(Modifier.weight(1f)) {
                                     Text(participant.name, color = Ink, fontSize = 13.sp, maxLines = 1)
                                     Text(
-                                        if (isExempt) "Exempt sa rotation · ${participant.appointment}"
+                                        if (isExempt) "Exempt from rotation · ${participant.appointment}"
                                         else buildString {
                                             append(participant.appointment)
                                             if (stat != null) {
@@ -2876,8 +2915,9 @@ private fun rotationShortDate(value: String): String = runCatching {
 
 @Composable
 private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, openingSong:String, closingSong:String, parts:List<Assignment>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, previewWebView:MutableState<WebView?>, allowExport:Boolean, exportBusyType:String?, onExportText:()->Unit, onPng:()->Unit, onAssignmentSlipImages:()->Unit) {
+    val context = LocalContext.current
     val html=remember(weekStart,bible,openingSong,closingSong,parts.toList(),chairman,openingPrayer,adviser,audienceGroup) {
-        buildOfficialScheduleHtml(weekStart,bible,openingSong,closingSong,parts,chairman,openingPrayer,adviser,audienceGroup,exportMode=true)
+        buildOfficialScheduleHtml(context, weekStart,bible,openingSong,closingSong,parts,chairman,openingPrayer,adviser,audienceGroup,exportMode=true)
     }
     var previewReady by remember(html){mutableStateOf(false)}
     val pageAspect = SCHEDULE_EXPORT_WIDTH_PX.toFloat() / SCHEDULE_EXPORT_HEIGHT_PX
@@ -3100,7 +3140,7 @@ private const val SCHEDULE_EXPORT_DPI = 300
 private const val SCHEDULE_EXPORT_CSS_WIDTH = 397
 private const val SCHEDULE_EXPORT_CSS_HEIGHT = 562
 
-private fun buildOfficialScheduleHtml(weekStart:String,bible:String,openingSong:String,closingSong:String,parts:List<Assignment>,chairman:String,openingPrayer:String,adviser:String,audienceGroup:String,exportMode:Boolean=false):String {
+private fun buildOfficialScheduleHtml(context: Context, weekStart:String,bible:String,openingSong:String,closingSong:String,parts:List<Assignment>,chairman:String,openingPrayer:String,adviser:String,audienceGroup:String,exportMode:Boolean=false):String {
     val start=runCatching{LocalDate.parse(weekStart)}.getOrDefault(LocalDate.now())
     val end=start.plusDays(6)
     val months=listOf("Enero","Pebrero","Marso","Abril","Mayo","Hunyo","Hulyo","Agosto","Setyembre","Oktubre","Nobyembre","Disyembre")
@@ -3122,8 +3162,8 @@ private fun buildOfficialScheduleHtml(weekStart:String,bible:String,openingSong:
     val html=buildString {
         val viewport = if (exportMode) "width=$SCHEDULE_EXPORT_CSS_WIDTH,initial-scale=1,maximum-scale=1,user-scalable=no" else "width=device-width,initial-scale=1"
         append("<!doctype html><html><head><meta name=\"viewport\" content=\"").append(viewport).append("\"><style>")
-        append("@font-face{font-family:'Google Sans';src:url('fonts/GoogleSansFlex.ttf') format('truetype');font-style:normal;font-weight:100 900;font-display:block}")
-        append("*{box-sizing:border-box}html,body{margin:0;background:#fff;color:#171717;font-family:'Google Sans','Google Sans Text',Roboto,Arial,sans-serif}body{padding:18px 20px 14px;font-size:6.4px;line-height:1.25")
+        append(scheduleFontCss(context))
+        append("*{box-sizing:border-box}html,body{margin:0;background:#fff;color:#171717;font-family:'Google Sans',sans-serif}body{padding:18px 20px 14px;font-size:6.4px;line-height:1.25")
         if (exportMode) append(";width:${SCHEDULE_EXPORT_CSS_WIDTH}px;min-height:${SCHEDULE_EXPORT_CSS_HEIGHT}px;overflow:visible;zoom:1")
         append("}.title{font-size:9.5px;font-weight:700;padding-bottom:5px;border-bottom:1px solid #252525}.sub{margin:7px 0 14px;color:#397782;font-size:7.2px}.toprow{display:grid;grid-template-columns:30px minmax(0,1fr) minmax(95px,.9fr);gap:5px;align-items:start;margin:0 0 5px}.time{white-space:nowrap}.bullet{font-size:6px;margin-right:3px}.role strong{margin-right:3px}.advisor{margin:7px 0 16px}.section{display:flex;align-items:center;gap:6px;margin:16px 0 8px;font-size:7.8px;font-weight:600}.badge{width:17px;height:17px;border-radius:4px;overflow:hidden;flex:0 0 17px}.badge img{display:block;width:100%;height:100%}.program{display:grid;grid-template-columns:30px minmax(80px,1.55fr) minmax(62px,1fr) minmax(62px,1fr);gap:5px;align-items:start;margin:0 0 8px}.part{overflow-wrap:anywhere}.part-dot{font-size:6px;line-height:1;margin-right:2px;vertical-align:middle}.part-number{font-size:7px;font-weight:400;line-height:1;margin-right:3px}.hall{font-size:5.6px;color:#555;text-align:left;margin-bottom:2px}.name{font-size:6.4px;font-weight:700;overflow-wrap:anywhere}.assistant{font-size:5.8px;font-weight:400;color:#777;margin-top:2px;overflow-wrap:anywhere}.single{grid-column:3/5}.footer{border-top:1px solid #ddd;margin-top:14px;padding-top:8px}.footnote{text-align:right;color:#999;font-size:5px;margin-top:20px}@media print{body{padding:18px 20px 14px}}")
         append("</style></head><body>")
@@ -3311,10 +3351,10 @@ private fun ParticipantChoice(label: String, value: String, options: List<Pair<S
         Text(label, color=Muted, fontSize = 12.sp)
         Box {
             OutlinedButton(onClick={expanded=true}, enabled=enabled, modifier=Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, contentPadding=PaddingValues(horizontal=13.dp, vertical=9.dp)) {
-                Text(options.firstOrNull { it.first==value }?.second?.ifBlank { " " } ?: options.first().second.ifBlank { " " }, color=Ink, modifier=Modifier.weight(1f))
+                Text(options.firstOrNull { it.first==value }?.second?.ifBlank { "Not set" } ?: options.first().second.ifBlank { "Not set" }, color=Ink, modifier=Modifier.weight(1f))
             }
             DropdownMenu(expanded=expanded, onDismissRequest={expanded=false}, modifier=Modifier.background(AppSurface)) {
-                options.forEach { (key,title) -> DropdownMenuItem(text={Text(title.ifBlank { " " })}, enabled=enabled, onClick={onSelect(key);expanded=false}) }
+                options.forEach { (key,title) -> DropdownMenuItem(text={Text(title.ifBlank { "Not set" })}, enabled=enabled, onClick={onSelect(key);expanded=false}) }
             }
         }
     }
@@ -3448,10 +3488,12 @@ private fun scheduleStartDate(label:String, updatedAt:String=""): LocalDate? = r
     }
 }.getOrNull()
 
+private data class NotificationFeedback(val sent: Boolean, val message: String)
+
 @Composable
 private fun AccountsScreen(
     modifier: Modifier, accounts: List<RemoteAccount>, linkParticipants: List<AccountLinkParticipant>, loading: Boolean, error: String?,
-    testNotificationBusy: Boolean, testNotificationFeedback: String?, onTestNotification: () -> Unit, currentUsername: String,
+    testNotificationBusy: Boolean, testNotificationFeedback: NotificationFeedback?, onTestNotification: () -> Unit, currentUsername: String,
     isAdmin: Boolean, fontScale: Float, onFontScaleChange: (Float) -> Unit,
     darkMode: Boolean, onToggleTheme: () -> Unit, appLock: AppLockController,
     onRefresh: () -> Unit, onUploadPhoto: (RemoteAccount) -> Unit,
@@ -3525,7 +3567,22 @@ private fun AccountsScreen(
                 Spacer(Modifier.width(8.dp))
                 Text(if (testNotificationBusy) "Sending…" else "Send test notification")
             }
-            if (testNotificationFeedback != null) Text(testNotificationFeedback, color = Muted, fontSize = 12.sp)
+            testNotificationFeedback?.let { feedback ->
+                val colors = MaterialTheme.colorScheme
+                Surface(
+                    color = if (feedback.sent) colors.primaryContainer else colors.errorContainer,
+                    contentColor = if (feedback.sent) colors.onPrimaryContainer else colors.onErrorContainer,
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(if (feedback.sent) Icons.TwoTone.CheckCircle else Icons.TwoTone.ErrorOutline,
+                            contentDescription = null, modifier = Modifier.size(20.dp))
+                        Text(feedback.message, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
         }
         if (isAdmin) M3Card {
             Text("Accounts", style = MaterialTheme.typography.titleMedium)

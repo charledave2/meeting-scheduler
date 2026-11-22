@@ -5,7 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Typeface
+import androidx.core.content.res.ResourcesCompat
 import java.io.File
 import java.io.FileOutputStream
 
@@ -23,9 +23,8 @@ private const val IMAGE_WIDTH = 2480
 private const val IMAGE_HEIGHT = 3508
 
 private fun renderSlipImage(context: Context, canvas: Canvas, assignment: AssignmentSlip) {
-    val regular = runCatching { Typeface.createFromAsset(context.assets, "fonts/GoogleSansFlex.ttf") }
-        .getOrDefault(Typeface.create("sans-serif", Typeface.NORMAL))
-    val bold = Typeface.create(regular, Typeface.BOLD)
+    val regular = checkNotNull(ResourcesCompat.getFont(context, R.font.scheduler_regular))
+    val bold = checkNotNull(ResourcesCompat.getFont(context, R.font.scheduler_bold))
     val ink = Color.rgb(27, 35, 29)
     val forest = Color.rgb(45, 95, 61)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG)
