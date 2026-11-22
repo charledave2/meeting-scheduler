@@ -1685,36 +1685,38 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             onDismissRequest = ::closeHomePreview,
             properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
-            BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp), contentAlignment = Alignment.Center) {
-                val pageWidth = minOf(maxWidth - 24.dp, maxHeight * 0.72f * pageAspect, 580.dp)
-                    .coerceAtLeast(1.dp)
-                Surface(
-                    modifier = Modifier.width(pageWidth + 24.dp),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh
-                ) {
-                    Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(homePreviewWeek.orEmpty(), modifier = Modifier.weight(1f),
-                                style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            IconButton(onClick = ::closeHomePreview) {
-                                Icon(Icons.TwoTone.Close, contentDescription = "Close preview")
-                            }
+            val configuration = LocalConfiguration.current
+            val pageWidth = minOf(
+                (configuration.screenWidthDp.dp - 56.dp).coerceAtLeast(1.dp),
+                configuration.screenHeightDp.dp * 0.72f * pageAspect,
+                580.dp
+            )
+            Surface(
+                modifier = Modifier.width(pageWidth + 24.dp),
+                shape = MaterialTheme.shapes.extraLarge,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(homePreviewWeek.orEmpty(), modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        IconButton(onClick = ::closeHomePreview) {
+                            Icon(Icons.TwoTone.Close, contentDescription = "Close preview")
                         }
-                        Surface(
-                            color = Color.White,
-                            shape = MaterialTheme.shapes.small,
-                            modifier = Modifier.width(pageWidth).aspectRatio(pageAspect)
-                        ) {
-                            val html = homePreviewHtml
-                            if (homePreviewLoading || html == null) {
-                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    CircularProgressIndicator(color = Forest)
-                                }
-                            } else {
-                                OfficialScheduleWebPreview(html, previewView, Modifier.fillMaxSize()) {}
+                    }
+                    Surface(
+                        color = Color.White,
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.width(pageWidth).aspectRatio(pageAspect)
+                    ) {
+                        val html = homePreviewHtml
+                        if (homePreviewLoading || html == null) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = Forest)
                             }
+                        } else {
+                            OfficialScheduleWebPreview(html, previewView, Modifier.fillMaxSize()) {}
                         }
                     }
                 }
@@ -2525,7 +2527,6 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
                             color = if (line.startsWith("ERROR")) MaterialTheme.colorScheme.error else if (MaterialTheme.colorScheme.background == DarkPalette.background) Color(0xFFB8D7B5) else Color(0xFF2D5638),
                             fontSize = 12.sp,
                             lineHeight = 16.sp,
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                             maxLines = 2
                         )
                     }
