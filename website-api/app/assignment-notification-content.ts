@@ -51,8 +51,9 @@ export function assignmentNoticeText(
 export async function assignmentNoticeDetails(
   meta: Record<string, string>,
   parts: Part[],
+  memberRows?: Array<{ id: number; name: string }>,
 ): Promise<Map<number, AssignmentNotice>> {
-  const rows = await getDb().select({ id: members.id, name: members.name }).from(members);
+  const rows = memberRows || await getDb().select({ id: members.id, name: members.name }).from(members);
   const byName = new Map(rows.map((member) => [member.name.trim().toLocaleLowerCase("tl"), member]));
   const notices = new Map<number, AssignmentNotice>();
 
