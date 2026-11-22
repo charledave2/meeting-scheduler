@@ -7,8 +7,6 @@ import { ensureScheduleSoftDeleteStorage } from "../../schedule-soft-delete-stor
 import { canAccessAnyTool } from "../../permissions";
 
 type SavedPart={id?:number;title?:string;assignee?:string;assistant?:string;secondaryAssignee?:string;secondaryAssistant?:string};
-type DerivedRecord={memberId:number;meetingDate:string;assignmentRole:"main"|"assistant"};
-
 export async function GET(request:Request){
   try{
     const auth=await getChatGPTUser();if(!auth)return Response.json({error:"Unauthorized"},{status:401});if(!await canAccessAnyTool(auth,["participants","assignments"],"view"))return Response.json({error:"This account cannot view participant rotation."},{status:403});
