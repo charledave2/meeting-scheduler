@@ -67,7 +67,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountCircle
-import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.twotone.Check
 import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.List
@@ -119,6 +119,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -134,6 +135,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.window.Dialog
@@ -392,13 +394,13 @@ private data class SavedSchedule(
     val chairman: String = "", val openingPrayer: String = "", val adviser: String = "", val audienceGroup: String = ""
 )
 internal enum class Screen(val title: String, val section: String) {
-    HOME("Home Page", "OVERVIEW"),
+    HOME("Home", "OVERVIEW"),
     DETAILS("Workbook", "SCHEDULE TOOLS"),
     ASSIGNMENTS("Assignments", "SCHEDULE TOOLS"),
     PREVIEW("Preview & Export", "SCHEDULE TOOLS"),
     PARTICIPANTS("Participants", "CONGREGATION"),
-    HISTORY("Schedule History", "CONGREGATION"),
-    ACCOUNTS("Account & Settings", "ACCOUNT")
+    HISTORY("History", "CONGREGATION"),
+    ACCOUNTS("Settings", "ACCOUNT")
 }
 
 private class LocalWorkspaceStore(context: Context) {
@@ -585,7 +587,7 @@ private fun AppUpdatePrompt() {
                             }.onFailure { downloadError = it.message ?: "Hindi masimulan ang download." }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF28634D), contentColor = Color.White)
+                    colors = ButtonDefaults.buttonColors()
                 ) {
                     Icon(Icons.TwoTone.SystemUpdateAlt, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
@@ -625,8 +627,9 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
     }
     CompositionLocalProvider(LocalDensity provides Density(systemDensity.density, systemDensity.fontScale * appFontScale)) {
         MaterialTheme(colorScheme = scheme, shapes = Shapes(
-            small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(26.dp)
-        )) {
+            small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(16.dp), large = RoundedCornerShape(22.dp),
+            extraLarge = RoundedCornerShape(28.dp)
+        ), typography = SchedulerTypography) {
             Box(Modifier.fillMaxSize()) {
                 if (appLock.state.locked) {
                     AppLockScreen(appLock)
@@ -1389,8 +1392,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
             TopAppBar(
                 title = {
                     Column {
-                        Text("JW Meeting Scheduler", fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                        Text("Midweek meeting workspace", color = Muted, fontSize = 10.sp, lineHeight = 12.sp, maxLines = 1)
+                        Text("JW Meeting Scheduler", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     }
                 },
                 navigationIcon = {
@@ -1400,7 +1402,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                 actions = {
                     Box(Modifier.padding(end = 8.dp)) {
                         Column(
-                            Modifier.clip(RoundedCornerShape(14.dp))
+                            Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).clip(MaterialTheme.shapes.medium)
                                 .clickable(onClickLabel = "Open profile", onClick = ::openProfile)
                                 .padding(horizontal = 6.dp, vertical = 4.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -1410,7 +1412,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                             Text(when (identityRole.lowercase(Locale.ROOT)) {
                                 "admin", "administrator" -> "ADMINISTRATOR"
                                 else -> identityRole.uppercase(Locale.ROOT)
-                            }, fontSize = 9.sp, lineHeight = 11.sp, maxLines = 1, fontWeight = FontWeight.Bold, color = Forest)
+                            }, style = MaterialTheme.typography.labelSmall, maxLines = 1, fontWeight = FontWeight.Bold, color = Forest)
                         }
                         DropdownMenu(
                             expanded = profileDialogOpen,
@@ -1465,7 +1467,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         snackbarHost = { SnackbarHost(hostState = remember { SnackbarHostState() }) },
         contentWindowInsets = WindowInsets.safeDrawing
     ) { insets ->
-        val scroll = Modifier.fillMaxSize().padding(insets)
+        val scroll = Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)
         AnimatedContent(
             targetState = current,
             transitionSpec = {
@@ -1621,12 +1623,12 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                             testNotificationFeedback = null
                             try {
                                 val token = MeetingPushNotifications.savedToken(context)
-                                    ?: throw IllegalStateException("Kinukuha pa ang FCM token. Subukan muli makalipas ang ilang segundo.")
+                                    ?: throw IllegalStateException("Notifications are still being set up. Try again in a few seconds.")
                                 api.registerPushToken(token)
                                 val sent = api.sendTestNotification()
-                                testNotificationFeedback = if (sent > 0) "Naipadala ang test notification sa account na ito." else "Walang naipadalang test notification."
+                                testNotificationFeedback = if (sent > 0) "Test notification sent to this account." else "No test notification was sent."
                             } catch (error: Exception) {
-                                testNotificationFeedback = error.message ?: "Hindi naipadala ang test notification."
+                                testNotificationFeedback = error.message ?: "Could not send the test notification."
                             } finally {
                                 testNotificationBusy = false
                             }
@@ -1668,10 +1670,10 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
         val pageAspect = SCHEDULE_EXPORT_WIDTH_PX.toFloat() / SCHEDULE_EXPORT_HEIGHT_PX
         Dialog(onDismissRequest = { homePreviewWeek = null; homePreviewHtml = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
             Surface(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp)
+                modifier = Modifier.widthIn(max = 880.dp).fillMaxWidth().padding(horizontal = 18.dp)
                     .height(dialogHeight),
-                shape = RoundedCornerShape(24.dp),
-                color = AppSurface
+                shape = MaterialTheme.shapes.extraLarge,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
                 Column(Modifier.fillMaxSize().padding(bottom = 14.dp)) {
                     Row(
@@ -1684,8 +1686,9 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                         }
                     }
                     Spacer(Modifier.height(8.dp))
-                    BoxWithConstraints(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                        val pageWidth = minOf(maxWidth, maxHeight * pageAspect)
+                    BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 14.dp)
+                        .verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
+                        val pageWidth = maxWidth
                         val pageHeight = pageWidth / pageAspect
                         Surface(color = Color.White, shape = RoundedCornerShape(5.dp), shadowElevation = 3.dp,
                             modifier = Modifier.width(pageWidth).height(pageHeight)) {
@@ -1767,12 +1770,12 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     subheadContentColor = Muted,
                     yearContentColor = Ink,
                     currentYearContentColor = if (MaterialTheme.colorScheme.background == DarkPalette.background) Color(0xFFA8C3A4) else Color(0xFF28634D),
-                    selectedYearContentColor = Color.White,
-                    selectedYearContainerColor = Color(0xFF28634D),
+                    selectedYearContentColor = MaterialTheme.colorScheme.onPrimary,
+                    selectedYearContainerColor = Forest,
                     dayContentColor = Ink,
                     disabledDayContentColor = Muted.copy(alpha = 0.38f),
-                    selectedDayContentColor = Color.White,
-                    selectedDayContainerColor = Color(0xFF28634D),
+                    selectedDayContentColor = MaterialTheme.colorScheme.onPrimary,
+                    selectedDayContainerColor = Forest,
                     todayContentColor = if (MaterialTheme.colorScheme.background == DarkPalette.background) Color(0xFFA8C3A4) else Color(0xFF28634D),
                     todayDateBorderColor = if (MaterialTheme.colorScheme.background == DarkPalette.background) Color(0xFFA8C3A4) else Color(0xFF28634D),
                     dayInSelectionRangeContentColor = Ink,
@@ -2003,7 +2006,7 @@ private fun LoginScreen(
                 Spacer(Modifier.height(if (compact) 22.dp else 30.dp))
                 AnimatedVisibility(visible = true, enter = fadeIn(tween(520)) + slideInVertically(tween(520)) { it / 10 }) {
                     Card(
-                        shape = RoundedCornerShape(28.dp),
+                        shape = MaterialTheme.shapes.extraLarge,
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                     ) {
@@ -2069,7 +2072,7 @@ private fun LoginScreen(
         AlertDialog(
             onDismissRequest = { if (!busy && !mustChangePassword) changePasswordOpen = false },
             containerColor = AppSurface,
-            shape = RoundedCornerShape(28.dp),
+            shape = MaterialTheme.shapes.extraLarge,
             title = { Text("Set a new password", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2095,7 +2098,7 @@ private fun LoginScreen(
         AlertDialog(
             onDismissRequest = { if (!requestBusy) requestOpen = false },
             containerColor = AppSurface,
-            shape = RoundedCornerShape(28.dp),
+            shape = MaterialTheme.shapes.extraLarge,
             title = { Text("Request Access", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2205,7 +2208,7 @@ private fun ProfilePreferencesMenu(
         }
         TextButton(
             onClick = onChangePhoto,
-            modifier = Modifier.fillMaxWidth().height(34.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
         ) {
             Icon(Icons.TwoTone.AddAPhoto, contentDescription = null, tint = colors.primary, modifier = Modifier.size(17.dp))
@@ -2214,7 +2217,7 @@ private fun ProfilePreferencesMenu(
                 fontSize = 12.sp, maxLines = 1)
         }
         Row(
-            Modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(13.dp))
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.medium)
                 .background(colors.surfaceContainerHigh)
                 .border(BorderStroke(1.dp, colors.outlineVariant), RoundedCornerShape(13.dp))
                 .padding(horizontal = 10.dp),
@@ -2247,7 +2250,7 @@ private fun ProfilePreferencesMenu(
             IconButton(
                 onClick = onSave,
                 enabled = nameDraft.isNotBlank(),
-                modifier = Modifier.size(40.dp)
+                modifier = Modifier.size(48.dp)
             ) {
                 Icon(Icons.TwoTone.CheckCircle, contentDescription = "Save",
                     tint = colors.primary, modifier = Modifier.size(19.dp))
@@ -2255,7 +2258,7 @@ private fun ProfilePreferencesMenu(
             Spacer(Modifier.width(24.dp))
             IconButton(
                 onClick = onSignOut,
-                modifier = Modifier.size(40.dp)
+                modifier = Modifier.size(48.dp)
             ) {
                 Icon(Icons.TwoTone.Logout, contentDescription = "Sign out",
                     tint = colors.error, modifier = Modifier.size(19.dp))
@@ -2278,31 +2281,42 @@ private fun ProfileAvatar(name: String, photoPath: String?, size: androidx.compo
 
 @Composable
 private fun PageColumn(modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        modifier = modifier.verticalScroll(rememberScrollState()).padding(PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 24.dp)),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        content = content
-    )
+    PageFrame(modifier) { page ->
+        Column(
+            page.verticalScroll(rememberScrollState()).padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            content = content
+        )
+    }
 }
 
 @Composable
-private fun PageHeading(eyebrow: String, title: String, subtitle: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(eyebrow, color = Forest, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.5.sp)
-        Text(title, fontSize = 27.sp, fontWeight = FontWeight.Bold, lineHeight = 31.sp)
-        Text(subtitle, color = Muted, fontSize = 13.sp, lineHeight = 18.sp)
+private fun PageHeading(title: String, subtitle: String? = null, trailing: (@Composable () -> Unit)? = null) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = Muted)
+        }
+        trailing?.invoke()
     }
 }
 
 @Composable
 private fun M3Card(content: @Composable ColumnScope.() -> Unit) {
-    Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), elevation = CardDefaults.cardElevation(defaultElevation = 0.dp), border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp), content = content)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
     }
 }
 
 @Composable
-private fun Label(text: String) { Text(text.uppercase(), color = Muted, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.4.sp) }
+private fun Label(text: String) {
+    Text(text, color = Muted, style = MaterialTheme.typography.labelMedium)
+}
 
 @Composable
 private fun HomeScreen(
@@ -2328,7 +2342,7 @@ private fun HomeScreen(
         }.sortedBy { it.first }.take(6)
     }
     PageColumn(modifier) {
-        PageHeading("MIDWEEK MEETING WORKSPACE", "Home Page", "Your congregation schedule at a glance.")
+        PageHeading("Home")
         val greetingShape = RoundedCornerShape(26.dp)
         val abstractAccent = MaterialTheme.colorScheme.onPrimaryContainer
         Card(shape = greetingShape, colors = CardDefaults.cardColors(containerColor = ForestContainer)) {
@@ -2383,13 +2397,13 @@ private fun HomeScreen(
             IconButton(onClick = onRefresh) { Icon(Icons.TwoTone.Refresh, contentDescription = "Refresh upcoming meetings", tint = Forest) }
         }
         when {
-            loading && upcoming.isEmpty() -> Surface(color = SurfaceContainer, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+            loading && upcoming.isEmpty() -> Surface(color = SurfaceContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest)
-                    Column { Text("Checking your schedule", fontWeight = FontWeight.SemiBold, fontSize = 13.sp); Text("Loading upcoming meetings…", color = Muted, fontSize = 11.sp) }
+                    Column { Text("Checking your schedule", fontWeight = FontWeight.SemiBold, fontSize = 13.sp); Text("Loading upcoming meetings…", color = Muted, fontSize = 12.sp) }
                 }
             }
-            error != null && upcoming.isEmpty() -> Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+            error != null && upcoming.isEmpty() -> Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Icon(Icons.TwoTone.ErrorOutline, contentDescription = "Schedule unavailable", tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(22.dp))
                     Text(error, color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 12.sp, modifier = Modifier.weight(1f))
@@ -2401,7 +2415,7 @@ private fun HomeScreen(
                     Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(30.dp))
                     Text("No upcoming saved meetings", fontWeight = FontWeight.SemiBold)
                     Text("Create a workbook and save the schedule to the cloud to see it here.", color = Muted, fontSize = 12.sp)
-                    if (canCreateSchedule) FilledTonalButton(onClick = onCreateSchedule, shape = RoundedCornerShape(16.dp)) {
+                    if (canCreateSchedule) FilledTonalButton(onClick = onCreateSchedule, shape = MaterialTheme.shapes.medium) {
                         Icon(Icons.TwoTone.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(7.dp)); Text("Open Workbook")
                     }
@@ -2410,8 +2424,8 @@ private fun HomeScreen(
             else -> {
                 if (loading || error != null) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (loading) CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp, color = Forest)
-                    Text(if (loading) "Updating · showing saved meetings" else "Couldn’t refresh · showing saved meetings", color = Muted, fontSize = 11.sp)
-                    if (error != null) TextButton(onClick = onRefresh) { Text("Retry", fontSize = 11.sp) }
+                    Text(if (loading) "Updating · showing saved meetings" else "Couldn’t refresh · showing saved meetings", color = Muted, fontSize = 12.sp)
+                    if (error != null) TextButton(onClick = onRefresh) { Text("Retry", fontSize = 12.sp) }
                 }
                 val (nextDate, nextSchedule) = upcoming.first()
                 Card(
@@ -2425,18 +2439,18 @@ private fun HomeScreen(
                             Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(24.dp))
                         }
                         Column(Modifier.weight(1f).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text("NEXT MEETING", color = Forest, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
+                            Text("NEXT MEETING", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
                             Text(nextSchedule.weekLabel, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
-                            Text("${nextSchedule.reading} · ${nextDate.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH))}", color = Muted, fontSize = 11.sp, maxLines = 1)
+                            Text("${nextSchedule.reading} · ${nextDate.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH))}", color = Muted, fontSize = 12.sp, maxLines = 1)
                         }
                         Icon(Icons.TwoTone.Preview, contentDescription = "Preview next meeting schedule", tint = Forest)
                     }
                 }
-                if (upcoming.size > 1) Text("MORE UPCOMING", color = Forest, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(top = 2.dp))
+                if (upcoming.size > 1) Text("MORE UPCOMING", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(top = 2.dp))
                 upcoming.drop(1).forEach { (date, remote) ->
                 Card(
                     modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "Preview ${remote.weekLabel}") { onOpenSchedule(remote) },
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.medium,
                     colors = CardDefaults.cardColors(containerColor = SurfaceContainer),
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
@@ -2447,7 +2461,7 @@ private fun HomeScreen(
                         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                             Text(remote.weekLabel, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                             Text(remote.reading, color = Muted, fontSize = 12.sp)
-                            Text(date.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH)), color = Forest, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                            Text(date.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH)), color = Forest, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                         Icon(Icons.TwoTone.Preview, contentDescription = "Preview schedule", tint = Forest)
                     }
@@ -2461,16 +2475,16 @@ private fun HomeScreen(
 @Composable
 private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, canContinueToAssignments:Boolean, readOnly:Boolean, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
     PageColumn(modifier) {
-        PageHeading("SCHEDULE BUILDER", "Workbook", "Pumili ng linggo. Kusang kukunin ang weekly program.")
+        PageHeading("Workbook", "Select a week to load its meeting program.")
         M3Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(38.dp).background(ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) { Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp)) }
                 Column(Modifier.weight(1f).padding(start = 11.dp)) {
                     Label("MEETING WEEK")
-                    Text("Pangunahing impormasyon", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    Text("Meeting details", style = MaterialTheme.typography.titleMedium)
                 }
             }
-            OutlinedButton(onClick = onPickDate, enabled=!readOnly, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), shape = RoundedCornerShape(15.dp), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
+            OutlinedButton(onClick = onPickDate, enabled=!readOnly, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), shape = MaterialTheme.shapes.medium, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
                 Text(weekLabel, modifier = Modifier.weight(1f), color = Ink, fontWeight = FontWeight.SemiBold)
                 Text("Change", color = Forest, fontSize = 12.sp)
             }
@@ -2490,42 +2504,41 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
                     Label("JW.ORG WORKBOOK")
                     Text("Weekly program", fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 }
-                IconButton(onClick = onImport, enabled = !workbookBusy && !readOnly, modifier = Modifier.size(40.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(Icons.TwoTone.Refresh, contentDescription = "I-refresh ang weekly program", tint = Forest, modifier = Modifier.size(23.dp)) }
+                IconButton(onClick = onImport, enabled = !workbookBusy && !readOnly, modifier = Modifier.size(48.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(Icons.TwoTone.Refresh, contentDescription = "I-refresh ang weekly program", tint = Forest, modifier = Modifier.size(23.dp)) }
             }
-            Text("Awtomatikong naghahanap batay sa napiling linggo.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
             if (workbookBusy) {
                 LinearProgressIndicator(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     color = Forest,
                     trackColor = ForestContainer
                 )
-                Text(workbookStatus, color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
+                Text(workbookStatus, color = Muted, fontSize = 12.sp, lineHeight = 15.sp)
             }
             Surface(
                 color = if (MaterialTheme.colorScheme.background == DarkPalette.background) Color(0xFF0D120E) else Color(0xFFE4ECE4),
-                shape = RoundedCornerShape(14.dp),
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             ) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (workbookBusy) "CAPTURE LOG · RUNNING" else "CAPTURE LOG", color = Forest, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.1.sp)
+                        Text(if (workbookBusy) "CAPTURE LOG · RUNNING" else "CAPTURE LOG", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.1.sp)
                         if (workbookBusy) CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 1.5.dp, color = Forest)
                     }
                     workbookCaptureLog.takeLast(6).forEach { line ->
                         Text(
                             "› $line",
                             color = if (line.startsWith("ERROR")) MaterialTheme.colorScheme.error else if (MaterialTheme.colorScheme.background == DarkPalette.background) Color(0xFFB8D7B5) else Color(0xFF2D5638),
-                            fontSize = 10.sp,
-                            lineHeight = 14.sp,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                             maxLines = 2
                         )
                     }
-                    if (!workbookBusy) Text(workbookStatus.removePrefix("✓ "), color = if (fetchError) MaterialTheme.colorScheme.error else Muted, fontSize = 10.sp, lineHeight = 14.sp)
+                    if (!workbookBusy) Text(workbookStatus.removePrefix("✓ "), color = if (fetchError) MaterialTheme.colorScheme.error else Muted, fontSize = 12.sp, lineHeight = 16.sp)
                 }
             }
         }
-        if (canContinueToAssignments) Button(onClick = onNext, enabled=canContinue, modifier=Modifier.fillMaxWidth(), shape=RoundedCornerShape(18.dp), colors=ButtonDefaults.buttonColors(containerColor=Forest), contentPadding=PaddingValues(vertical=15.dp)) {
+        if (canContinueToAssignments) Button(onClick = onNext, enabled=canContinue, modifier=Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, colors=ButtonDefaults.buttonColors(containerColor=Forest), contentPadding=PaddingValues(vertical=15.dp)) {
             Text(if(workbookBusy) "Checking saved schedule…" else if(!canContinue) "Loading participants…" else "Continue to assignments")
             Spacer(Modifier.width(9.dp))
             Icon(Icons.TwoTone.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
@@ -2545,42 +2558,42 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
             }
         }
     }
-    Column(modifier.verticalScroll(rememberScrollState()).padding(start=16.dp,end=16.dp,top=7.dp,bottom=16.dp), verticalArrangement=Arrangement.spacedBy(12.dp)) {
-        Text("Pumili ng participant para sa bawat bahagi ng pulong.", color=Muted, fontSize=12.sp, lineHeight=16.sp)
+    PageColumn(modifier) {
+        PageHeading("Assignments")
         if (rotationBusy || rotationError != null) {
             Text(
-                if (rotationBusy) "Kinukuha ang participant rotation para sa linggong ito…" else "Hindi makuha ang rotation data: $rotationError",
+                if (rotationBusy) "Loading participant rotation for this week…" else "Could not load participant rotation: $rotationError",
                 color = if (rotationError != null) MaterialTheme.colorScheme.error else Muted,
-                fontSize = 10.sp,
-                lineHeight = 14.sp
+                fontSize = 12.sp,
+                lineHeight = 16.sp
             )
         }
-        Card(shape=RoundedCornerShape(18.dp), colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant), border=androidx.compose.foundation.BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
+        Card(shape = MaterialTheme.shapes.medium, colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant), border=androidx.compose.foundation.BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
             Column(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=10.dp), verticalArrangement=Arrangement.spacedBy(2.dp)) {
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
                     Label("MEETING ROLES")
-                    Text("Closing prayer · ${chairman.ifBlank { "Chairman" }}",color=Muted,fontSize=10.sp,maxLines=1)
+                    Text("Closing prayer · ${chairman.ifBlank { "Chairman" }}",color = Muted, style = MaterialTheme.typography.bodySmall, maxLines = 2)
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    SlotPicker("Chairman",chairman,eligible.filter { it.isAppointedBrother() },Modifier.weight(1f),rotation,enabled=!readOnly,excludedNames=selectedNames){onRole("chairman",it)}
-                    SlotPicker("Opening prayer",openingPrayer,eligible.filter { it.isBrother() && !it.unbaptized },Modifier.weight(1f),rotation,enabled=!readOnly,excludedNames=selectedNames){onRole("opening_prayer",it)}
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    SlotPicker("Adviser",adviser,eligible.filter { it.isAppointedBrother() },Modifier.weight(1f),rotation,enabled=!readOnly,excludedNames=selectedNames){onRole("adviser",it)}
-                    SlotPicker("Audience group",audienceGroup,(1..9).map { Participant("Group $it") },Modifier.weight(1f),rotation,enabled=!readOnly){onRole("audience_group",it)}
-                }
+                AdaptivePair(
+                    { field -> SlotPicker("Chairman",chairman,eligible.filter { it.isAppointedBrother() },field,rotation,enabled=!readOnly,excludedNames=selectedNames){onRole("chairman",it)} },
+                    { field -> SlotPicker("Opening prayer",openingPrayer,eligible.filter { it.isBrother() && !it.unbaptized },field,rotation,enabled=!readOnly,excludedNames=selectedNames){onRole("opening_prayer",it)} }
+                )
+                AdaptivePair(
+                    { field -> SlotPicker("Adviser",adviser,eligible.filter { it.isAppointedBrother() },field,rotation,enabled=!readOnly,excludedNames=selectedNames){onRole("adviser",it)} },
+                    { field -> SlotPicker("Audience group",audienceGroup,(1..9).map { Participant("Group $it") },field,rotation,enabled=!readOnly){onRole("audience_group",it)} }
+                )
             }
         }
-        Card(shape=RoundedCornerShape(18.dp), colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant), border=androidx.compose.foundation.BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
+        Card(shape = MaterialTheme.shapes.medium, colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant), border=androidx.compose.foundation.BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
             Column(Modifier.fillMaxWidth().padding(12.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column { Label("MEETING ASSIGNMENTS"); Text("Assignments", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(top = 2.dp)) }
+                    Text("Meeting parts", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                     val done = parts.count { it.person.isNotBlank() }
-                    AssistChip(onClick = {}, label = { Text("$done / ${parts.size} parts") })
+                    Text("$done of ${parts.size} assigned", color = Muted, style = MaterialTheme.typography.labelMedium)
                 }
                 Column(Modifier.fillMaxWidth().padding(top=6.dp)) {
                     parts.forEachIndexed { index, part ->
-                        if(index>0) HorizontalDivider(Modifier.padding(vertical=6.dp), color=SurfaceContainer)
+                        if(index>0) HorizontalDivider(Modifier.padding(vertical=6.dp), color = MaterialTheme.colorScheme.outlineVariant)
                         AssignmentPicker(index, part, eligible, rotation, readOnly, selectedNames) { slot, name -> onAssign(index,slot,name) }
                     }
                 }
@@ -2591,7 +2604,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
                 onClick = onSaveCloud,
                 enabled = !cloudSaveBusy,
                 modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.medium,
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 13.dp)
             ) {
                 if (cloudSaveBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest)
@@ -2605,7 +2618,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
                     color = Forest,
                     trackColor = ForestContainer
                 )
-                Text("Sine-save ang schedule at assignment history…", color = Muted, fontSize = 11.sp)
+                Text("Saving the schedule and assignment history…", color = Muted, fontSize = 12.sp)
             }
             cloudSaveFeedback?.let { (message, success) ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -2615,14 +2628,14 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, eligi
                         tint = if (success) Forest else MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(17.dp)
                     )
-                    Text(message, color = if (success) Forest else MaterialTheme.colorScheme.error, fontSize = 11.sp, lineHeight = 15.sp)
+                    Text(message, color = if (success) Forest else MaterialTheme.colorScheme.error, fontSize = 12.sp, lineHeight = 15.sp)
                 }
             }
         }
         if (canContinueExport) Button(
             onClick = onContinueExport,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.medium,
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Forest)
         ) {
@@ -2647,18 +2660,21 @@ private fun AssignmentPicker(index: Int, part: Assignment, eligible: List<Partic
                 Text("${part.id.takeIf { it>0 } ?: index+1}", color = badgeColors.second, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
             }
             Spacer(Modifier.width(9.dp))
-            Column(Modifier.weight(1f)) { Text(part.title.substringAfter(". ",part.title), fontWeight = FontWeight.Bold, fontSize = 13.sp, lineHeight=16.sp); Text(listOf(part.time,part.duration,part.detail).filter{it.isNotBlank()}.joinToString(" · "), color = Muted, fontSize = 10.sp, lineHeight = 13.sp) }
+            Column(Modifier.weight(1f)) { Text(part.title.substringAfter(". ",part.title), fontWeight = FontWeight.Bold, fontSize = 14.sp, lineHeight = 20.sp); Text(listOf(part.time,part.duration,part.detail).filter{it.isNotBlank()}.joinToString(" · "), color = Muted, fontSize = 12.sp, lineHeight = 16.sp) }
         }
         val title=part.title.lowercase(Locale.ROOT); val bibleReading=title.contains("pagbabasa ng bibliya"); val bibleStudy=title.contains("pag-aaral ng kongregasyon sa bibliya"); val what=title.contains("ano ang sasabihin mo")
         val qualified=!what && (part.section=="living" || (part.section=="treasures" && !bibleReading))
         val brothers=eligible.filter{it.isBrother() && !it.unbaptized}; val elders=brothers.filter{it.isAppointedBrother()}
         if(bibleStudy) {
-            Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) { SlotPicker("Conductor",part.person,elders,Modifier.weight(1f),rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("main",it)}; SlotPicker("Reader",part.assistant,brothers,Modifier.weight(1f),rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("assistant",it)} }
+            AdaptivePair(
+                { field -> SlotPicker("Conductor", part.person, elders, field, rotation, enabled = !readOnly, excludedNames = excludedNames) { onAssign("main", it) } },
+                { field -> SlotPicker("Reader", part.assistant, brothers, field, rotation, enabled = !readOnly, excludedNames = excludedNames) { onAssign("assistant", it) } }
+            )
         } else if((part.section=="ministry"&&!what)||bibleReading) {
-            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                Column(Modifier.weight(1f)){SlotPicker("Main Hall",part.person,if(qualified) elders else if(bibleReading) brothers else eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("main",it)}; if(part.hasAssistant) SlotPicker("Assistant",part.assistant,eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("assistant",it)} }
-                Column(Modifier.weight(1f)){SlotPicker("Second Hall",part.secondaryAssignee,if(qualified) elders else if(bibleReading) brothers else eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("secondary",it)}; if(part.hasSecondaryAssistant) SlotPicker("Assistant",part.secondaryAssistant,eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("secondaryAssistant",it)} }
-            }
+            AdaptivePair(
+                { field -> Column(field, verticalArrangement = Arrangement.spacedBy(6.dp)){SlotPicker("Main Hall",part.person,if(qualified) elders else if(bibleReading) brothers else eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("main",it)}; if(part.hasAssistant) SlotPicker("Assistant",part.assistant,eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("assistant",it)} } },
+                { field -> Column(field, verticalArrangement = Arrangement.spacedBy(6.dp)){SlotPicker("Second Hall",part.secondaryAssignee,if(qualified) elders else if(bibleReading) brothers else eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("secondary",it)}; if(part.hasSecondaryAssistant) SlotPicker("Assistant",part.secondaryAssistant,eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("secondaryAssistant",it)} } }
+            )
         } else {
             SlotPicker(if(what) "Brother" else if(qualified) "Qualified brother" else "Participant",part.person,if(what) eligible.filter { it.isBrother() } else if(qualified) elders else eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("main",it)}
             if(part.hasAssistant&&!what) SlotPicker("Assistant",part.assistant,eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("assistant",it)}
@@ -2681,16 +2697,16 @@ private fun SlotPicker(
     var searchQuery by remember { mutableStateOf("") }
     var pending by remember { mutableStateOf<Participant?>(null) }
     Column(modifier.padding(top = 3.dp)) {
-        Text(label, color = Muted, fontSize = 10.sp, lineHeight = 12.sp)
+        Text(label, color = Muted, style = MaterialTheme.typography.labelMedium)
         Box(Modifier.fillMaxWidth().padding(top = 2.dp)) {
             OutlinedButton(
                 onClick = { if (enabled) { searchQuery = ""; expanded = true } },
                 enabled = enabled,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(11.dp),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                shape = MaterialTheme.shapes.medium,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                Text(value.ifBlank { "Select" }, Modifier.weight(1f), fontSize = 11.sp, color = if (value.isBlank()) Muted else Ink, maxLines = 1)
+                Text(value.ifBlank { "Select" }, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             DropdownMenu(
                 expanded = expanded,
@@ -2700,7 +2716,7 @@ private fun SlotPicker(
                     .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp).height(42.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp).heightIn(min = 48.dp),
                     color = MaterialTheme.colorScheme.surface,
                     shape = RoundedCornerShape(12.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -2775,14 +2791,14 @@ private fun SlotPicker(
                                             }
                                         },
                                         color = Muted,
-                                        fontSize = 9.sp,
-                                        lineHeight = 12.sp,
+                                        fontSize = 12.sp,
+                                        lineHeight = 16.sp,
                                         maxLines = 2
                                     )
                                 }
                                 if (isExempt) {
                                     Surface(color = ForestContainer, shape = RoundedCornerShape(50)) {
-                                        Text("Exempt", color = Forest, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                                        Text("Exempt", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
                                     }
                                 } else if (stat != null) RotationStatusTag(stat)
                             }
@@ -2850,7 +2866,7 @@ private fun RotationStatusTag(stat: ParticipantRotation) {
         else -> scheme.secondaryContainer to scheme.onSecondaryContainer
     }
     Surface(color = container, contentColor = content, shape = RoundedCornerShape(50)) {
-        Text(label, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 9.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(label, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
 
@@ -2864,39 +2880,40 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
         buildOfficialScheduleHtml(weekStart,bible,openingSong,closingSong,parts,chairman,openingPrayer,adviser,audienceGroup,exportMode=true)
     }
     var previewReady by remember(html){mutableStateOf(false)}
-    val landscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val pageAspect = SCHEDULE_EXPORT_WIDTH_PX.toFloat() / SCHEDULE_EXPORT_HEIGHT_PX
-    val previewWidth = (LocalConfiguration.current.screenWidthDp - 36).coerceAtLeast(240).dp
-    val previewHeight = previewWidth / pageAspect
-    val content: @Composable ColumnScope.() -> Unit = {
-        PageHeading("SCHEDULE TOOLS", "Preview & Export", "Official meeting schedule · tugma ang preview at PNG output.")
-        if (allowExport) Row(modifier=Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-            FilledTonalButton(
-                onClick=onPng, enabled=previewReady && exportBusyType == null, modifier=Modifier.weight(1f).height(48.dp),
-                shape=RoundedCornerShape(16.dp), contentPadding=PaddingValues(horizontal=10.dp)
-            ) {
-                if (exportBusyType == "png") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
-                else Icon(Icons.TwoTone.Share, contentDescription=null, modifier=Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(if (exportBusyType == "png") "Preparing…" else "Share PNG",fontSize=13.sp,maxLines=1)
+    PageColumn(modifier) {
+        PageHeading("Preview & Export")
+        if (allowExport) AdaptivePair(
+            first = { button ->
+                FilledTonalButton(
+                    onClick=onPng, enabled=previewReady && exportBusyType == null, modifier=button.heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.medium, contentPadding=PaddingValues(horizontal=10.dp)
+                ) {
+                    if (exportBusyType == "png") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
+                    else Icon(Icons.TwoTone.Share, contentDescription=null, modifier=Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (exportBusyType == "png") "Preparing…" else "Share PNG",fontSize=14.sp)
+                }
+            },
+            second = { button ->
+                OutlinedButton(
+                    onClick=onExportText, enabled=exportBusyType == null, modifier=button.heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.medium, contentPadding=PaddingValues(horizontal=10.dp)
+                ) {
+                    if (exportBusyType == "text") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
+                    else Icon(Icons.TwoTone.Description, contentDescription=null, modifier=Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (exportBusyType == "text") "Preparing…" else "Export text",fontSize=14.sp)
+                }
             }
-            OutlinedButton(
-                onClick=onExportText, enabled=exportBusyType == null, modifier=Modifier.weight(1f).height(48.dp),
-                shape=RoundedCornerShape(16.dp), contentPadding=PaddingValues(horizontal=10.dp)
-            ) {
-                if (exportBusyType == "text") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
-                else Icon(Icons.TwoTone.Description, contentDescription=null, modifier=Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(if (exportBusyType == "text") "Preparing…" else "Export text",fontSize=13.sp,maxLines=1)
-            }
-        }
+        )
         val hasAssignmentSlips = parts.any { it.person.isNotBlank() || it.secondaryAssignee.isNotBlank() } ||
             chairman.isNotBlank() || openingPrayer.isNotBlank() || adviser.isNotBlank()
         if (allowExport) OutlinedButton(
             onClick = onAssignmentSlipImages,
             enabled = exportBusyType == null && hasAssignmentSlips,
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-            shape = RoundedCornerShape(16.dp)
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            shape = MaterialTheme.shapes.medium
         ) {
             if (exportBusyType == "slips_image") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
             else Icon(Icons.TwoTone.Share, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -2907,20 +2924,20 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = ForestContainer,
-                shape = RoundedCornerShape(14.dp)
+                shape = MaterialTheme.shapes.medium
             ) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                         CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp, color = Forest)
                         Text(
                             when (exportBusyType) {
-                                "png" -> "Inihahanda ang high-resolution PNG…"
-                                "text" -> "Inihahanda ang export text…"
-                                "slips_image" -> "Inihahanda ang assignment slip images…"
-                                else -> "Inihahanda ang schedule preview…"
+                                "png" -> "Preparing the schedule image…"
+                                "text" -> "Preparing the schedule text…"
+                                "slips_image" -> "Preparing assignment slip images…"
+                                else -> "Loading the schedule preview…"
                             },
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            fontSize = 11.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
                         )
                     }
@@ -2928,30 +2945,14 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
                 }
             }
         }
-        if (landscape) {
-            BoxWithConstraints(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                val pageWidth = minOf(maxWidth, maxHeight * pageAspect)
-                val pageHeight = pageWidth / pageAspect
-                Surface(
-                    color=Color.White, contentColor=Color(0xFF171717), shape=RoundedCornerShape(6.dp), shadowElevation=4.dp,
-                    modifier=Modifier.width(pageWidth).height(pageHeight)
-                ) {
-                    OfficialScheduleWebPreview(html,previewWebView,Modifier.fillMaxSize()){previewReady=true}
-                }
-            }
-        } else {
-            Surface(
-                color=Color.White, contentColor=Color(0xFF171717), shape=RoundedCornerShape(6.dp), shadowElevation=4.dp,
-                modifier=Modifier.fillMaxWidth().height(previewHeight)
-            ) {
-                OfficialScheduleWebPreview(html,previewWebView,Modifier.fillMaxSize()){previewReady=true}
-            }
+        Surface(
+            color = Color.White, contentColor = Color(0xFF171717),
+            shape = MaterialTheme.shapes.small,
+            shadowElevation = 3.dp,
+            modifier = Modifier.fillMaxWidth().aspectRatio(pageAspect)
+        ) {
+            OfficialScheduleWebPreview(html, previewWebView, Modifier.fillMaxSize()) { previewReady = true }
         }
-    }
-    if (landscape) {
-        Column(modifier.fillMaxSize().padding(horizontal=18.dp, vertical=12.dp), verticalArrangement=Arrangement.spacedBy(12.dp), content=content)
-    } else {
-        PageColumn(modifier, content)
     }
 }
 
@@ -3204,85 +3205,88 @@ private fun ParticipantsScreen(
         })
     }
     fun beginEdit(p: Participant) { editing=p; editName=p.name; editGender=p.gender; editAppointment=p.appointment; editService=p.service; editUnbaptized=p.unbaptized }
-    Column(modifier.fillMaxSize().padding(PaddingValues(start=18.dp,end=18.dp,top=12.dp,bottom=20.dp)),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-            Column { Text("CLOUD DATA",color=Forest,fontSize=10.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.3.sp);Text("Participants",fontSize=25.sp,fontWeight=FontWeight.Bold) }
-            Row(verticalAlignment=Alignment.CenterVertically) {
-                IconButton(onClick=onRefresh,modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(Icons.TwoTone.Refresh,contentDescription="Refresh participants",tint=Forest,modifier=Modifier.size(20.dp))}
-                if(canEdit) IconButton(onClick={showAdd=true},modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(Icons.TwoTone.PersonAdd,contentDescription="Add participant",tint=Forest,modifier=Modifier.size(22.dp))}
-            }
-        }
-        Text("${participants.size} participants · ${filtered.size} shown",color=Muted,fontSize=12.sp)
-        if (loading && participants.isNotEmpty()) Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            CircularProgressIndicator(Modifier.size(15.dp),strokeWidth=2.dp,color=Forest)
-            Text("Updating participant list · showing saved data",color=Muted,fontSize=11.sp)
-        }
-        if (loadError != null) Surface(color=MaterialTheme.colorScheme.errorContainer,shape=RoundedCornerShape(15.dp),modifier=Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.TwoTone.ErrorOutline,contentDescription="Participant refresh failed",tint=MaterialTheme.colorScheme.onErrorContainer,modifier=Modifier.size(19.dp))
-                Text((if (participants.isEmpty()) "Could not load participants. " else "Showing saved participants. ") + loadError,color=MaterialTheme.colorScheme.onErrorContainer,fontSize=11.sp,modifier=Modifier.weight(1f))
-                TextButton(onClick=onRefresh,contentPadding=PaddingValues(horizontal=6.dp)){Text("Retry",color=MaterialTheme.colorScheme.onErrorContainer,fontSize=11.sp)}
-            }
-        }
-        Card(Modifier.fillMaxWidth().weight(1f),shape=RoundedCornerShape(22.dp),colors=CardDefaults.cardColors(containerColor=SurfaceContainer),border=androidx.compose.foundation.BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
-            Column(Modifier.fillMaxSize().padding(14.dp)) {
-                Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(query,{query=it},placeholder={Text("Search participant")},singleLine=true,shape=RoundedCornerShape(16.dp),modifier=Modifier.weight(1f).heightIn(min=48.dp),textStyle=MaterialTheme.typography.bodyMedium)
-                    IconButton(onClick={showFilters=true},modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(Icons.TwoTone.Sort,contentDescription="Filter and sort participants",tint=Forest,modifier=Modifier.size(22.dp))}
+    PageFrame(modifier) { page ->
+        Column(page.fillMaxHeight().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            PageHeading("Participants") {
+                IconButton(onClick = onRefresh) {
+                    Icon(Icons.TwoTone.Refresh, contentDescription = "Refresh participants", tint = Forest)
                 }
-                LazyColumn(Modifier.weight(1f).fillMaxWidth(),contentPadding=PaddingValues(top=6.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
-                    itemsIndexed(filtered,key={_,entry->if(entry.value.id>0)entry.value.id.toLong() else entry.index.toLong()}) { _,entry ->
-                        val (index,p)=entry
-                        HorizontalDivider(color=SurfaceContainer)
-                        Row(Modifier.fillMaxWidth().heightIn(min=52.dp).semantics { if (canEdit) role = Role.Button }.then(if(canEdit) Modifier.clickable { beginEdit(p) } else Modifier).padding(vertical=7.dp),verticalAlignment=Alignment.CenterVertically) {
-                            Box(Modifier.size(38.dp).background(ForestContainer,CircleShape),contentAlignment=Alignment.Center){Text(p.name.split(" ").take(2).mapNotNull{it.firstOrNull()}.joinToString("").uppercase(),color=Forest,fontWeight=FontWeight.Bold,fontSize=11.sp)}
-                            Column(Modifier.weight(1f).padding(start=10.dp)) {
-                                Text(p.name,fontWeight=FontWeight.SemiBold,fontSize=13.sp,maxLines=1)
-                                Text(
-                                    if (p.unbaptized) "Unbaptized · ${genderLabel(p.gender)}${if(!p.enabled) " · Inactive" else ""}"
-                                    else "${appointmentLabel(p.appointment)} · ${serviceLabel(p.service)} · ${genderLabel(p.gender)}${if(!p.enabled) " · Inactive" else ""}",
-                                    color=Muted,fontSize=10.sp,maxLines=1
-                                )
-                            }
-                            if(canEdit) IconButton(onClick={beginEdit(p)},modifier=Modifier.size(40.dp)){Icon(Icons.TwoTone.Edit,contentDescription="Edit participant",tint=Forest,modifier=Modifier.size(20.dp))}
-                            if(isAdmin) {
-                                var menu by remember(p.id){mutableStateOf(false)}
-                                Box {
-                                    TextButton(onClick={menu=true},contentPadding=PaddingValues(horizontal=5.dp)){Text("⋮",fontSize=20.sp,color=Forest)}
-                                    DropdownMenu(expanded=menu,onDismissRequest={menu=false},modifier=Modifier.background(AppSurface)) {
-                                        DropdownMenuItem(text={Text(if(p.enabled) "Set inactive" else "Set active")},onClick={menu=false;onSetActive(p,!p.enabled)})
-                                        DropdownMenuItem(text={Text("Delete permanently",color=MaterialTheme.colorScheme.error)},onClick={menu=false;deleteTarget=p})
+                if (canEdit) IconButton(onClick = { showAdd = true }) {
+                    Icon(Icons.TwoTone.PersonAdd, contentDescription = "Add participant", tint = Forest)
+                }
+            }
+            Text("${participants.size} participants · ${filtered.size} shown",color=Muted,fontSize=12.sp)
+            if (loading && participants.isNotEmpty()) Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                CircularProgressIndicator(Modifier.size(15.dp),strokeWidth=2.dp,color=Forest)
+                Text("Updating participant list · showing saved data",color=Muted,fontSize = 12.sp)
+            }
+            if (loadError != null) Surface(color=MaterialTheme.colorScheme.errorContainer,shape = MaterialTheme.shapes.medium,modifier=Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.TwoTone.ErrorOutline,contentDescription="Participant refresh failed",tint=MaterialTheme.colorScheme.onErrorContainer,modifier=Modifier.size(19.dp))
+                    Text((if (participants.isEmpty()) "Could not load participants. " else "Showing saved participants. ") + loadError,color=MaterialTheme.colorScheme.onErrorContainer,fontSize = 12.sp,modifier=Modifier.weight(1f))
+                    TextButton(onClick=onRefresh,contentPadding=PaddingValues(horizontal=6.dp)){Text("Retry",color=MaterialTheme.colorScheme.onErrorContainer,fontSize = 12.sp)}
+                }
+            }
+            Card(Modifier.fillMaxWidth().weight(1f),shape=RoundedCornerShape(22.dp),colors=CardDefaults.cardColors(containerColor=SurfaceContainer),border=androidx.compose.foundation.BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
+                Column(Modifier.fillMaxSize().padding(14.dp)) {
+                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(query,{query=it},placeholder={Text("Search participant")},singleLine=true,shape = MaterialTheme.shapes.medium,modifier=Modifier.weight(1f).heightIn(min=48.dp),textStyle=MaterialTheme.typography.bodyMedium)
+                        IconButton(onClick={showFilters=true},modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(Icons.TwoTone.Sort,contentDescription="Filter and sort participants",tint=Forest,modifier=Modifier.size(22.dp))}
+                    }
+                    LazyColumn(Modifier.weight(1f).fillMaxWidth(),contentPadding=PaddingValues(top=6.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                        itemsIndexed(filtered,key={_,entry->if(entry.value.id>0)entry.value.id.toLong() else entry.index.toLong()}) { _,entry ->
+                            val (index,p)=entry
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Row(Modifier.fillMaxWidth().heightIn(min=52.dp).semantics { if (canEdit) role = Role.Button }.then(if(canEdit) Modifier.clickable { beginEdit(p) } else Modifier).padding(vertical=7.dp),verticalAlignment=Alignment.CenterVertically) {
+                                Box(Modifier.size(38.dp).background(ForestContainer,CircleShape),contentAlignment=Alignment.Center){Text(p.name.split(" ").take(2).mapNotNull{it.firstOrNull()}.joinToString("").uppercase(),color=Forest,fontWeight=FontWeight.Bold,fontSize = 12.sp)}
+                                Column(Modifier.weight(1f).padding(start=10.dp)) {
+                                    Text(p.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        if (p.unbaptized) "Unbaptized · ${genderLabel(p.gender)}${if(!p.enabled) " · Inactive" else ""}"
+                                        else "${appointmentLabel(p.appointment)} · ${serviceLabel(p.service)} · ${genderLabel(p.gender)}${if(!p.enabled) " · Inactive" else ""}",
+                                        color=Muted,fontSize = 12.sp,maxLines=1
+                                    )
+                                }
+                                if(canEdit) IconButton(onClick={beginEdit(p)},modifier=Modifier.size(48.dp)){Icon(Icons.TwoTone.Edit,contentDescription="Edit participant",tint=Forest,modifier=Modifier.size(20.dp))}
+                                if(isAdmin) {
+                                    var menu by remember(p.id){mutableStateOf(false)}
+                                    Box {
+                                        IconButton(onClick = { menu = true }) { Icon(Icons.TwoTone.MoreVert, contentDescription = "Participant actions") }
+                                        DropdownMenu(expanded=menu,onDismissRequest={menu=false},modifier=Modifier.background(AppSurface)) {
+                                            DropdownMenuItem(text={Text(if(p.enabled) "Set inactive" else "Set active")},onClick={menu=false;onSetActive(p,!p.enabled)})
+                                            DropdownMenuItem(text={Text("Delete permanently",color=MaterialTheme.colorScheme.error)},onClick={menu=false;deleteTarget=p})
+                                        }
                                     }
                                 }
                             }
                         }
+                        if (loading && participants.isEmpty()) item {
+                            Row(Modifier.fillMaxWidth().padding(vertical=20.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                                CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp,color=Forest)
+                                Text("Loading participants…",color=Muted,fontSize=12.sp)
+                            }
+                        } else if(filtered.isEmpty()) item { Text(if (query.isNotBlank() || genderFilter!="all" || appointmentFilter!="all" || serviceFilter!="all" || baptismFilter!="all") "No participants match the current search or filters." else if (canEdit) "No participants yet. Refresh the list or add a participant." else "No participants are available yet. Refresh the list to try again.",color=Muted,fontSize=12.sp,modifier=Modifier.padding(vertical=12.dp)) }
                     }
-                    if (loading && participants.isEmpty()) item {
-                        Row(Modifier.fillMaxWidth().padding(vertical=20.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                            CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp,color=Forest)
-                            Text("Loading participants…",color=Muted,fontSize=12.sp)
-                        }
-                    } else if(filtered.isEmpty()) item { Text(if (query.isNotBlank() || genderFilter!="all" || appointmentFilter!="all" || serviceFilter!="all" || baptismFilter!="all") "No participants match the current search or filters." else if (canEdit) "No participants yet. Refresh the list or add a participant." else "No participants are available yet. Refresh the list to try again.",color=Muted,fontSize=12.sp,modifier=Modifier.padding(vertical=12.dp)) }
                 }
             }
         }
     }
-    if(showAdd && canEdit) AlertDialog(onDismissRequest={showAdd=false},containerColor=AppSurface,shape=RoundedCornerShape(28.dp),title={Text("Add participant")},text={OutlinedTextField(newName,{newName=it},label={Text("Full name")},singleLine=true)},confirmButton={TextButton(onClick={if(newName.isNotBlank())onAdd(newName.trim());newName="";showAdd=false}){Text("Add",color=Forest)}},dismissButton={TextButton(onClick={showAdd=false}){Text("Cancel",color=Forest)}})
+    if(showAdd && canEdit) AlertDialog(onDismissRequest={showAdd=false},containerColor=MaterialTheme.colorScheme.surfaceContainerHigh,shape = MaterialTheme.shapes.extraLarge,title={Text("Add participant")},text={OutlinedTextField(newName,{newName=it},label={Text("Full name")},singleLine=true)},confirmButton={TextButton(onClick={if(newName.isNotBlank())onAdd(newName.trim());newName="";showAdd=false}){Text("Add",color=Forest)}},dismissButton={TextButton(onClick={showAdd=false}){Text("Cancel",color=Forest)}})
     if(editing!=null && canEdit) AlertDialog(
-        onDismissRequest={editing=null},containerColor=AppSurface,shape=RoundedCornerShape(28.dp),title={Text("Edit participant",fontWeight=FontWeight.Bold)},
-        text={Column(verticalArrangement=Arrangement.spacedBy(9.dp)) {
+        onDismissRequest={editing=null},containerColor=MaterialTheme.colorScheme.surfaceContainerHigh,shape = MaterialTheme.shapes.extraLarge,title={Text("Edit participant",fontWeight=FontWeight.Bold)},
+        text={Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedTextField(editName,{editName=it},label={Text("Name")},singleLine=true,modifier=Modifier.fillMaxWidth())
             ParticipantChoice("Gender",editGender,listOf("brother" to "Brother","sister" to "Sister")){editGender=it}
             ParticipantChoice("Appointment",editAppointment,listOf("" to "","publisher" to "Publisher","ministerial" to "Ministerial servant","elder" to "Elder"),enabled=!editUnbaptized){editAppointment=it;if(it!="publisher")editUnbaptized=false}
             ParticipantChoice("Service status",editService,listOf("" to "","none" to "Publisher","regular_pioneer" to "Regular pioneer"),enabled=!editUnbaptized){editService=it;if(it=="regular_pioneer")editUnbaptized=false}
-            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("Unbaptized",fontSize=14.sp);Switch(checked=editUnbaptized,onCheckedChange={editUnbaptized=it;if(it){editAppointment="";editService=""}},colors=SwitchDefaults.colors(checkedThumbColor=Color.White,checkedTrackColor=Forest))}
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("Unbaptized",fontSize=14.sp);Switch(checked=editUnbaptized,onCheckedChange={editUnbaptized=it;if(it){editAppointment="";editService=""}},colors=SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.onPrimary, checkedTrackColor = Forest))}
         }},
         confirmButton={TextButton(onClick={editing?.let{old->if(editName.isNotBlank())onEdit(old,old.copy(name=editName.trim(),gender=editGender,appointment=editAppointment,service=editService,unbaptized=editUnbaptized))};editing=null}){Text("Save",color=Forest)}},
         dismissButton={TextButton(onClick={editing=null}){Text("Cancel",color=Forest)}}
     )
     if(showFilters) AlertDialog(
-        onDismissRequest={showFilters=false},containerColor=AppSurface,shape=RoundedCornerShape(28.dp),title={Text("Filter and sort",fontWeight=FontWeight.Bold)},
-        text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        onDismissRequest={showFilters=false},containerColor=MaterialTheme.colorScheme.surfaceContainerHigh,shape = MaterialTheme.shapes.extraLarge,title={Text("Filter and sort",fontWeight=FontWeight.Bold)},
+        text={Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ParticipantChoice("Status",statusFilter,listOf("active" to "Active","inactive" to "Inactive","all" to "All")){statusFilter=it}
             ParticipantChoice("Baptism",baptismFilter,listOf("all" to "All","baptized" to "Baptized","unbaptized" to "Unbaptized")){baptismFilter=it}
             ParticipantChoice("Brother / Sister",genderFilter,listOf("all" to "All","brother" to "Brother","sister" to "Sister")){genderFilter=it}
@@ -3293,7 +3297,7 @@ private fun ParticipantsScreen(
         confirmButton={TextButton(onClick={showFilters=false}){Text("Done",color=Forest)}},
         dismissButton={TextButton(onClick={statusFilter="active";baptismFilter="all";genderFilter="all";appointmentFilter="all";serviceFilter="all";sortBy="name"}){Text("Reset",color=Forest)}}
     )
-    if(deleteTarget!=null) AlertDialog(onDismissRequest={deleteTarget=null},containerColor=AppSurface,shape=RoundedCornerShape(28.dp),title={Text("Delete participant?")},text={Text("Permanent delete removes ${deleteTarget?.name} and their assignment history. This cannot be undone.")},confirmButton={TextButton(onClick={deleteTarget?.let(onDelete);deleteTarget=null}){Text("Delete",color=MaterialTheme.colorScheme.error)}},dismissButton={TextButton(onClick={deleteTarget=null}){Text("Cancel",color=Forest)}})
+    if(deleteTarget!=null) AlertDialog(onDismissRequest={deleteTarget=null},containerColor=MaterialTheme.colorScheme.surfaceContainerHigh,shape = MaterialTheme.shapes.extraLarge,title={Text("Delete participant?")},text={Text("Permanent delete removes ${deleteTarget?.name} and their assignment history. This cannot be undone.")},confirmButton={TextButton(onClick={deleteTarget?.let(onDelete);deleteTarget=null}){Text("Delete",color=MaterialTheme.colorScheme.error)}},dismissButton={TextButton(onClick={deleteTarget=null}){Text("Cancel",color=Forest)}})
 }
 
 private fun appointmentLabel(value: String) = when(value.lowercase()) { "" -> ""; "elder" -> "Elder"; "ministerial" -> "Ministerial"; "publisher" -> "Publisher"; else -> "Publisher" }
@@ -3304,9 +3308,9 @@ private fun genderLabel(value: String) = when(value.lowercase()) { "sister" -> "
 private fun ParticipantChoice(label: String, value: String, options: List<Pair<String,String>>, enabled: Boolean = true, onSelect: (String)->Unit) {
     var expanded by remember { mutableStateOf(false) }
     Column {
-        Text(label, color=Muted, fontSize=11.sp)
+        Text(label, color=Muted, fontSize = 12.sp)
         Box {
-            OutlinedButton(onClick={expanded=true}, enabled=enabled, modifier=Modifier.fillMaxWidth(), shape=RoundedCornerShape(16.dp), contentPadding=PaddingValues(horizontal=13.dp, vertical=9.dp)) {
+            OutlinedButton(onClick={expanded=true}, enabled=enabled, modifier=Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, contentPadding=PaddingValues(horizontal=13.dp, vertical=9.dp)) {
                 Text(options.firstOrNull { it.first==value }?.second?.ifBlank { " " } ?: options.first().second.ifBlank { " " }, color=Ink, modifier=Modifier.weight(1f))
             }
             DropdownMenu(expanded=expanded, onDismissRequest={expanded=false}, modifier=Modifier.background(AppSurface)) {
@@ -3318,8 +3322,8 @@ private fun ParticipantChoice(label: String, value: String, options: List<Pair<S
 
 @Composable
 private fun MetricCard(label: String, value: String, modifier: Modifier = Modifier) {
-    Card(modifier, shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = SurfaceContainer)) {
-        Column(Modifier.padding(12.dp)) { Text(label, color = Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold); Text(value, color = Forest, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 4.dp)) }
+    Card(modifier, shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = SurfaceContainer)) {
+        Column(Modifier.padding(12.dp)) { Text(label, color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold); Text(value, color = Forest, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 4.dp)) }
     }
 }
 
@@ -3342,12 +3346,12 @@ private fun HistoryScreen(
     var deleteTarget by remember { mutableStateOf<RemoteSchedule?>(null) }
     val sortedSchedules = remoteSchedules.sortedByDescending { scheduleStartDate(it.weekLabel) ?: LocalDate.MIN }
     PageColumn(modifier) {
-        PageHeading("SAVED SCHEDULES", "Schedule History", "Mga schedule na naka-save sa cloud database.")
+        PageHeading("History")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("${remoteSchedules.size} saved · newest first", color = Muted, fontSize = 12.sp)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick=onRefresh,modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(Icons.TwoTone.Refresh,contentDescription="Refresh schedule history",tint=Forest,modifier=Modifier.size(20.dp))}
-                if (canCreate) FilledTonalButton(onClick = onNew, shape = RoundedCornerShape(16.dp)) {
+                if (canCreate) FilledTonalButton(onClick = onNew, shape = MaterialTheme.shapes.medium) {
                     Icon(Icons.TwoTone.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("New schedule")
@@ -3356,13 +3360,13 @@ private fun HistoryScreen(
         }
         if (loading && remoteSchedules.isNotEmpty()) Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             CircularProgressIndicator(Modifier.size(15.dp),strokeWidth=2.dp,color=Forest)
-            Text("Refreshing · showing saved schedules",color=Muted,fontSize=11.sp)
+            Text("Refreshing · showing saved schedules",color=Muted,fontSize = 12.sp)
         }
-        if (error != null) Surface(color=MaterialTheme.colorScheme.errorContainer,shape=RoundedCornerShape(15.dp),modifier=Modifier.fillMaxWidth()) {
+        if (error != null) Surface(color=MaterialTheme.colorScheme.errorContainer,shape = MaterialTheme.shapes.medium,modifier=Modifier.fillMaxWidth()) {
             Row(Modifier.padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 Icon(Icons.TwoTone.ErrorOutline,contentDescription="History refresh failed",tint=MaterialTheme.colorScheme.onErrorContainer,modifier=Modifier.size(19.dp))
-                Text((if(remoteSchedules.isEmpty()) "Could not load history. " else "Showing saved history. ")+error,color=MaterialTheme.colorScheme.onErrorContainer,fontSize=11.sp,modifier=Modifier.weight(1f))
-                TextButton(onClick=onRefresh,contentPadding=PaddingValues(horizontal=6.dp)){Text("Retry",color=MaterialTheme.colorScheme.onErrorContainer,fontSize=11.sp)}
+                Text((if(remoteSchedules.isEmpty()) "Could not load history. " else "Showing saved history. ")+error,color=MaterialTheme.colorScheme.onErrorContainer,fontSize = 12.sp,modifier=Modifier.weight(1f))
+                TextButton(onClick=onRefresh,contentPadding=PaddingValues(horizontal=6.dp)){Text("Retry",color=MaterialTheme.colorScheme.onErrorContainer,fontSize = 12.sp)}
             }
         }
         M3Card {
@@ -3374,28 +3378,28 @@ private fun HistoryScreen(
                     Icon(Icons.TwoTone.CalendarMonth,contentDescription=null,tint=Forest,modifier=Modifier.size(28.dp))
                     Text("No saved schedules yet",fontWeight=FontWeight.SemiBold,fontSize=14.sp)
                     Text("Schedules saved to the cloud will appear here.",color=Muted,fontSize=12.sp)
-                    if(canCreate) FilledTonalButton(onClick=onNew,shape=RoundedCornerShape(14.dp)){Icon(Icons.TwoTone.Add,contentDescription=null,modifier=Modifier.size(17.dp));Spacer(Modifier.width(6.dp));Text("Create schedule")}
+                    if(canCreate) FilledTonalButton(onClick=onNew,shape = MaterialTheme.shapes.medium){Icon(Icons.TwoTone.Add,contentDescription=null,modifier=Modifier.size(17.dp));Spacer(Modifier.width(6.dp));Text("Create schedule")}
                 }
             }
             sortedSchedules.forEach { remote ->
-                HorizontalDivider(Modifier.padding(vertical = 6.dp), color = SurfaceContainer)
+                HorizontalDivider(Modifier.padding(vertical = 6.dp), color = MaterialTheme.colorScheme.outlineVariant)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(36.dp).background(ForestContainer, CircleShape), contentAlignment = Alignment.Center) {
                         Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp))
                     }
                     Column(Modifier.weight(1f).padding(start = 9.dp)) {
-                        Text(remote.weekLabel, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1)
-                        Text("${remote.reading} · ${remote.updatedAt.take(10)}", color = Muted, fontSize = 10.sp)
+                        Text(remote.weekLabel, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text("${remote.reading} · ${remote.updatedAt.take(10)}", color = Muted, style = MaterialTheme.typography.bodySmall)
                     }
                     TextButton(onClick = { onView(remote) }, contentPadding = PaddingValues(horizontal = 6.dp)) {
                         Icon(Icons.TwoTone.Visibility, contentDescription = null, tint = Forest, modifier = Modifier.size(17.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("View", fontSize = 11.sp, color = Forest)
+                        Text("View", fontSize = 12.sp, color = Forest)
                     }
                     if (isAdmin) {
                         var menu by remember(remote.id) { mutableStateOf(false) }
                         Box {
-                            IconButton(onClick = { menu = true }, modifier = Modifier.size(36.dp)) {
+                            IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp)) {
                                 Icon(Icons.TwoTone.MoreVert, contentDescription = "Schedule actions", tint = Forest)
                             }
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, modifier = Modifier.background(AppSurface)) {
@@ -3469,15 +3473,14 @@ private fun AccountsScreen(
         selectedRole = account.role.ifBlank { "viewer" }
     }
     PageColumn(modifier) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column { Text(if (isAdmin) "ACCOUNT & ADMINISTRATION" else "ACCOUNT", color = Forest, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.3.sp); Text("Account & Settings", fontSize = 25.sp, fontWeight = FontWeight.Bold) }
-            if (isAdmin) IconButton(onClick = onRefresh, enabled = !loading, modifier = Modifier.size(40.dp)) {
-                if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest)
-                else Icon(Icons.TwoTone.Refresh, contentDescription = "Refresh accounts", tint = Forest, modifier = Modifier.size(20.dp))
+        PageHeading("Settings") {
+            if (isAdmin) IconButton(onClick = onRefresh, enabled = !loading) {
+                if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                else Icon(Icons.TwoTone.Refresh, contentDescription = "Refresh accounts", tint = Forest)
             }
         }
-        Text(if (isAdmin) "Manage accounts and your app preferences." else "Manage your profile and app preferences.", color = Muted, fontSize = 12.sp)
         M3Card {
+            Text("Preferences", style = MaterialTheme.typography.titleMedium)
             Surface(
                 color = ForestContainer,
                 shape = RoundedCornerShape(12.dp),
@@ -3489,13 +3492,12 @@ private fun AccountsScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Icon(if (darkMode) Icons.TwoTone.DarkMode else Icons.TwoTone.LightMode, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
-                    Text(if (darkMode) "Dark mode" else "Light mode", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                    Text("Dark mode", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Medium, fontSize = 13.sp)
                     Switch(checked = darkMode, onCheckedChange = { checked -> if (checked != darkMode) onToggleTheme() })
                 }
             }
             BiometricLockPreference(appLock)
-        }
-        M3Card {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.TwoTone.ManageAccounts, contentDescription = null, tint = Forest, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.width(9.dp))
@@ -3506,68 +3508,75 @@ private fun AccountsScreen(
                 TextButton(onClick = { onFontScaleChange(1f) }, enabled = fontScale != 1f) { Text("Reset", color = Forest) }
             }
             Slider(value = fontScale, onValueChange = onFontScaleChange, valueRange = 0.85f..1.35f, steps = 9)
-            Text("Applies across the app and is saved on this device.", color = Muted, fontSize = 11.sp)
+            Text("Applies across the app and is saved on this device.", color = Muted, fontSize = 12.sp)
         }
         M3Card {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(Icons.TwoTone.NotificationsActive, contentDescription = null, tint = Forest, modifier = Modifier.size(22.dp))
                 Column(Modifier.weight(1f)) {
                     Text("Test notification", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    Text("Send an FCM test to this signed-in account.", color = Muted, fontSize = 11.sp)
+                    Text("Check that this account can receive push notifications.", color = Muted, style = MaterialTheme.typography.bodySmall)
                 }
             }
-            OutlinedButton(onClick = onTestNotification, enabled = !testNotificationBusy, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = onTestNotification, enabled = !testNotificationBusy,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.medium) {
                 if (testNotificationBusy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                 else Icon(Icons.TwoTone.NotificationsActive, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(if (testNotificationBusy) "Sending…" else "Send test notification")
             }
-            if (testNotificationFeedback != null) Text(testNotificationFeedback, color = Muted, fontSize = 11.sp)
+            if (testNotificationFeedback != null) Text(testNotificationFeedback, color = Muted, fontSize = 12.sp)
         }
         if (isAdmin) M3Card {
+            Text("Accounts", style = MaterialTheme.typography.titleMedium)
             if (loading && accounts.isEmpty()) Box(Modifier.fillMaxWidth().padding(22.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Forest, modifier = Modifier.size(24.dp), strokeWidth = 2.dp) }
             if (error != null) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
             if (accounts.isEmpty() && !loading && error == null) Text("No accounts available.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp))
-            filtered.chunked(3).forEach { rowAccounts ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    rowAccounts.forEach { account ->
-                        Column(
-                            Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).clickable { selectedAccount = account }.padding(vertical = 10.dp, horizontal = 3.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(5.dp)
-                        ) {
-                            Box {
-                                AccountPhotoAvatar(account, 68.dp)
-                                if (account.status == "requested") Box(Modifier.align(Alignment.TopEnd).size(11.dp).background(MaterialTheme.colorScheme.error, CircleShape))
-                                if (account.role.equals("admin", true)) {
-                                    Surface(Modifier.align(Alignment.BottomEnd).size(24.dp), shape = CircleShape, color = ForestContainer, border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-                                        Box(contentAlignment = Alignment.Center) { Icon(Icons.TwoTone.AdminPanelSettings, contentDescription = "Administrator", tint = Forest, modifier = Modifier.size(15.dp)) }
-                                    }
-                                } else if (account.status.equals("active", true) || account.status.equals("disabled", true)) {
-                                    val active = account.status.equals("active", true)
-                                    Surface(
-                                        Modifier.align(Alignment.BottomEnd).size(24.dp),
-                                        shape = CircleShape,
-                                        color = if (active) ForestContainer else MaterialTheme.colorScheme.errorContainer,
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                if (active) Icons.TwoTone.CheckCircle else Icons.TwoTone.Block,
-                                                contentDescription = if (active) "Active" else "Disabled",
-                                                tint = if (active) Forest else MaterialTheme.colorScheme.error,
-                                                modifier = Modifier.size(15.dp)
-                                            )
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val columns = (maxWidth / 100.dp).toInt().coerceIn(2, 7)
+                Column {
+                    filtered.chunked(columns).forEach { rowAccounts ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            rowAccounts.forEach { account ->
+                                Column(
+                                    Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).clickable(role = Role.Button, onClickLabel = "Open account details") { selectedAccount = account }
+                                        .semantics { contentDescription = account.displayName.ifBlank { account.username } }.padding(vertical = 10.dp, horizontal = 3.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Box {
+                                        AccountPhotoAvatar(account, 68.dp)
+                                        if (account.status == "requested") Box(Modifier.align(Alignment.TopEnd).size(11.dp).background(MaterialTheme.colorScheme.error, CircleShape))
+                                        if (account.role.equals("admin", true)) {
+                                            Surface(Modifier.align(Alignment.BottomEnd).size(24.dp), shape = CircleShape, color = ForestContainer, border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                                                Box(contentAlignment = Alignment.Center) { Icon(Icons.TwoTone.AdminPanelSettings, contentDescription = "Administrator", tint = Forest, modifier = Modifier.size(15.dp)) }
+                                            }
+                                        } else if (account.status.equals("active", true) || account.status.equals("disabled", true)) {
+                                            val active = account.status.equals("active", true)
+                                            Surface(
+                                                Modifier.align(Alignment.BottomEnd).size(24.dp),
+                                                shape = CircleShape,
+                                                color = if (active) ForestContainer else MaterialTheme.colorScheme.errorContainer,
+                                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(
+                                                        if (active) Icons.TwoTone.CheckCircle else Icons.TwoTone.Block,
+                                                        contentDescription = if (active) "Active" else "Disabled",
+                                                        tint = if (active) Forest else MaterialTheme.colorScheme.error,
+                                                        modifier = Modifier.size(15.dp)
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
+                            repeat(columns - rowAccounts.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
-                    repeat(3 - rowAccounts.size) { Spacer(Modifier.weight(1f)) }
-                }
             }
-            if (filtered.isEmpty() && accounts.isNotEmpty()) Text("No accounts available.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(vertical = 10.dp))
+            }
         }
     }
     selectedAccount?.let { selected ->
@@ -3578,7 +3587,7 @@ private fun AccountsScreen(
         val statusName = when (account.status.lowercase()) { "requested" -> "Requested"; "active" -> "Active"; "disabled" -> "Disabled"; else -> account.status.replaceFirstChar { it.uppercase() } }
         val isSelf = account.username.equals(currentUsername, true) || account.role == "admin"
         Dialog(onDismissRequest = { selectedAccount = null }) {
-            Surface(color = AppSurface, shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth()) {
+            Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = MaterialTheme.shapes.extraLarge, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.imePadding().padding(20.dp).heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.78f).dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         AccountPhotoAvatar(account, 64.dp)
@@ -3586,18 +3595,16 @@ private fun AccountsScreen(
                             Text(account.displayName.ifBlank { account.username }, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                             Text("@" + account.username, color = Muted, fontSize = 12.sp)
                         }
-                        IconButton(onClick = { selectedAccount = null }, modifier = Modifier.size(40.dp)) { Icon(Icons.TwoTone.Close, contentDescription = "Close account details", tint = Forest, modifier = Modifier.size(20.dp)) }
+                        IconButton(onClick = { selectedAccount = null }, modifier = Modifier.size(48.dp)) { Icon(Icons.TwoTone.Close, contentDescription = "Close account details", tint = Forest, modifier = Modifier.size(20.dp)) }
                     }
-                    HorizontalDivider(color = SurfaceContainer)
-                    AccountInfoLine("Name", account.displayName.ifBlank { account.username })
-                    AccountInfoLine("Username", "@" + account.username)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     AccountInfoLine("Role", roleName)
                     AccountInfoLine("Status", statusName, if (account.status == "requested") MaterialTheme.colorScheme.error else Forest)
                     if (account.status == "active" && account.role != "admin" && !isSelf) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("Linked participant", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             Box {
-                                OutlinedButton(onClick = { participantMenuExpanded = true }, enabled = !loading, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                                OutlinedButton(onClick = { participantMenuExpanded = true }, enabled = !loading, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
                                     Text(
                                         linkParticipants.firstOrNull { it.id == linkedParticipantId }?.name
                                             ?: if (account.memberId == null && linkedParticipantId == 0) "Select a participant" else "Choose participant",
@@ -3626,17 +3633,17 @@ private fun AccountsScreen(
                                 enabled = !loading && (linkedParticipantId != (account.memberId ?: 0)),
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = ButtonDefaults.buttonColors(containerColor = Forest),
-                                shape = RoundedCornerShape(14.dp)
-                            ) { Text("Save participant link", color = Color.White, fontSize = 12.sp) }
+                                shape = MaterialTheme.shapes.medium
+                            ) { Text("Save participant link") }
                         }
                     }
                     if (account.status == "requested") {
-                        Text("Message for Administrator", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                        Surface(color = SurfaceContainer, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                        Text("Message for Administrator", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Surface(color = SurfaceContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
                             Text(account.requestNote.ifBlank { "No message was included with this request." }, color = Ink, fontSize = 12.sp, modifier = Modifier.padding(12.dp))
                         }
                     }
-                    OutlinedButton(onClick = { onUploadPhoto(account) }, modifier = Modifier.fillMaxWidth().height(42.dp), shape = RoundedCornerShape(16.dp)) {
+                    OutlinedButton(onClick = { onUploadPhoto(account) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.medium) {
                         Icon(Icons.TwoTone.AddAPhoto, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(if (account.photoDataUrl.isBlank()) "Upload account photo" else "Change account photo", color = Forest, fontSize = 12.sp)
@@ -3658,13 +3665,13 @@ private fun AccountsScreen(
                                     Text("Tool access", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                                     Text(
                                         if (account.role == "viewer") "Always read-only" else "Choose what this account can do",
-                                        color = Muted, fontSize = 11.sp
+                                        color = Muted, fontSize = 12.sp
                                     )
                                 }
                             }
                             Surface(
                                 color = SurfaceContainer.copy(alpha = 0.32f),
-                                shape = RoundedCornerShape(20.dp),
+                                shape = MaterialTheme.shapes.medium,
                                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                             ) {
                                 Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -3680,7 +3687,7 @@ private fun AccountsScreen(
                                         val selectedMode = toolAccessDraft[key]
                                         Surface(
                                             color = AppSurface.copy(alpha = 0.78f),
-                                            shape = RoundedCornerShape(15.dp),
+                                            shape = MaterialTheme.shapes.medium,
                                             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
                                         ) {
                                             Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -3690,7 +3697,7 @@ private fun AccountsScreen(
                                                     Text(
                                                         when (selectedMode) { "hidden" -> "Hidden"; "view" -> "View"; "edit" -> "Edit"; else -> "Not set" },
                                                         color = if (selectedMode == null) Muted else Forest,
-                                                        fontSize = 10.sp,
+                                                        fontSize = 12.sp,
                                                         fontWeight = FontWeight.SemiBold
                                                     )
                                                 }
@@ -3700,11 +3707,11 @@ private fun AccountsScreen(
                                                         FilterChip(
                                                             selected = selectedMode == mode,
                                                             onClick = { toolAccessDraft = toolAccessDraft + (key to mode) },
-                                                            label = { Text(caption, fontSize = 10.sp, maxLines = 1) },
+                                                            label = { Text(caption, fontSize = 12.sp, maxLines = 1) },
                                                             modifier = Modifier.weight(1f).heightIn(min = 36.dp),
                                                             shape = RoundedCornerShape(12.dp),
                                                             leadingIcon = if (selectedMode == mode) ({
-                                                                Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                                Icon(Icons.TwoTone.Check, contentDescription = null, modifier = Modifier.size(14.dp))
                                                             }) else null
                                                         )
                                                     }
@@ -3719,7 +3726,7 @@ private fun AccountsScreen(
                                 onClick = { onUpdateToolAccess(account, toolAccessDraft) },
                                 enabled = toolAccessDraft != account.toolAccess,
                                 modifier = Modifier.fillMaxWidth().height(46.dp),
-                                shape = RoundedCornerShape(15.dp),
+                                shape = MaterialTheme.shapes.medium,
                                 colors = ButtonDefaults.buttonColors(containerColor = Forest)
                             ) {
                                 Icon(Icons.TwoTone.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -3729,7 +3736,7 @@ private fun AccountsScreen(
                         }
                     }
                     if (!isSelf) {
-                        HorizontalDivider(color = SurfaceContainer)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         when (account.status) {
                             "requested" -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 AccountActionButton("Approve", Icons.TwoTone.CheckCircle, Forest, Modifier.weight(1f)) { beginAction(account, "approve") }
@@ -3760,7 +3767,7 @@ private fun AccountsScreen(
         val needsRole = selectedAction == "approve" || selectedAction == "change_role"
         val confirmOnly = selectedAction == "decline" || selectedAction == "disable" || selectedAction == "enable" || selectedAction == "delete"
         AlertDialog(
-            onDismissRequest = { actionTarget = null }, containerColor = AppSurface, shape = RoundedCornerShape(28.dp),
+            onDismissRequest = { actionTarget = null }, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, shape = MaterialTheme.shapes.extraLarge,
             title = { Text(when (selectedAction) { "approve" -> "Approve account"; "reset" -> "Reset password"; "change_role" -> "Change access role"; "decline" -> "Decline request?"; "disable" -> "Disable account?"; "delete" -> "Delete account permanently?"; else -> "Enable account?" }, fontWeight = FontWeight.Bold) },
             text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text((actionTarget?.displayName ?: "") + " · @" + (actionTarget?.username ?: ""), color = Muted, fontSize = 12.sp)
@@ -3797,10 +3804,10 @@ private fun AccountInfoLine(label: String, value: String, tint: Color = Muted) {
 
 @Composable
 private fun AccountActionButton(label: String, icon: ImageVector, tint: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    TextButton(onClick = onClick, modifier = modifier.heightIn(min = 42.dp), contentPadding = PaddingValues(horizontal = 5.dp, vertical = 6.dp)) {
+    TextButton(onClick = onClick, modifier = modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 5.dp, vertical = 6.dp)) {
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(19.dp))
         Spacer(Modifier.width(5.dp))
-        Text(label, color = tint, fontSize = 11.sp, maxLines = 1)
+        Text(label, color = tint, style = MaterialTheme.typography.labelLarge)
     }
 }
 
