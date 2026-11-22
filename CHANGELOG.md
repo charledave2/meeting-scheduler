@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.21 — 2026-11-23
+
+- Recover from unusable Android Keystore keys during sign-in. If secure storage is unavailable, keep the session in memory until Android closes the app process.
+- Improve typography, navigation, and schedule previews on phones and tablets.
+
 ## v0.45.20 — 2026-11-21
 
 - Fix Schedule History sorting for weeks that cross into January, including Dec 28 – Jan 3, 2027.

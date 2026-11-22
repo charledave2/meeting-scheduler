@@ -3,6 +3,7 @@ package com.example.meetingscheduler
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import android.util.Log
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -11,6 +12,7 @@ import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.security.KeyStore
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
 import java.time.format.DateTimeFormatter
@@ -18,6 +20,8 @@ import java.util.Locale
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 internal data class ApiIdentity(val name: String, val username: String, val role: String, val mustChangePassword: Boolean, val photoDataUrl: String = "", val toolAccess: Map<String, String> = emptyMap())
 internal data class WorkbookImport(val link: String, val meta: JSONObject, val parts: List<JSONObject>)
@@ -263,7 +267,6 @@ internal class SchedulerApi(context: Context) {
         }
         try {
             if (body != null) connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            if (captureCookie) connection.getHeaderField("Set-Cookie")?.substringBefore(';')?.takeIf { it.startsWith("meeting_session=") }?.let(vault::write)
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
@@ -271,6 +274,14 @@ internal class SchedulerApi(context: Context) {
             if (code !in 200..299) {
                 if (code == 401) vault.clear()
                 throw IllegalStateException(json.optString("error").ifBlank { "Server error ($code)." })
+            }
+            if (captureCookie) {
+                connection.headerFields.entries.asSequence()
+                    .filter { it.key.equals("Set-Cookie", ignoreCase = true) }
+                    .flatMap { it.value.asSequence() }
+                    .map { it.substringBefore(';') }
+                    .firstOrNull { it.startsWith("meeting_session=") && it.substringAfter('=').isNotBlank() }
+                    ?.let(vault::write)
             }
             return json
         } finally { connection.disconnect() }
@@ -290,43 +301,88 @@ internal class SchedulerApi(context: Context) {
 
 private class SessionVault(context: Context) {
     private val prefs = context.getSharedPreferences("scheduler_api_session", Context.MODE_PRIVATE)
-    private val fallbackPrefs = context.getSharedPreferences("scheduler_api_session_key_fallback", Context.MODE_PRIVATE)
-    private val alias = "meeting_scheduler_session_v1"
-    fun read(): String? = runCatching {
-        val encrypted = prefs.getString("cookie", null) ?: return null
-        val bytes = Base64.decode(encrypted, Base64.NO_WRAP)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, key(), javax.crypto.spec.GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
-        String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
-    }.getOrNull()
-    fun write(value: String) {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, key())
-        val encrypted = cipher.iv + cipher.doFinal(value.toByteArray(Charsets.UTF_8))
-        prefs.edit().putString("cookie", Base64.encodeToString(encrypted, Base64.NO_WRAP)).apply()
+    private val legacyPrefs = context.getSharedPreferences("scheduler_api_session_key_fallback", Context.MODE_PRIVATE)
+
+    // Requests and FCM can use separate SchedulerApi instances in the same process.
+    companion object {
+        private const val ALIAS = "meeting_scheduler_session_v1"
+        private const val TRANSFORMATION = "AES/GCM/NoPadding"
+        private const val NONCE_BYTES = 12
+        private val lock = Any()
+        private var inMemoryCookie: String? = null
     }
-    fun clear() { prefs.edit().remove("cookie").apply() }
-    private fun key(): SecretKey {
-        val savedFallback = fallbackPrefs.getString("aes_key", null)
-        if (savedFallback != null) runCatching {
-            val bytes = Base64.decode(savedFallback, Base64.NO_WRAP)
-            if (bytes.size == 32) return javax.crypto.spec.SecretKeySpec(bytes, KeyProperties.KEY_ALGORITHM_AES)
-        }
+
+    fun read(): String? = synchronized(lock) {
+        inMemoryCookie?.let { return@synchronized it }
+        val encrypted = prefs.getString("cookie", null) ?: return@synchronized null
         try {
-            val store = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-            (store.getKey(alias, null) as? SecretKey)?.let { return it }
-            val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-            generator.init(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
-            return generator.generateKey()
+            val bytes = Base64.decode(encrypted, Base64.NO_WRAP)
+            val legacyKey = legacyPrefs.getString("aes_key", null)?.let { encoded ->
+                Base64.decode(encoded, Base64.NO_WRAP).takeIf { it.size == 32 }
+                    ?.let { SecretKeySpec(it, KeyProperties.KEY_ALGORITHM_AES) }
+            }
+            val key = legacyKey ?: keyStore().getKey(ALIAS, null) as? SecretKey ?: return@synchronized null
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, bytes.copyOfRange(0, NONCE_BYTES)))
+            val cookie = String(cipher.doFinal(bytes.copyOfRange(NONCE_BYTES, bytes.size)), Charsets.UTF_8)
+            if (legacyKey != null) write(cookie)
+            cookie
         } catch (_: Exception) {
-            // Some Android devices cannot provision AndroidKeyStore AES keys. Keep the session encrypted
-            // with a per-install key held in the app-private sandbox so sign-in can still complete.
-            val bytes = ByteArray(32)
-            java.security.SecureRandom().nextBytes(bytes)
-            fallbackPrefs.edit().putString("aes_key", Base64.encodeToString(bytes, Base64.NO_WRAP)).commit()
-            return javax.crypto.spec.SecretKeySpec(bytes, KeyProperties.KEY_ALGORITHM_AES)
+            null
         }
+    }
+
+    fun write(cookie: String) {
+        synchronized(lock) {
+            val encrypted = tryEncrypt(cookie, replaceKey = false)
+                ?: tryEncrypt(cookie, replaceKey = true)
+            if (encrypted == null) {
+                // A successful sign-in can continue without writing the session to disk.
+                clearStoredCookie()
+                inMemoryCookie = cookie
+            } else {
+                prefs.edit().putString("cookie", encrypted).apply()
+                legacyPrefs.edit().remove("aes_key").apply()
+                inMemoryCookie = null
+            }
+        }
+    }
+
+    fun clear() {
+        synchronized(lock) {
+            inMemoryCookie = null
+            clearStoredCookie()
+        }
+    }
+
+    private fun clearStoredCookie() {
+        prefs.edit().remove("cookie").apply()
+        legacyPrefs.edit().remove("aes_key").apply()
+    }
+
+    private fun keyStore(): KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+
+    private fun tryEncrypt(cookie: String, replaceKey: Boolean): String? = try {
+        val store = keyStore()
+        if (replaceKey) store.deleteEntry(ALIAS)
+        val key = (store.getKey(ALIAS, null) as? SecretKey) ?: generateKey()
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, key)
+        val encrypted = cipher.iv + cipher.doFinal(cookie.toByteArray(Charsets.UTF_8))
+        Base64.encodeToString(encrypted, Base64.NO_WRAP)
+    } catch (error: Exception) {
+        Log.w("SchedulerSession", "Secure session storage unavailable (${error.javaClass.simpleName}).")
+        null
+    }
+
+    private fun generateKey(): SecretKey {
+        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        generator.init(
+            KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .build()
+        )
+        return generator.generateKey()
     }
 }
-
