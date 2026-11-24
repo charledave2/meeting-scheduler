@@ -1,7 +1,12 @@
-Warning: truncated output (original token count: 4859)
-Total output lines: 362
+Warning: truncated output (original token count: 4908)
+Total output lines: 367
 
 # Changelog
+
+## v0.45.27 — 2026-11-24
+
+- Show assignment completion progress and the exact required slots still missing.
+- Keep Group optional and prevent cloud saves until required assignments are complete.
 
 ## v0.45.26 — 2026-11-24
 
@@ -115,89 +120,7 @@ Total output lines: 362
 - Show visible progress and success or error feedback while saving schedules, importing workbooks, and preparing exports.
 - Disable repeat actions while a save or export is in progress.
 
-## v0.45.4 — 2026-11-13
-
-- Use the bundled Google Sans font in both schedule preview and PNG export.
-- Remove the “Nabuo sa JW Meeting Scheduler” footer from schedule exports.
-- Keep PNG output at a lossless 2480 × 3508 pixels with 300 DPI metadata.
-- Add a subtle forest-green abstract design to the Home Page greeting card.
-
-## v0.45.3 — 2026-11-12
-
-- Fixed shared PNG content scaling so the schedule fills the fixed A4 canvas across device densities.
-- Kept the export font, page layout, dimensions, and preview rendering unchanged.
-
-## v0.45.2 — 2026-11-12
-
-- Fixed PNG export rendering by attaching the temporary high-resolution WebView to the Activity window before capture, then removing it after rendering.
-- Kept the fixed A4/300 DPI PNG output and chooser success popup behavior.
-
-## v0.45.1 — 2026-11-12
-
-- Fixed PNG sharing so the generated image is granted correctly to apps in the Android Sharesheet.
-- Routed PNG and Export Text through a tracked chooser result and show a success popup after the user returns from a selected share target.
-- Kept the success popup hidden when the Sharesheet is cancelled without choosing an app.
-
-## v0.45.0 — 2026-11-12
-
-- Standardized schedule PNG exports to a fixed A4 portrait canvas at 300 DPI (2480 × 3508) on phones and tablets.
-- Rendered exports with a pinned, SHA-256-verified Google Sans Flex font so typography no longer falls back differently by device and works offline.
-- Kept export rendering separate from the on-screen preview.
-
-
-## v0.44.1 — 2026-11-12
-
-- Removed the theme switch from the profile popover; theme selection remains in Account & Settings.
-- Placed Save and Sign out side by side at the bottom as compact, label-free icons.
-- Removed the sign-out icon’s solid background and kept its icon in the theme’s error color.
-
-## v0.44.0 — 2026-11-12
-
-- Replaced the centered profile dialog with a compact popover anchored beside the profile shortcut.
-- Reduced profile name field and control sizes; save and sign-out are icon-only, with sign-out highlighted in the theme’s error color.
-- Applied the forest-green Material You palette to profile controls and kept the theme switch compact.
-- Added a custom animated for…859 tokens truncated…7 compatibility.
-- Corrected Android-version-specific theme resources and regenerated the backend dependency lockfile.
-- Updated Next.js and its matching ESLint configuration to address dependency security advisories.
-
-
-## v0.38.1 — 2026-11-10
-
-- Refreshed assignment choices immediately after each selection so a chosen participant disappears from other slots.
-- Rechecked for available app updates whenever the app starts or returns to the foreground; dismissing the prompt is temporary.
-
-
-## v0.38.0 — 2026-11-10
-
-- Prevented a participant from occupying multiple assignment slots in the same schedule.
-- Removed legacy duplicate assignments when local and cloud schedules are loaded, then saved the cleaned assignments.
-
-
-## v0.37.9 — 2026-11-10
-
-- Styled the date picker’s Cancel and Select actions with the forest-green palette in both themes.
-- Reduced the assignment search field height and visual weight.
-- Hid brothers already assigned elsewhere in the schedule from other participant choices while keeping each field’s current selection visible.
-- Added compact Active and Disabled icon badges to account photos, matching the Administrator badge style.
-
-
-## v0.37.8 — 2026-11-10
-
-- Added a compact, searchable participant picker anchored to each assignment field.
-- Hid rotation counts and rotation warnings for elders and ministerial servants, who are exempt from rotation.
-- Added Active and Disabled badges to non-administrator accounts.
-- Restyled the in-app update dialog with a two-tone icon, download progress, and an in-app APK install handoff.
-- Applied the app’s forest-green palette to the Workbook date picker in light and dark themes.
-
-
-## v0.37.7 — 2026-11-10
-
-- Matched the Home Page upcoming meeting preview height to the portrait Preview & Export schedule viewport.
-- Redesigned account tool access controls as compact, clearly labeled permission cards with selected-state indicators.
-
-## v0.37.6 — 2026-11-10
-
-- Added automatic checks for newer public GitHub releases when the app opens.
+## v0.45.4 — 2026-…1908 tokens truncated…itHub releases when the app opens.
 - Added an in-app update prompt that downloads the signed APK through Android Downloads and hands installation to Android.
 
 ## v0.37.5 — 2026-11-09

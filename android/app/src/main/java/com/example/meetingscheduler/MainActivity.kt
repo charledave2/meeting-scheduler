@@ -398,6 +398,35 @@ private data class Assignment(
     val assistant: String = "", val secondaryAssignee: String = "", val secondaryAssistant: String = "",
     val hasAssistant: Boolean = false, val hasSecondary: Boolean = false, val hasSecondaryAssistant: Boolean = false
 )
+private fun missingRequiredAssignmentSlots(
+    parts: List<Assignment>, chairman: String, openingPrayer: String, adviser: String
+): List<String> = buildList {
+    if (chairman.isBlank()) add("Chairman")
+    if (openingPrayer.isBlank()) add("Opening prayer")
+    if (adviser.isBlank()) add("Second Hall adviser")
+    parts.forEachIndexed { index, part ->
+        val title = part.title.trim().replace(Regex("\\s+"), " ").ifBlank { "Part ${index + 1}" }
+            .let { if (it.length > 54) it.take(51).trimEnd() + "…" else it }
+        val lowerTitle = part.title.lowercase(Locale.ROOT)
+        val bibleStudy = lowerTitle.contains("pag-aaral ng kongregasyon sa bibliya")
+        val bibleReading = lowerTitle.contains("pagbabasa ng bibliya")
+        val what = lowerTitle.contains("ano ang sasabihin mo")
+        val dualHall = (part.section == "ministry" && !what) || bibleReading
+        val qualified = !what && (part.section == "living" || (part.section == "treasures" && !bibleReading))
+        val mainRole = when {
+            bibleStudy -> "Conductor"
+            dualHall -> "Main Hall"
+            what -> "Brother"
+            qualified -> "Qualified brother"
+            else -> "Participant"
+        }
+        if (part.person.isBlank()) add("$title · $mainRole")
+        if (part.hasAssistant && part.assistant.isBlank()) add("$title · ${if (bibleStudy) "Reader" else if (dualHall) "Main Hall assistant" else "Assistant"}")
+        if (part.hasSecondary && part.secondaryAssignee.isBlank()) add("$title · Second Hall")
+        if (part.hasSecondaryAssistant && part.secondaryAssistant.isBlank()) add("$title · Second Hall assistant")
+    }
+}
+
 private fun deduplicateAssignmentParticipants(parts: List<Assignment>): List<Assignment> {
     val assigned = mutableSetOf<String>()
     fun keepFirst(name: String): String {
@@ -1027,6 +1056,13 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
     fun saveToCloud() {
         if (!signedIn || identityRole != "admin") {
             toastMessage = "Admin account lang ang puwedeng mag-save sa cloud"
+            return
+        }
+        val missingSlots = missingRequiredAssignmentSlots(parts, chairman, openingPrayer, adviser)
+        if (missingSlots.isNotEmpty()) {
+            val message = "Complete the ${missingSlots.size} remaining required assignment slot${if (missingSlots.size == 1) "" else "s"} before saving."
+            cloudSaveFeedback = message to false
+            toastMessage = message
             return
         }
         if (cloudSaveBusy) return
@@ -2615,6 +2651,10 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
 @Composable
 private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, participants: List<Participant>, rotation: Map<Int, ParticipantRotation>, rotationBusy: Boolean, rotationError: String?, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, isAdmin:Boolean, readOnly:Boolean, canContinueExport:Boolean, cloudSaveBusy:Boolean, cloudSaveFeedback:Pair<String,Boolean>?, onRole:(String,String)->Unit, onAssign: (Int,String,String) -> Unit, onSaveCloud: () -> Unit, onContinueExport: () -> Unit) {
     val eligible = participants.filter { it.enabled }
+    val missingSlots = missingRequiredAssignmentSlots(parts, chairman, openingPrayer, adviser)
+    val totalRequiredSlots = 3 + parts.sumOf { 1 + (if (it.hasAssistant) 1 else 0) + (if (it.hasSecondary) 1 else 0) + (if (it.hasSecondaryAssistant) 1 else 0) }
+    val completedRequiredSlots = (totalRequiredSlots - missingSlots.size).coerceAtLeast(0)
+    val completionProgress = if (totalRequiredSlots == 0) 1f else completedRequiredSlots.toFloat() / totalRequiredSlots
     val selectedNames = buildSet {
         listOf(chairman, openingPrayer, adviser).forEach { name ->
             name.trim().takeIf { it.isNotEmpty() }?.let { add(it.lowercase(Locale.ROOT)) }
@@ -2627,6 +2667,48 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, parti
     }
     PageColumn(modifier) {
         PageHeading("Assignments")
+        Card(
+            shape = MaterialTheme.shapes.medium,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Icon(
+                        if (missingSlots.isEmpty()) Icons.TwoTone.CheckCircle else Icons.TwoTone.ErrorOutline,
+                        contentDescription = null,
+                        tint = if (missingSlots.isEmpty()) Forest else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(21.dp)
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (missingSlots.isEmpty()) "Assignments complete" else "${missingSlots.size} required slots remaining",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text("$completedRequiredSlots of $totalRequiredSlots required slots filled · Group is optional", color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
+                    }
+                }
+                LinearProgressIndicator(
+                    progress = { completionProgress.coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = if (missingSlots.isEmpty()) Forest else MaterialTheme.colorScheme.error,
+                    trackColor = MaterialTheme.colorScheme.outlineVariant
+                )
+                if (missingSlots.isNotEmpty()) {
+                    Text("Still needed", color = Muted, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        missingSlots.forEach { slot ->
+                            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                Text("•", color = MaterialTheme.colorScheme.error, fontSize = 13.sp, lineHeight = 17.sp)
+                                Text(slot, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, lineHeight = 16.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
         if (rotationBusy || rotationError != null) {
             Text(
                 if (rotationBusy) "Loading participant rotation for this week…" else "Could not load participant rotation: $rotationError",
@@ -2653,11 +2735,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, parti
         }
         Card(shape = MaterialTheme.shapes.medium, colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant), border=androidx.compose.foundation.BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
             Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Meeting parts", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                    val done = parts.count { it.person.isNotBlank() }
-                    Text("$done of ${parts.size} assigned", color = Muted, style = MaterialTheme.typography.labelMedium)
-                }
+                Text("Meeting parts", style = MaterialTheme.typography.titleMedium)
                 Column(Modifier.fillMaxWidth().padding(top=6.dp)) {
                     parts.forEachIndexed { index, part ->
                         if(index>0) HorizontalDivider(Modifier.padding(vertical=6.dp), color = MaterialTheme.colorScheme.outlineVariant)
@@ -2669,7 +2747,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, parti
         if (isAdmin && !readOnly) {
             OutlinedButton(
                 onClick = onSaveCloud,
-                enabled = !cloudSaveBusy,
+                enabled = !cloudSaveBusy && missingSlots.isEmpty(),
                 modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
                 shape = MaterialTheme.shapes.medium,
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 13.dp)
