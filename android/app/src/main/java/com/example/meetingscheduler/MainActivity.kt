@@ -37,6 +37,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -128,6 +129,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
@@ -254,6 +256,49 @@ private val LightPalette = lightColorScheme(
     surfaceContainerHighest = Color(0xFFDDE4D9),
     inverseSurface = Color(0xFF293127), inverseOnSurface = Color(0xFFF1F4EC), inversePrimary = Color(0xFFA8C3A4)
 )
+
+private enum class AppPaletteStyle(
+    val label: String,
+    val primaryLight: Color, val primaryDark: Color,
+    val containerLight: Color, val containerDark: Color,
+    val secondaryLight: Color, val secondaryDark: Color,
+    val tertiaryLight: Color, val tertiaryDark: Color,
+    val swatches: List<Color>
+) {
+    TONAL_SPOT("Tonal Spot", Color(0xFF28634D), Color(0xFFA8C3A4), Color(0xFFDCE9DD), Color(0xFF304536), Color(0xFF566858), Color(0xFFB6C7B4), Color(0xFF5C6542), Color(0xFFC3C7A0), listOf(Color(0xFF80CBC4), Color(0xFFB7D0C8), Color(0xFF9EC4E1), Color(0xFF38586B), Color(0xFF00574B))),
+    NEUTRAL("Neutral", Color(0xFF52615D), Color(0xFFBBCAC4), Color(0xFFDCE5E0), Color(0xFF394541), Color(0xFF56635F), Color(0xFFC0CCC7), Color(0xFF58666B), Color(0xFFC1CED0), listOf(Color(0xFFDCE5E0), Color(0xFFC0CCC7), Color(0xFFB7D0C8), Color(0xFF53625E), Color(0xFF394541))),
+    VIBRANT("Vibrant", Color(0xFF006B60), Color(0xFF59DCC8), Color(0xFFB5F1E8), Color(0xFF005047), Color(0xFF386964), Color(0xFFA8D8D1), Color(0xFF365F68), Color(0xFFA6D7E0), listOf(Color(0xFF00D3B5), Color(0xFF9ED9D3), Color(0xFF86D1DA), Color(0xFF00545A), Color(0xFF006B60))),
+    EXPRESSIVE("Expressive", Color(0xFF8A4D00), Color(0xFFFFB870), Color(0xFFFFDDB9), Color(0xFF653900), Color(0xFF725A42), Color(0xFFE7C7A1), Color(0xFF35636A), Color(0xFFA6DDE3), listOf(Color(0xFFFFB870), Color(0xFFA9CFE0), Color(0xFF8AD1D3), Color(0xFF00545A), Color(0xFF8A4D00)));
+
+    fun colorScheme(dark: Boolean): ColorScheme {
+        val base = if (dark) DarkPalette else LightPalette
+        if (this == TONAL_SPOT) return base
+        val primary = if (dark) primaryDark else primaryLight
+        val container = if (dark) containerDark else containerLight
+        val secondary = if (dark) secondaryDark else secondaryLight
+        val tertiary = if (dark) tertiaryDark else tertiaryLight
+        val onPrimary = if (dark) Color(0xFF00372F) else Color.White
+        val onContainer = if (dark) Color(0xFFD1F5E9) else Color(0xFF002117)
+        fun tint(color: Color, alpha: Float, behind: Color) = color.copy(alpha = alpha).compositeOver(behind)
+        return base.copy(
+            primary = primary, onPrimary = onPrimary,
+            primaryContainer = container, onPrimaryContainer = onContainer,
+            secondary = secondary,
+            secondaryContainer = tint(secondary, if (dark) 0.22f else 0.15f, base.surfaceContainerHigh),
+            tertiary = tertiary,
+            tertiaryContainer = tint(tertiary, if (dark) 0.20f else 0.16f, base.surfaceContainerHigh),
+            background = tint(primary, if (dark) 0.055f else 0.035f, base.background),
+            surface = tint(primary, if (dark) 0.07f else 0.025f, base.surface),
+            surfaceVariant = tint(primary, if (dark) 0.11f else 0.065f, base.surfaceVariant),
+            surfaceContainerLowest = tint(primary, if (dark) 0.035f else 0.015f, base.surfaceContainerLowest),
+            surfaceContainerLow = tint(primary, if (dark) 0.045f else 0.025f, base.surfaceContainerLow),
+            surfaceContainer = tint(primary, if (dark) 0.06f else 0.035f, base.surfaceContainer),
+            surfaceContainerHigh = tint(primary, if (dark) 0.075f else 0.045f, base.surfaceContainerHigh),
+            surfaceContainerHighest = tint(primary, if (dark) 0.09f else 0.055f, base.surfaceContainerHighest),
+            surfaceTint = primary, inversePrimary = if (dark) primaryLight else primaryDark
+        )
+    }
+}
 
 private val Forest @Composable get() = MaterialTheme.colorScheme.primary
 private val ForestContainer @Composable get() = MaterialTheme.colorScheme.primaryContainer
@@ -413,6 +458,10 @@ private class LocalWorkspaceStore(context: Context) {
     var darkMode: Boolean
         get() = prefs.getBoolean("dark_mode", true)
         set(value) { prefs.edit().putBoolean("dark_mode", value).apply() }
+    var paletteStyle: AppPaletteStyle
+        get() = runCatching { AppPaletteStyle.valueOf(prefs.getString("palette_style", AppPaletteStyle.TONAL_SPOT.name) ?: AppPaletteStyle.TONAL_SPOT.name) }
+            .getOrDefault(AppPaletteStyle.TONAL_SPOT)
+        set(value) { prefs.edit().putString("palette_style", value.name).apply() }
     var appFontScale: Float
         get() = prefs.getFloat("app_font_scale", 1f).coerceIn(0.85f, 1.35f)
         set(value) { prefs.edit().putFloat("app_font_scale", value.coerceIn(0.85f, 1.35f)).apply() }
@@ -616,8 +665,9 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
     val workspaceState = rememberSaveableStateHolder()
     val store = remember(context) { LocalWorkspaceStore(context) }
     var darkMode by rememberSaveable { mutableStateOf(store.darkMode) }
+    var paletteStyle by rememberSaveable { mutableStateOf(store.paletteStyle) }
     var appFontScale by rememberSaveable { mutableFloatStateOf(store.appFontScale) }
-    val scheme = if (darkMode) DarkPalette else LightPalette
+    val scheme = paletteStyle.colorScheme(darkMode)
     val systemDensity = LocalDensity.current
     SideEffect {
         window.statusBarColor = scheme.background.toArgb()
@@ -638,6 +688,8 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
                         MeetingSchedulerApp(
                             darkMode = darkMode,
                             onToggleTheme = { darkMode = !darkMode; store.darkMode = darkMode },
+                            paletteStyle = paletteStyle,
+                            onPaletteStyleChange = { paletteStyle = it; store.paletteStyle = it },
                             store = store,
                             fontScale = appFontScale,
                             onFontScaleChange = { appFontScale = it.coerceIn(0.85f, 1.35f); store.appFontScale = appFontScale },
@@ -653,7 +705,7 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, store: LocalWorkspaceStore, fontScale: Float, onFontScaleChange: (Float) -> Unit, appLock: AppLockController) {
+private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, paletteStyle: AppPaletteStyle, onPaletteStyleChange: (AppPaletteStyle) -> Unit, store: LocalWorkspaceStore, fontScale: Float, onFontScaleChange: (Float) -> Unit, appLock: AppLockController) {
     val context = LocalContext.current
     val api = remember(context) { SchedulerApi(context) }
     val authScope = rememberCoroutineScope()
@@ -1650,7 +1702,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, st
                     },
                     currentUsername=identityUsername, isAdmin=identityRole.equals("admin", true),
                     fontScale=fontScale, onFontScaleChange=onFontScaleChange,
-                    darkMode=darkMode, onToggleTheme=onToggleTheme, appLock=appLock,
+                    darkMode=darkMode, onToggleTheme=onToggleTheme, paletteStyle=paletteStyle, onPaletteStyleChange=onPaletteStyleChange, appLock=appLock,
                     onRefresh={accountsLoaded=false;accountReloadTick++},
                     onUploadPhoto={ account -> accountPhotoTarget=account; accountPhotoPicker.launch("image/*") },
                     onLinkParticipant={ account, memberId -> authScope.launch {
@@ -3496,7 +3548,7 @@ private fun AccountsScreen(
     modifier: Modifier, accounts: List<RemoteAccount>, linkParticipants: List<AccountLinkParticipant>, loading: Boolean, error: String?,
     testNotificationBusy: Boolean, testNotificationFeedback: NotificationFeedback?, onTestNotification: () -> Unit, currentUsername: String,
     isAdmin: Boolean, fontScale: Float, onFontScaleChange: (Float) -> Unit,
-    darkMode: Boolean, onToggleTheme: () -> Unit, appLock: AppLockController,
+    darkMode: Boolean, onToggleTheme: () -> Unit, paletteStyle: AppPaletteStyle, onPaletteStyleChange: (AppPaletteStyle) -> Unit, appLock: AppLockController,
     onRefresh: () -> Unit, onUploadPhoto: (RemoteAccount) -> Unit,
     onLinkParticipant: (RemoteAccount, Int?) -> Unit,
     onAction: (RemoteAccount, String, String, String) -> Unit,
@@ -3537,6 +3589,34 @@ private fun AccountsScreen(
                     Icon(if (darkMode) Icons.TwoTone.DarkMode else Icons.TwoTone.LightMode, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
                     Text("Dark mode", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Medium, fontSize = 13.sp)
                     Switch(checked = darkMode, onCheckedChange = { checked -> if (checked != darkMode) onToggleTheme() })
+                }
+            }
+            Text("Color palette", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
+            Text("Choose the accent colors used throughout the app.", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                AppPaletteStyle.entries.forEach { option ->
+                    val selected = option == paletteStyle
+                    Column(
+                        modifier = Modifier.width(88.dp).clip(MaterialTheme.shapes.medium)
+                            .clickable { onPaletteStyleChange(option) }
+                            .padding(4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Column(
+                            Modifier.fillMaxWidth().height(62.dp).clip(RoundedCornerShape(12.dp))
+                                .then(if (selected) Modifier.border(2.dp, Forest, RoundedCornerShape(12.dp)) else Modifier)
+                        ) {
+                            option.swatches.forEach { swatch ->
+                                Box(Modifier.weight(1f).fillMaxWidth().background(swatch))
+                            }
+                        }
+                        Text(option.label, color = if (selected) Forest else Ink, style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+                    }
                 }
             }
             BiometricLockPreference(appLock)

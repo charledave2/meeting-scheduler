@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.24 — 2026-11-24
+
+- Add four selectable color palettes: Tonal Spot, Neutral, Vibrant, and Expressive.
+- Save the chosen palette on the device and apply it across light and dark themes.
+
 ## v0.45.23 — 2026-11-23
 
 - Apply Google Sans to the Workbook capture log.
