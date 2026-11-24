@@ -35,7 +35,7 @@ internal data class RemoteSchedule(
     val assignedNames: List<String> = emptyList()
 )
 internal data class SchedulePage(val schedules: List<RemoteSchedule>, val nextOffset: Int, val hasMore: Boolean, val years: List<Int>)
-internal data class RemoteAccount(val id: Int, val displayName: String, val username: String, val status: String, val role: String, val createdAt: String, val requestNote: String, val photoDataUrl: String = "", val toolAccess: Map<String, String> = emptyMap(), val memberId: Int? = null, val memberName: String = "")
+internal data class RemoteAccount(val id: Int, val displayName: String, val username: String, val status: String, val role: String, val createdAt: String, val requestNote: String, val photoDataUrl: String = "", val toolAccess: Map<String, String> = emptyMap(), val memberId: Int? = null, val memberName: String = "", val lastLoginAt: String = "")
 internal data class AccountLinkParticipant(val id: Int, val name: String)
 internal data class ParticipantRotation(
     val memberId: Int, val mainThisMonth: Int, val assistantThisMonth: Int, val totalThisMonth: Int,
@@ -170,7 +170,7 @@ internal class SchedulerApi(context: Context) {
         val response = request("/api/accounts", "GET", null)
         val rows = response.optJSONArray("accounts") ?: JSONArray()
         val accounts = (0 until rows.length()).mapNotNull { i -> rows.optJSONObject(i)?.let { row ->
-            RemoteAccount(row.optInt("id"), row.optString("displayName"), row.optString("username"), row.optString("status"), row.optString("role", "viewer"), row.optString("createdAt"), row.optString("requestNote"), row.optString("photoDataUrl"), row.optJSONObject("toolAccess")?.let { access -> buildMap { access.keys().forEach { key -> put(key, access.optString(key, "hidden")) } } } ?: emptyMap(), row.optInt("memberId").takeIf { it > 0 }, row.optString("memberName"))
+            RemoteAccount(row.optInt("id"), row.optString("displayName"), row.optString("username"), row.optString("status"), row.optString("role", "viewer"), row.optString("createdAt"), row.optString("requestNote"), row.optString("photoDataUrl"), row.optJSONObject("toolAccess")?.let { access -> buildMap { access.keys().forEach { key -> put(key, access.optString(key, "hidden")) } } } ?: emptyMap(), row.optInt("memberId").takeIf { it > 0 }, row.optString("memberName"), row.optString("lastLoginAt"))
         } }
         val members = response.optJSONArray("activeMembers") ?: JSONArray()
         val participants = (0 until members.length()).mapNotNull { index ->
