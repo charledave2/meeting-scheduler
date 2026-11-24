@@ -398,6 +398,73 @@ private data class Assignment(
     val assistant: String = "", val secondaryAssignee: String = "", val secondaryAssistant: String = "",
     val hasAssistant: Boolean = false, val hasSecondary: Boolean = false, val hasSecondaryAssistant: Boolean = false
 )
+private data class ScheduleAssignmentValue(val key: String, val label: String, val person: String)
+private enum class ScheduleChangeKind { ADDED, REPLACED, REMOVED }
+private data class ScheduleAssignmentChange(
+    val kind: ScheduleChangeKind,
+    val label: String,
+    val previousPerson: String = "",
+    val currentPerson: String = ""
+)
+
+private fun scheduleAssignmentValues(
+    parts: List<Assignment>, chairman: String, openingPrayer: String, adviser: String, audienceGroup: String
+): List<ScheduleAssignmentValue> = buildList {
+    add(ScheduleAssignmentValue("role:chairman", "Chairman", chairman))
+    add(ScheduleAssignmentValue("role:openingPrayer", "Opening prayer", openingPrayer))
+    add(ScheduleAssignmentValue("role:adviser", "Second Hall adviser", adviser))
+    add(ScheduleAssignmentValue("role:group", "Group", audienceGroup))
+    parts.forEachIndexed { index, part ->
+        val title = part.title.trim().replace(Regex("\\s+"), " ").ifBlank { "Part ${index + 1}" }
+            .let { if (it.length > 54) it.take(51).trimEnd() + "…" else it }
+        val partKey = part.id.takeIf { it > 0 }?.toString() ?: "index:$index"
+        fun slot(name: String, suffix: String, person: String) {
+            add(ScheduleAssignmentValue("part:$partKey:$suffix", "$title · $name", person))
+        }
+        val lowerTitle = part.title.lowercase(Locale.ROOT)
+        val bibleStudy = lowerTitle.contains("pag-aaral ng kongregasyon sa bibliya")
+        val bibleReading = lowerTitle.contains("pagbabasa ng bibliya")
+        val what = lowerTitle.contains("ano ang sasabihin mo")
+        val dualHall = (part.section == "ministry" && !what) || bibleReading
+        val qualified = !what && (part.section == "living" || (part.section == "treasures" && !bibleReading))
+        val mainRole = when {
+            bibleStudy -> "Conductor"
+            dualHall -> "Main Hall"
+            what -> "Brother"
+            qualified -> "Qualified brother"
+            else -> "Participant"
+        }
+        slot(mainRole, "main", part.person)
+        if (part.hasAssistant || part.assistant.isNotBlank()) {
+            slot(if (bibleStudy) "Reader" else if (dualHall) "Main Hall assistant" else "Assistant", "assistant", part.assistant)
+        }
+        if (part.hasSecondary || part.secondaryAssignee.isNotBlank()) slot("Second Hall", "second", part.secondaryAssignee)
+        if (part.hasSecondaryAssistant || part.secondaryAssistant.isNotBlank()) slot("Second Hall assistant", "secondAssistant", part.secondaryAssistant)
+    }
+}
+
+private fun summarizeScheduleChanges(
+    previous: List<ScheduleAssignmentValue>, current: List<ScheduleAssignmentValue>
+): List<ScheduleAssignmentChange> {
+    val previousByKey = previous.associateBy { it.key }
+    val currentByKey = current.associateBy { it.key }
+    val orderedKeys = (previous.map { it.key } + current.map { it.key }).distinct()
+    return buildList {
+        orderedKeys.forEach { key ->
+            val before = previousByKey[key]
+            val after = currentByKey[key]
+            val oldPerson = before?.person.orEmpty().trim()
+            val newPerson = after?.person.orEmpty().trim()
+            val label = after?.label ?: before?.label.orEmpty()
+            when {
+                oldPerson.isBlank() && newPerson.isNotBlank() -> add(ScheduleAssignmentChange(ScheduleChangeKind.ADDED, label, currentPerson = newPerson))
+                oldPerson.isNotBlank() && newPerson.isBlank() -> add(ScheduleAssignmentChange(ScheduleChangeKind.REMOVED, label, previousPerson = oldPerson))
+                oldPerson.isNotBlank() && !oldPerson.equals(newPerson, ignoreCase = true) -> add(ScheduleAssignmentChange(ScheduleChangeKind.REPLACED, label, oldPerson, newPerson))
+            }
+        }
+    }
+}
+
 private fun missingRequiredAssignmentSlots(
     parts: List<Assignment>, chairman: String, openingPrayer: String, adviser: String
 ): List<String> = buildList {
@@ -910,6 +977,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
     var homePreviewWeek by remember { mutableStateOf<String?>(null) }
     var homePreviewLoading by remember { mutableStateOf(false) }
     var editingRemoteId by rememberSaveable { mutableIntStateOf(0) }
+    var cloudSaveReviewVisible by remember { mutableStateOf(false) }
+    var originalCloudAssignments by remember { mutableStateOf<List<ScheduleAssignmentValue>>(emptyList()) }
     var suppressWeekLookup by remember { mutableStateOf(false) }
     var remoteScheduleLoadedWeek by rememberSaveable { mutableStateOf("") }
     var weekLoadNonce by remember { mutableIntStateOf(0) }
@@ -1065,7 +1134,21 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
             toastMessage = message
             return
         }
-        if (cloudSaveBusy) return
+        if (cloudSaveBusy || cloudSaveReviewVisible) return
+        cloudSaveFeedback = null
+        cloudSaveReviewVisible = true
+    }
+    fun confirmSaveToCloud() {
+        if (!signedIn || identityRole != "admin" || cloudSaveBusy) return
+        val missingSlots = missingRequiredAssignmentSlots(parts, chairman, openingPrayer, adviser)
+        if (missingSlots.isNotEmpty()) {
+            cloudSaveReviewVisible = false
+            val message = "Complete the ${missingSlots.size} remaining required assignment slot${if (missingSlots.size == 1) "" else "s"} before saving."
+            cloudSaveFeedback = message to false
+            toastMessage = message
+            return
+        }
+        cloudSaveReviewVisible = false
         authScope.launch {
         cloudSaveBusy = true
         cloudSaveFeedback = null
@@ -1076,6 +1159,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
                 cloudSaveFeedback = cloudStatus to historySaved
                 toastMessage = cloudStatus
                 historyLoaded=false
+                originalCloudAssignments = scheduleAssignmentValues(parts.toList(), chairman, openingPrayer, adviser, audienceGroup)
                 editingRemoteId=0
             }
             .onFailure {
@@ -1139,6 +1223,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
         parts.clear()
         val loadedParts = (0 until raw.length()).mapNotNull { raw.optJSONObject(it)?.toAssignment() }
         parts.addAll(deduplicateAssignmentParticipants(loadedParts))
+        originalCloudAssignments = scheduleAssignmentValues(parts.toList(), chairman, openingPrayer, adviser, audienceGroup)
         editingRemoteId=remote.id; persistDetails(); store.saveAssignments(parts.toList())
         workbookStatus="✓ Na-load ang saved cloud schedule"
         if(navigate) current=if(edit) Screen.DETAILS else Screen.PREVIEW
@@ -1343,6 +1428,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
         }
     }
     fun openSaved(item: SavedSchedule) {
+        editingRemoteId = 0; originalCloudAssignments = emptyList()
         if (item.weekStart.isNotBlank()) weekStart = item.weekStart
         bible = item.reading; openingSong = item.openingSong; closingSong = item.closingSong
         chairman=item.chairman; openingPrayer=item.openingPrayer; adviser=item.adviser; audienceGroup=item.audienceGroup
@@ -1350,6 +1436,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
         persistDetails(); current = Screen.DETAILS; toastMessage = "Na-open ang saved schedule"
     }
     fun duplicateSaved(item: SavedSchedule) {
+        editingRemoteId = 0; originalCloudAssignments = emptyList()
         val sourceDate = runCatching { LocalDate.parse(item.weekStart) }.getOrDefault(week.plusDays(-7))
         weekStart = sourceDate.plusWeeks(1).toString()
         bible = item.reading; openingSong = item.openingSong; closingSong = item.closingSong
@@ -1731,7 +1818,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
                     isAdmin=signedIn && identityRole=="admin", canEdit=canEdit(Screen.HISTORY), canCreate=canEdit(Screen.DETAILS),
                     onRefresh={historyLoaded=false;historyReloadTick++}, onView={loadRemoteSchedule(it,false)}, onEdit={loadRemoteSchedule(it,true)},
                     onDelete={remote -> authScope.launch { runCatching { api.deleteSchedule(remote.id) }.onSuccess { historyLoaded=false;historyReloadTick++;toastMessage="Na-delete ang schedule" }.onFailure { toastMessage=it.message ?: "Hindi ma-delete" } }},
-                    onNew = { editingRemoteId=0; navigateTo(Screen.DETAILS) })
+        onNew = { editingRemoteId=0; originalCloudAssignments=emptyList(); navigateTo(Screen.DETAILS) })
             }
             Screen.ACCOUNTS -> {
                 AccountsScreen(
@@ -1791,6 +1878,79 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
             }
         } }
     }
+    if (cloudSaveReviewVisible) {
+        val changes = summarizeScheduleChanges(
+            originalCloudAssignments,
+            scheduleAssignmentValues(parts.toList(), chairman, openingPrayer, adviser, audienceGroup)
+        )
+        AlertDialog(
+            onDismissRequest = { cloudSaveReviewVisible = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = MaterialTheme.shapes.extraLarge,
+            title = { Text("Review schedule changes", fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column(
+                    Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.55f).dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(weekLabel, color = Forest, fontWeight = FontWeight.Medium)
+                    Text(
+                        if (editingRemoteId > 0) "Check what changed from the saved cloud schedule." else "Review the assignments that will be added to this new schedule.",
+                        color = Muted,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                    if (changes.isEmpty()) {
+                        Text("No assignment changes detected. The current schedule will be saved as-is.", color = Muted, fontSize = 13.sp)
+                    } else {
+                        listOf(
+                            ScheduleChangeKind.ADDED to "Added",
+                            ScheduleChangeKind.REPLACED to "Changed",
+                            ScheduleChangeKind.REMOVED to "Removed"
+                        ).forEach { (kind, heading) ->
+                            val grouped = changes.filter { it.kind == kind }
+                            if (grouped.isNotEmpty()) {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("$heading · ${grouped.size}", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = when (kind) {
+                                        ScheduleChangeKind.ADDED -> Forest
+                                        ScheduleChangeKind.REPLACED -> MaterialTheme.colorScheme.primary
+                                        ScheduleChangeKind.REMOVED -> MaterialTheme.colorScheme.error
+                                    })
+                                    grouped.forEach { change ->
+                                        Column(
+                                            Modifier.fillMaxWidth().padding(start = 8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(1.dp)
+                                        ) {
+                                            Text(
+                                                when (kind) {
+                                                    ScheduleChangeKind.ADDED -> change.currentPerson
+                                                    ScheduleChangeKind.REPLACED -> "${change.previousPerson} → ${change.currentPerson}"
+                                                    ScheduleChangeKind.REMOVED -> change.previousPerson
+                                                },
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            Text(change.label, color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Text("This review covers assignment changes. Group remains optional.", color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
+                }
+            },
+            confirmButton = {
+                Button(onClick = ::confirmSaveToCloud, colors = ButtonDefaults.buttonColors(containerColor = Forest)) {
+                    Text("Confirm save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { cloudSaveReviewVisible = false }) { Text("Back to assignments", color = Forest) }
+            }
+        )
+    }
     if (homePreviewWeek != null) {
         val pageAspect = SCHEDULE_EXPORT_WIDTH_PX.toFloat() / SCHEDULE_EXPORT_HEIGHT_PX
         val previewView = remember { mutableStateOf<WebView?>(null) }
@@ -1844,7 +2004,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
                 Button(
                     onClick = {
                         pickerState.selectedDateMillis?.let {
-                            remoteScheduleLoadedWeek = ""; editingRemoteId = 0
+                            remoteScheduleLoadedWeek = ""; editingRemoteId = 0; originalCloudAssignments = emptyList()
                             val selectedWeek = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
                                 .with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)).toString()
                             weekStart = selectedWeek

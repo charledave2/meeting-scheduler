@@ -1,7 +1,12 @@
-Warning: truncated output (original token count: 4908)
-Total output lines: 367
+Warning: truncated output (original token count: 4962)
+Total output lines: 372
 
 # Changelog
+
+## v0.45.28 — 2026-11-24
+
+- Add a review dialog showing new, changed, and removed assignments before cloud save.
+- Compare edits with the saved schedule and let the user return to assignments before confirming.
 
 ## v0.45.27 — 2026-11-24
 
@@ -115,12 +120,7 @@ Total output lines: 367
 - Keep portrait and landscape previews proportional to the fixed 2480 × 3508 PNG canvas.
 - Refine the screen transition animation with a smoother, more visible motion.
 
-## v0.45.5 — 2026-11-14
-
-- Show visible progress and success or error feedback while saving schedules, importing workbooks, and preparing exports.
-- Disable repeat actions while a save or export is in progress.
-
-## v0.45.4 — 2026-…1908 tokens truncated…itHub releases when the app opens.
+## v0.45.5 — 2026-…1962 tokens truncated…itHub releases when the app opens.
 - Added an in-app update prompt that downloads the signed APK through Android Downloads and hands installation to Android.
 
 ## v0.37.5 — 2026-11-09
