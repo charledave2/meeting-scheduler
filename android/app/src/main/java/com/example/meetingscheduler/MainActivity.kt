@@ -1102,7 +1102,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
     }
 
     LaunchedEffect(signedIn, participantsLoaded, current) {
-        val participantDataNeeded = current == Screen.PARTICIPANTS || current == Screen.ASSIGNMENTS || current == Screen.WORKBOOK
+        val participantDataNeeded = current == Screen.PARTICIPANTS || current == Screen.ASSIGNMENTS || current == Screen.DETAILS
         if(signedIn && participantDataNeeded && !participantsLoaded && !participantsBusy && (canAccess(Screen.PARTICIPANTS) || canAccess(Screen.ASSIGNMENTS))) {
             participantsBusy=true
             participantsLoadError=null
@@ -3638,7 +3638,7 @@ private fun ParticipantsScreen(
                         if (filtered.size > visibleCount) item {
                             Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.Center) {
                                 FilledTonalButton(onClick = { visibleCount += 50 }, shape = MaterialTheme.shapes.medium) {
-                                    Icon(Icons.TwoTone.ExpandMore, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Icon(Icons.TwoTone.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(Modifier.width(7.dp))
                                     Text("Show next ${minOf(50, filtered.size - visibleCount)} participants")
                                 }
@@ -3857,7 +3857,7 @@ private fun HistoryScreen(
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.Center) {
                     FilledTonalButton(onClick = onLoadMore, enabled = !loadingMore, shape = MaterialTheme.shapes.medium) {
                         if (loadingMore) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Forest)
-                        else Icon(Icons.TwoTone.ExpandMore, contentDescription = null, modifier = Modifier.size(18.dp))
+                        else Icon(Icons.TwoTone.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(7.dp))
                         Text(if (loadingMore) "Loading…" else if (historyQuery.isNotBlank()) "Load more to continue search" else "Load more schedules")
                     }
