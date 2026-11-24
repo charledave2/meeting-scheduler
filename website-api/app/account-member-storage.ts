@@ -17,6 +17,9 @@ export function ensureAccountMemberStorage() {
     if (!columns.has("member_id")) {
       await database.exec("ALTER TABLE auth_accounts ADD COLUMN member_id INTEGER REFERENCES members(id) ON DELETE SET NULL;");
     }
+    if (!columns.has("last_login_at")) {
+      await database.exec("ALTER TABLE auth_accounts ADD COLUMN last_login_at TEXT;");
+    }
     await database.exec("CREATE UNIQUE INDEX IF NOT EXISTS auth_accounts_member_id_unique ON auth_accounts(member_id);");
   })().catch((error) => { ready = null; throw error; });
   return ready;

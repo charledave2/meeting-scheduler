@@ -86,6 +86,7 @@ export const authAccounts = sqliteTable("auth_accounts", {
   lockedUntil: text("locked_until"),
   requestNote: text("request_note").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  lastLoginAt: text("last_login_at"),
   approvedAt: text("approved_at"),
 }, (t) => [
   uniqueIndex("auth_accounts_username_unique").on(t.username),
