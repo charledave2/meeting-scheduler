@@ -1,9 +1,12 @@
+Warning: truncated output (original token count: 4859)
+Total output lines: 362
+
 # Changelog
 
 ## v0.45.26 — 2026-11-24
 
 - Update the launcher icon and Android 12+ launch screen to match the selected palette.
-- Use theme-aware colors for the animated splash and workbook capture log across all palettes.
+- Use palette-aware colors and contrast for the animated splash and workbook capture log.
 - Add bottom breathing room so the Workbook action remains reachable above navigation.
 - Use consistent English copy for workbook import success.
 
@@ -153,66 +156,7 @@
 - Replaced the centered profile dialog with a compact popover anchored beside the profile shortcut.
 - Reduced profile name field and control sizes; save and sign-out are icon-only, with sign-out highlighted in the theme’s error color.
 - Applied the forest-green Material You palette to profile controls and kept the theme switch compact.
-- Added a custom animated forest-green splash and press animations for the navigation icons.
-
-## v0.43.0 — 2026-11-12
-
-- Replaced the side drawer with compact forest green bottom navigation for Home, Workbook, History and Account & Settings.
-- Added a raised center Tools button with a springy tap animation that opens Assignments, Preview & Export and Participants.
-- Shows only destinations each account can access; preserves the existing profile editor, theme and biometric lock settings.
-- Kept the existing app identity and signing configuration so the update installs over the previous official version with its existing app data.
-
-
-## v0.42.1 — 2026-11-11
-
-- Moved the theme switcher and biometric lock from the profile dialog to Account & Settings for every signed-in role.
-- Kept profile editing and sign-out in a compact Profile dialog.
-
-## v0.42.0 — 2026-11-11
-
-- Added optional device-local biometric lock in Profile & preferences, with Android fingerprint/face authentication and phone PIN, pattern or password fallback.
-- Require successful authentication to enable or disable the lock. Re-lock on leaving the app and after a fresh launch; cancellation and failed attempts keep the workspace protected.
-- Added a forest green lock screen, protected recent-app previews, and retained meeting drafts and update downloads across locking.
-- Added security regression tests for restart, background, cancellation, stale callbacks and preference changes.
-
-## v0.41.0 — 2026-11-10
-
-- Renamed the Android app to JW Meeting Scheduler across launcher, drawer, splash, login, update notifications and export branding.
-- Centered role labels beneath the profile photo using a shared content width while keeping the shortcut on the left.
-
-
-## v0.40.2 — 2026-11-10
-
-- Emphasized all drawer account roles with bold uppercase labels aligned beneath the profile photo.
-- Styled the profile sign-out action in the theme’s red error color.
-- Removed the Appearance heading and compacted profile controls, corners and spacing.
-
-
-## v0.40.1 — 2026-11-10
-
-- Aligned the drawer’s bottom profile shortcut to the left.
-- Standardized profile actions with Material Two Tone icons and a shorter Save label.
-- Removed the profile reminder and added equal-width footer actions with stacking for narrow screens or enlarged fonts.
-
-
-## v0.40.0 — 2026-11-10
-
-- Opened Ano ang Sasabihin Mo assignments to any active brother, including publishers.
-- Matched the Android launch animation and in-app splash to the current app icon.
-- Replaced the drawer header profile shortcut with the app icon.
-- Added a bottom profile photo shortcut with the signed-in account role.
-- Grouped photo changes, local display-name editing, appearance and sign-out in a scrollable profile dialog.
-
-
-## v0.39.0 — 2026-11-10
-
-- Completed forest-green Material3 surface colors for dialogs, inputs, menus and both themes.
-- Moved avatar decoding off the UI thread with bounded thumbnail sizes and a shared memory cache.
-- Made the navigation drawer fully scrollable and improved keyboard and small-screen dialog sizing.
-- Restricted preview WebViews, APK download sources and shared export paths; disabled app backup.
-- Revoked server sessions on sign-out and blocked authenticated API use until required password changes are complete.
-- Removed unsigned admin bootstrap header trust and disabled caching of API responses.
-- Added Android lint checks and backported date APIs for Android 7 compatibility.
+- Added a custom animated for…859 tokens truncated…7 compatibility.
 - Corrected Android-version-specific theme resources and regenerated the backend dependency lockfile.
 - Updated Next.js and its matching ESLint configuration to address dependency security advisories.
 
