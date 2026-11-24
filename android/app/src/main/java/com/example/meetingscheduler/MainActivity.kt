@@ -159,6 +159,7 @@ import org.json.JSONObject
 import java.time.Instant
 import java.time.LocalDate
 import java.time.Month
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -4087,7 +4088,8 @@ private fun AccountsScreen(
         var participantMenuExpanded by remember(account.id) { mutableStateOf(false) }
         val roleName = when (account.role.lowercase()) { "admin" -> "Administrator"; "scheduler" -> "Scheduler"; "viewer" -> "Viewer"; else -> account.role.replaceFirstChar { it.uppercase() } }
         val statusName = when (account.status.lowercase()) { "requested" -> "Requested"; "active" -> "Active"; "disabled" -> "Disabled"; else -> account.status.replaceFirstChar { it.uppercase() } }
-        val isSelf = account.username.equals(currentUsername, true) || account.role == "admin"
+        val isCurrentAccount = account.username.equals(currentUsername, true)
+        val isSelf = isCurrentAccount || account.role == "admin"
         Dialog(onDismissRequest = { selectedAccount = null }) {
             Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = MaterialTheme.shapes.extraLarge, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.imePadding().padding(20.dp).heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.78f).dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -4102,6 +4104,12 @@ private fun AccountsScreen(
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     AccountInfoLine("Role", roleName)
                     AccountInfoLine("Status", statusName, if (account.status == "requested") MaterialTheme.colorScheme.error else Forest)
+                    if (!isCurrentAccount) {
+                        AccountInfoLine(
+                            "Last login",
+                            account.lastLoginAt.takeIf { it.isNotBlank() }?.let(::formatAccountLastLogin) ?: "Never"
+                        )
+                    }
                     if (account.status == "active" && account.role != "admin" && !isSelf) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("Linked participant", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -4302,6 +4310,13 @@ private fun AccountInfoLine(label: String, value: String, tint: Color = Muted) {
         Text(label, color = Muted, fontSize = 12.sp)
         Text(value, color = tint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     }
+}
+
+private fun formatAccountLastLogin(value: String): String {
+    val instant = runCatching { Instant.parse(value) }.getOrNull() ?: return "Unknown"
+    val formatter = DateTimeFormatter.ofPattern("MMM d, yyyy · h:mm a", Locale.getDefault())
+        .withZone(ZoneId.systemDefault())
+    return formatter.format(instant)
 }
 
 @Composable
