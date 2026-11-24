@@ -2159,7 +2159,7 @@ private fun MeetingSplashScreen() {
     }
     Box(
         Modifier.fillMaxSize().background(Brush.verticalGradient(
-            listOf(colors.surfaceDim, colors.background, colors.surfaceContainerLow)
+            listOf(colors.background, colors.surfaceContainerLow, colors.background)
         )),
         contentAlignment = Alignment.Center
     ) {
@@ -3131,12 +3131,16 @@ private fun SlotPicker(
             onDismissRequest = { expanded = false; searchQuery = "" },
             properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
+            val pickerPaletteSurface = MaterialTheme.colorScheme.primaryContainer
+                .copy(alpha = if (IsDarkPalette) 0.30f else 0.18f)
+                .compositeOver(MaterialTheme.colorScheme.surfaceContainerHigh)
             Surface(
                 modifier = Modifier.fillMaxWidth().widthIn(max = 520.dp).padding(horizontal = 16.dp)
                     .heightIn(min = minDialogHeight.dp, max = maxDialogHeight.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = pickerPaletteSurface,
                 shape = RoundedCornerShape(28.dp),
-                tonalElevation = 5.dp
+                tonalElevation = 0.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.34f))
             ) {
                 Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -3171,7 +3175,7 @@ private fun SlotPicker(
                         Text("Unassigned", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
                         if (value.isBlank()) Icon(Icons.TwoTone.Check, contentDescription = "Currently unassigned", tint = Forest, modifier = Modifier.size(18.dp))
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.48f))
                     if (unavailableMatches.isNotEmpty()) {
                         Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                             unavailableMatches.forEach { (name, reason) ->
@@ -3191,6 +3195,20 @@ private fun SlotPicker(
                         ) {
                             itemsIndexed(filteredChoices, key = { _, participant -> if (participant.id > 0) "id:${participant.id}" else "name:${participant.name.lowercase(Locale.ROOT)}" }) { _, participant ->
                                 val stat = rotation[participant.id]?.takeUnless { participant.isAppointedBrother() || it.exempt }
+                                val rotationStatus = when {
+                                    participant.isAppointedBrother() || rotation[participant.id]?.exempt == true -> "Exempt from rotation"
+                                    rotation[participant.id] == null -> null
+                                    rotation[participant.id]?.neverAssigned == true -> "Priority · never assigned"
+                                    (rotation[participant.id]?.totalThisMonth ?: 0) > 0 -> "Has a part this month"
+                                    rotation[participant.id]?.eligible == false -> "Eligible after ${rotationShortDate(rotation[participant.id]?.nextEligibleDate.orEmpty())}"
+                                    else -> "Available"
+                                }
+                                val statusColor = when {
+                                    rotationStatus?.startsWith("Priority") == true -> MaterialTheme.colorScheme.primary
+                                    rotationStatus == "Available" -> MaterialTheme.colorScheme.secondary
+                                    rotationStatus?.startsWith("Has a part") == true -> MaterialTheme.colorScheme.tertiary
+                                    else -> Muted
+                                }
                                 Row(
                                     Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small)
                                         .clickable(enabled = enabled) {
@@ -3202,10 +3220,15 @@ private fun SlotPicker(
                                         .padding(horizontal = 10.dp, vertical = 13.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(participant.name, color = Ink, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Column(Modifier.weight(1f).padding(vertical = 1.dp)) {
+                                        Text(participant.name, color = Ink, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        rotationStatus?.let {
+                                            Text(it, color = statusColor, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
                                     if (participant.name.equals(value, ignoreCase = true)) Icon(Icons.TwoTone.Check, contentDescription = "Currently selected", tint = Forest, modifier = Modifier.size(19.dp))
                                 }
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.38f))
                             }
                         }
                     }

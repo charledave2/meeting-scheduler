@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.45.33 — 2026-11-24
+
+- Show participant rotation status in the assignment picker while preserving eligibility and rotation rules.
+- Improve participant row dividers and make the picker surface follow the selected palette.
+- Match the Android startup splash and animated splash background to the selected palette in light and dark appearances.
+
 ## v0.45.32 — 2026-11-24
 
 - Replace the overlapping participant dropdown with a responsive searchable selection dialog.

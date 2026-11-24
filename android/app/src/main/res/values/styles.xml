@@ -8,9 +8,17 @@
         <item name="android:windowBackground">@drawable/launch_background</item>
     </style>
     <style name="AppTheme" parent="BaseAppTheme" />
-    <style name="AppThemeTonalSpot" parent="AppTheme" />
-    <style name="AppThemeNeutral" parent="AppTheme" />
-    <style name="AppThemeVibrant" parent="AppTheme" />
-    <style name="AppThemeExpressive" parent="AppTheme" />
+    <style name="AppThemeTonalSpot" parent="AppTheme">
+        <item name="android:windowBackground">@color/splash_tonal_spot</item>
+    </style>
+    <style name="AppThemeNeutral" parent="AppTheme">
+        <item name="android:windowBackground">@color/splash_neutral</item>
+    </style>
+    <style name="AppThemeVibrant" parent="AppTheme">
+        <item name="android:windowBackground">@color/splash_vibrant</item>
+    </style>
+    <style name="AppThemeExpressive" parent="AppTheme">
+        <item name="android:windowBackground">@color/splash_expressive</item>
+    </style>
 </resources>
 

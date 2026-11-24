@@ -1,4 +1,9 @@
 <resources>
+    <color name="splash_background">#D8DED5</color>
+    <color name="splash_tonal_spot">#F0EDEC</color>
+    <color name="splash_neutral">#F4F5F0</color>
+    <color name="splash_vibrant">#EEF5ED</color>
+    <color name="splash_expressive">#F6F3E9</color>
     <color name="launcher_background">#0B4A2B</color>
     <color name="launcher_sage">#DDE9D9</color>
     <color name="launcher_sage_mid">#A8C3A4</color>
