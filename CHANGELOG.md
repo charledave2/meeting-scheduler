@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.45.36 — 2026-11-25
+
+- Add System, Light, and Dark appearance options; System follows Android's current theme while saved Light or Dark choices remain selected.
+- Record successful sign-ins and show the last login time for other accounts in the admin account details.
+- Default Workbook to the current Monday-based meeting week and migrate the old fixed default when no saved history depends on it.
+- Add a “This Week” shortcut after choosing another Workbook week.
+- Make the required assignment slots still missing easier to spot.
+
 ## v0.45.35 — 2026-11-24
 
 - Replace the bottom Settings tab with a Profile shortcut and move account settings into its profile menu.
