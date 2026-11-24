@@ -30,6 +30,7 @@ export async function GET() {
       username: authAccounts.username,
       status: authAccounts.status,
       createdAt: authAccounts.createdAt,
+      lastLoginAt: authAccounts.lastLoginAt,
       requestNote: authAccounts.requestNote,
       role: users.role,
       memberId: authAccounts.memberId,
