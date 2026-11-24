@@ -88,6 +88,7 @@ import androidx.compose.material.icons.twotone.CheckCircle
 import androidx.compose.material.icons.twotone.Menu
 import androidx.compose.material.icons.twotone.LightMode
 import androidx.compose.material.icons.twotone.DarkMode
+import androidx.compose.material.icons.twotone.Settings
 import androidx.compose.material.icons.twotone.Add
 import androidx.compose.material.icons.twotone.Visibility
 import androidx.compose.material.icons.twotone.VisibilityOff
@@ -135,6 +136,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.Role
@@ -310,6 +312,10 @@ private enum class AppPaletteStyle(
             surfaceTint = primary, inversePrimary = if (dark) primaryLight else primaryDark
         )
     }
+}
+
+private enum class AppThemeMode(val label: String) {
+    SYSTEM("System"), LIGHT("Light"), DARK("Dark")
 }
 
 private fun syncLauncherPalette(context: Context, selected: AppPaletteStyle, darkMode: Boolean) {
@@ -580,9 +586,13 @@ private class LocalWorkspaceStore(context: Context) {
     fun saveProfileName(username: String, value: String) { prefs.edit().putString(profileKey("profile_name", username), value).apply() }
     fun profilePhoto(username: String) = prefs.getString(profileKey("profile_photo_path", username), null)
     fun saveProfilePhoto(username: String, path: String) { prefs.edit().putString(profileKey("profile_photo_path", username), path).apply() }
-    var darkMode: Boolean
-        get() = prefs.getBoolean("dark_mode", true)
-        set(value) { prefs.edit().putBoolean("dark_mode", value).apply() }
+    var themeMode: AppThemeMode
+        get() = prefs.getString("theme_mode", null)?.let { saved ->
+            runCatching { AppThemeMode.valueOf(saved) }.getOrNull()
+        } ?: if (prefs.contains("dark_mode")) {
+            if (prefs.getBoolean("dark_mode", true)) AppThemeMode.DARK else AppThemeMode.LIGHT
+        } else AppThemeMode.SYSTEM
+        set(value) { prefs.edit().putString("theme_mode", value.name).apply() }
     var paletteStyle: AppPaletteStyle
         get() = runCatching { AppPaletteStyle.valueOf(prefs.getString("palette_style", AppPaletteStyle.TONAL_SPOT.name) ?: AppPaletteStyle.TONAL_SPOT.name) }
             .getOrDefault(AppPaletteStyle.TONAL_SPOT)
@@ -797,7 +807,12 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
     val appLock = (androidx.activity.compose.LocalActivity.current as MainActivity).appLock
     val workspaceState = rememberSaveableStateHolder()
     val store = remember(context) { LocalWorkspaceStore(context) }
-    var darkMode by rememberSaveable { mutableStateOf(store.darkMode) }
+    var themeMode by rememberSaveable { mutableStateOf(store.themeMode) }
+    val darkMode = when (themeMode) {
+        AppThemeMode.SYSTEM -> isSystemInDarkTheme()
+        AppThemeMode.LIGHT -> false
+        AppThemeMode.DARK -> true
+    }
     var paletteStyle by rememberSaveable { mutableStateOf(store.paletteStyle) }
     var appFontScale by rememberSaveable { mutableFloatStateOf(store.appFontScale) }
     LaunchedEffect(paletteStyle, darkMode) { syncLauncherPalette(context, paletteStyle, darkMode) }
@@ -820,8 +835,8 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
                 } else {
                     workspaceState.SaveableStateProvider("workspace") {
                         MeetingSchedulerApp(
-                            darkMode = darkMode,
-                            onToggleTheme = { darkMode = !darkMode; store.darkMode = darkMode },
+                            themeMode = themeMode,
+                            onThemeModeChange = { themeMode = it; store.themeMode = it },
                             paletteStyle = paletteStyle,
                             onPaletteStyleChange = { paletteStyle = it; store.paletteStyle = it },
                             store = store,
@@ -839,7 +854,7 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, paletteStyle: AppPaletteStyle, onPaletteStyleChange: (AppPaletteStyle) -> Unit, store: LocalWorkspaceStore, fontScale: Float, onFontScaleChange: (Float) -> Unit, appLock: AppLockController) {
+private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (AppThemeMode) -> Unit, paletteStyle: AppPaletteStyle, onPaletteStyleChange: (AppPaletteStyle) -> Unit, store: LocalWorkspaceStore, fontScale: Float, onFontScaleChange: (Float) -> Unit, appLock: AppLockController) {
     val context = LocalContext.current
     val api = remember(context) { SchedulerApi(context) }
     val authScope = rememberCoroutineScope()
@@ -1878,7 +1893,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
                     },
                     currentUsername=identityUsername, isAdmin=identityRole.equals("admin", true),
                     fontScale=fontScale, onFontScaleChange=onFontScaleChange,
-                    darkMode=darkMode, onToggleTheme=onToggleTheme, paletteStyle=paletteStyle, onPaletteStyleChange=onPaletteStyleChange, appLock=appLock,
+                    themeMode=themeMode, onThemeModeChange=onThemeModeChange, paletteStyle=paletteStyle, onPaletteStyleChange=onPaletteStyleChange, appLock=appLock,
                     onRefresh={accountsLoaded=false;accountReloadTick++},
                     onUploadPhoto={ account -> accountPhotoTarget=account; accountPhotoPicker.launch("image/*") },
                     onLinkParticipant={ account, memberId -> authScope.launch {
@@ -3852,7 +3867,7 @@ private fun AccountsScreen(
     profileName: String, profileUsername: String, profileRole: String, profilePhotoPath: String?, profilePhotoDataUrl: String,
     profileError: String?, onChangeOwnPhoto: () -> Unit, onSaveOwnName: (String) -> Unit,
     isAdmin: Boolean, fontScale: Float, onFontScaleChange: (Float) -> Unit,
-    darkMode: Boolean, onToggleTheme: () -> Unit, paletteStyle: AppPaletteStyle, onPaletteStyleChange: (AppPaletteStyle) -> Unit, appLock: AppLockController,
+    themeMode: AppThemeMode, onThemeModeChange: (AppThemeMode) -> Unit, paletteStyle: AppPaletteStyle, onPaletteStyleChange: (AppPaletteStyle) -> Unit, appLock: AppLockController,
     onRefresh: () -> Unit, onUploadPhoto: (RemoteAccount) -> Unit,
     onLinkParticipant: (RemoteAccount, Int?) -> Unit,
     onAction: (RemoteAccount, String, String, String) -> Unit,
@@ -3918,19 +3933,39 @@ private fun AccountsScreen(
         }
         M3Card {
             Text("Preferences", style = MaterialTheme.typography.titleMedium)
-            Surface(
-                color = ForestContainer,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    Modifier.padding(horizontal = 12.dp, vertical = 0.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Icon(if (darkMode) Icons.TwoTone.DarkMode else Icons.TwoTone.LightMode, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
-                    Text("Dark mode", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                    Switch(checked = darkMode, onCheckedChange = { checked -> if (checked != darkMode) onToggleTheme() })
+            Text("Appearance", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AppThemeMode.entries.forEach { option ->
+                    val selected = themeMode == option
+                    val icon = when (option) {
+                        AppThemeMode.SYSTEM -> Icons.TwoTone.Settings
+                        AppThemeMode.LIGHT -> Icons.TwoTone.LightMode
+                        AppThemeMode.DARK -> Icons.TwoTone.DarkMode
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f).clip(MaterialTheme.shapes.medium)
+                            .clickable { onThemeModeChange(option) }
+                            .padding(vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(56.dp),
+                            shape = CircleShape,
+                            color = if (selected) ForestContainer else SurfaceContainer,
+                            border = if (selected) BorderStroke(2.dp, Forest) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(icon, contentDescription = null, tint = if (selected) Forest else Muted, modifier = Modifier.size(24.dp))
+                            }
+                        }
+                        Text(
+                            option.label,
+                            color = if (selected) Forest else Ink,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                        )
+                    }
                 }
             }
             Text("Color palette", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
