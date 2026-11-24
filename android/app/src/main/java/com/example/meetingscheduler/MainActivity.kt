@@ -1460,8 +1460,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
                     }
                 },
                 navigationIcon = {
-                    Image(androidx.compose.ui.res.painterResource(R.drawable.ic_meeting_scheduler),
-                        contentDescription = null, modifier = Modifier.padding(start = 14.dp, end = 8.dp).size(34.dp))
+                    MeetingSchedulerBrandIcon(Modifier.padding(start = 14.dp, end = 8.dp).size(34.dp))
                 },
                 actions = {
                     Box(Modifier.padding(end = 8.dp)) {
@@ -1930,16 +1929,12 @@ private fun MeetingSplashScreen() {
                         translationY = (1f - entrance.value) * 18.dp.toPx()
                     },
                     shape = RoundedCornerShape(if (compact) 30.dp else 38.dp),
-                    color = Color(0xFF145435),
-                    border = BorderStroke(1.dp, Color(0xFFA8C3A4).copy(alpha = 0.48f)),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.48f)),
                     shadowElevation = 18.dp
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Image(
-                            painter = androidx.compose.ui.res.painterResource(R.drawable.ic_meeting_scheduler),
-                            contentDescription = "JW Meeting Scheduler",
-                            modifier = Modifier.size(if (compact) 82.dp else 100.dp)
-                        )
+                        MeetingSchedulerBrandIcon(Modifier.size(if (compact) 82.dp else 100.dp), "JW Meeting Scheduler")
                     }
                 }
                 if (reveal) {
@@ -2042,11 +2037,7 @@ private fun LoginScreen(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Image(
-                    painter = androidx.compose.ui.res.painterResource(com.example.meetingscheduler.R.drawable.ic_meeting_scheduler),
-                    contentDescription = "JW Meeting Scheduler",
-                    modifier = Modifier.size(if (compact) 62.dp else 72.dp)
-                )
+                MeetingSchedulerBrandIcon(Modifier.size(if (compact) 62.dp else 72.dp), "JW Meeting Scheduler")
                 Spacer(Modifier.height(13.dp))
                 Text("JW Meeting Scheduler", fontWeight = FontWeight.Bold, fontSize = 23.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 Text("Midweek meeting workspace", color = Muted, fontSize = 13.sp)

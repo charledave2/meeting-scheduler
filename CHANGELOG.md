@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.45.25 — 2026-11-24
+
+- Recolor the in-app brand icon from the selected palette in the header, sign-in, splash, and app-lock screens.
+
 ## v0.45.24 — 2026-11-24
 
 - Add four selectable color palettes: Tonal Spot, Neutral, Vibrant, and Expressive.
