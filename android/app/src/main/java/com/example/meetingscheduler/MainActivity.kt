@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 65944)
-Total output lines: 4000
-
 package com.example.meetingscheduler
 
 import android.Manifest
@@ -483,7 +480,3234 @@ private class LocalWorkspaceStore(context: Context) {
     fun saveProfileName(username: String, value: String) { prefs.edit().putString(profileKey("profile_name", username), value).apply() }
     fun profilePhoto(username: String) = prefs.getString(profileKey("profile_photo_path", username), null)
     fun saveProfilePhoto(username: String, path: String) { prefs.edit().putString(profileKey("profile_photo_path", username), path).apply() }
- …53944 tokens truncated…        } else if (account.status.equals("active", true) || account.status.equals("disabled", true)) {
+    var darkMode: Boolean
+        get() = prefs.getBoolean("dark_mode", true)
+        set(value) { prefs.edit().putBoolean("dark_mode", value).apply() }
+    var paletteStyle: AppPaletteStyle
+        get() = runCatching { AppPaletteStyle.valueOf(prefs.getString("palette_style", AppPaletteStyle.TONAL_SPOT.name) ?: AppPaletteStyle.TONAL_SPOT.name) }
+            .getOrDefault(AppPaletteStyle.TONAL_SPOT)
+        set(value) { prefs.edit().putString("palette_style", value.name).apply() }
+    var appFontScale: Float
+        get() = prefs.getFloat("app_font_scale", 1f).coerceIn(0.85f, 1.35f)
+        set(value) { prefs.edit().putFloat("app_font_scale", value.coerceIn(0.85f, 1.35f)).apply() }
+    fun detail(key: String, fallback: String) = prefs.getString("detail_$key", fallback) ?: fallback
+    fun setDetail(key: String, value: String) { prefs.edit().putString("detail_$key", value).apply() }
+    fun saveDetails(week: String, bible: String, opening: String, closing: String, workbook: String) {
+        prefs.edit().putString("detail_week", week).putString("detail_bible", bible)
+            .putString("detail_opening", opening).putString("detail_closing", closing)
+            .putString("detail_workbook", workbook).apply()
+    }
+    fun loadParticipants(): List<Participant> = readList("participants") { o ->
+        Participant(o.optString("name"), o.optString("appointment", "publisher"), o.optString("service", "none"), o.optString("gender", "brother"), o.optBoolean("enabled", true),o.optInt("id"),o.optBoolean("unbaptized",false))
+    } ?: sampleParticipants()
+    fun saveParticipants(items: List<Participant>) = writeList("participants", items.map { o -> JSONObject().put("name",o.name).put("appointment",o.appointment).put("service",o.service).put("gender",o.gender).put("enabled",o.enabled).put("id",o.id).put("unbaptized",o.unbaptized) })
+    fun loadAssignments(): List<Assignment> = readList("assignments") { o -> o.toAssignment() } ?: sampleAssignments()
+    fun saveAssignments(items: List<Assignment>) = writeList("assignments", items.map { it.toJson() })
+    fun loadHistory(): List<SavedSchedule> = readList("history") { o ->
+        val a = o.optJSONArray("assignments") ?: JSONArray()
+        val assignments = buildList { for (i in 0 until a.length()) a.optJSONObject(i)?.let { add(it.toAssignment()) } }
+        SavedSchedule(o.optString("week"),o.optString("reading"),o.optString("saved"),o.optString("weekStart"),o.optString("openingSong","27"),o.optString("closingSong","132"),assignments,o.optString("chairman"),o.optString("openingPrayer"),o.optString("adviser"),o.optString("audienceGroup"))
+    } ?: sampleHistory()
+    fun saveHistory(items: List<SavedSchedule>) = writeList("history", items.map { item ->
+        val assignments = JSONArray().apply { item.assignments.forEach { put(it.toJson()) } }
+        JSONObject().put("week",item.week).put("reading",item.reading).put("saved",item.saved).put("weekStart",item.weekStart).put("openingSong",item.openingSong).put("closingSong",item.closingSong).put("assignments",assignments).put("chairman",item.chairman).put("openingPrayer",item.openingPrayer).put("adviser",item.adviser).put("audienceGroup",item.audienceGroup)
+    })
+    private fun <T> readList(key: String, map: (JSONObject) -> T): List<T>? {
+        val raw = prefs.getString(key, null) ?: return null
+        return runCatching { val a=JSONArray(raw); buildList { for (i in 0 until a.length()) a.optJSONObject(i)?.let { add(map(it)) } } }.getOrNull()
+    }
+    private fun writeList(key: String, values: List<JSONObject>) { prefs.edit().putString(key,JSONArray(values).toString()).apply() }
+}
+
+private fun JSONObject.toAssignment() = Assignment(
+    title=optString("title"), detail=optString("detail"), person=optString("person", optString("assignee")),
+    id=optInt("id"), time=optString("time"), section=optString("section"), duration=optString("duration"),
+    assistant=optString("assistant"), secondaryAssignee=optString("secondaryAssignee"), secondaryAssistant=optString("secondaryAssistant"),
+    hasAssistant=optBoolean("hasAssistant", has("assistant")), hasSecondary=optBoolean("hasSecondary", has("secondaryAssignee")),
+    hasSecondaryAssistant=optBoolean("hasSecondaryAssistant", has("secondaryAssistant"))
+)
+private fun Assignment.toJson() = JSONObject().put("title",title).put("detail",detail).put("person",person).put("assignee",person).put("id",id)
+    .put("time",time).put("section",section).put("duration",duration).put("assistant",assistant)
+    .put("secondaryAssignee",secondaryAssignee).put("secondaryAssistant",secondaryAssistant)
+    .put("hasAssistant",hasAssistant).put("hasSecondary",hasSecondary).put("hasSecondaryAssistant",hasSecondaryAssistant)
+
+internal data class AvailableAppUpdate(val version: String, val apkUrl: String, val notes: String)
+
+@Composable
+private fun AppUpdatePrompt() {
+    val context = LocalContext.current
+    var update by remember { mutableStateOf<AvailableAppUpdate?>(null) }
+    var downloadId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var downloadProgress by remember { mutableStateOf<AppUpdateDownloadProgress?>(null) }
+    var downloadError by remember { mutableStateOf<String?>(null) }
+    var installPermissionMissing by remember { mutableStateOf(false) }
+
+    val updateCheckScope = rememberCoroutineScope()
+    val activity = context as? MainActivity
+    DisposableEffect(activity) {
+        var checkJob: kotlinx.coroutines.Job? = null
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) {
+                checkJob?.cancel()
+                checkJob = updateCheckScope.launch {
+                    val latest = runCatching {
+                        withContext(Dispatchers.IO) { AppUpdateClient.checkForUpdate(BuildConfig.VERSION_NAME) }
+                    }.getOrNull()
+                    if (latest != null) update = latest
+                }
+            }
+        }
+        activity?.lifecycle?.addObserver(observer)
+        onDispose {
+            checkJob?.cancel()
+            activity?.lifecycle?.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(downloadId) {
+        val id = downloadId ?: return@LaunchedEffect
+        while (true) {
+            val state = runCatching {
+                withContext(Dispatchers.IO) { AppUpdateClient.downloadProgress(context, id) }
+            }.getOrNull()
+            downloadProgress = state
+            if (state == null || state.complete || state.failed) break
+            delay(500)
+        }
+        if (downloadProgress?.failed == true) downloadError = "Hindi natuloy ang download. Subukan ulit."
+    }
+
+    update?.let { available ->
+        val downloading = downloadId != null && downloadProgress?.complete != true && downloadProgress?.failed != true
+        val complete = downloadProgress?.complete == true
+        val progressValue = (downloadProgress?.percent ?: 0).coerceIn(0, 100) / 100f
+        val notes = available.notes.lineSequence()
+            .map { it.trim().removePrefix("-").removePrefix("*").trim() }
+            .filter { it.isNotBlank() && !it.startsWith("#") }
+            .take(3)
+            .toList()
+
+        AlertDialog(
+            onDismissRequest = { if (!downloading) update = null },
+            icon = {
+                Surface(shape = CircleShape, color = ForestContainer, modifier = Modifier.size(52.dp)) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.TwoTone.SystemUpdateAlt, contentDescription = null, tint = Forest, modifier = Modifier.size(29.dp))
+                    }
+                }
+            },
+            title = { Text("May bagong update", fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column(Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.48f).dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("JW Meeting Scheduler ${available.version} ay handa nang i-update.", color = Ink)
+                    if (notes.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text("Mga bagong pagbabago", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            notes.forEach { Text("• $it", color = Muted, fontSize = 12.sp, lineHeight = 17.sp) }
+                        }
+                    }
+                    if (downloadId != null) {
+                        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Text(
+                                when {
+                                    complete -> "Handa nang i-install"
+                                    downloadProgress?.failed == true -> "Hindi natapos ang download"
+                                    else -> "Dina-download ang update…"
+                                },
+                                color = if (downloadProgress?.failed == true) MaterialTheme.colorScheme.error else Forest,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            LinearProgressIndicator(
+                                progress = { if (complete) 1f else progressValue },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = Forest,
+                                trackColor = ForestContainer
+                            )
+                            Text(
+                                if (complete) "100%" else downloadProgress?.percent?.let { "$it%" } ?: "Inihahanda ang download…",
+                                color = Muted,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                    if (installPermissionMissing) {
+                        Text("Payagan ang pag-install mula sa app na ito sa Android settings, pagkatapos ay pindutin ulit ang Install update.", color = Muted, fontSize = 12.sp)
+                    }
+                    downloadError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                    if (complete) Text("Ilulunsad ng Android ang confirmation bago i-install.", color = Muted, fontSize = 11.sp)
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = !downloading,
+                    onClick = {
+                        val activity = context as? MainActivity ?: return@Button
+                        downloadError = null
+                        if (complete && downloadId != null) {
+                            if (AppUpdateClient.canInstallPackages(activity)) {
+                                runCatching { AppUpdateClient.install(activity, downloadId!!) }
+                                    .onFailure { downloadError = it.message ?: "Hindi mabuksan ang installer." }
+                            } else {
+                                installPermissionMissing = true
+                                runCatching { AppUpdateClient.openInstallSettings(activity) }
+                                    .onFailure { downloadError = it.message ?: "Hindi mabuksan ang Android settings." }
+                            }
+                        } else if (downloadProgress?.failed == true || downloadId == null) {
+                            runCatching {
+                                downloadId = AppUpdateClient.download(activity, available.apkUrl)
+                                downloadProgress = null
+                                installPermissionMissing = false
+                            }.onFailure { downloadError = it.message ?: "Hindi masimulan ang download." }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors()
+                ) {
+                    Icon(Icons.TwoTone.SystemUpdateAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        when {
+                            downloading -> "Downloading…"
+                            complete -> "Install update"
+                            downloadProgress?.failed == true -> "Try again"
+                            else -> "Download update"
+                        }
+                    )
+                }
+            },
+            dismissButton = {
+                if (!downloading) TextButton(onClick = { update = null }) { Text("Mamaya", color = Forest) }
+            },
+            containerColor = AppSurface
+        )
+    }
+}
+
+@Composable
+private fun MeetingSchedulerRoot(window: android.view.Window) {
+    val context = LocalContext.current
+    val appLock = (androidx.activity.compose.LocalActivity.current as MainActivity).appLock
+    val workspaceState = rememberSaveableStateHolder()
+    val store = remember(context) { LocalWorkspaceStore(context) }
+    var darkMode by rememberSaveable { mutableStateOf(store.darkMode) }
+    var paletteStyle by rememberSaveable { mutableStateOf(store.paletteStyle) }
+    var appFontScale by rememberSaveable { mutableFloatStateOf(store.appFontScale) }
+    LaunchedEffect(paletteStyle) { syncLauncherPalette(context, paletteStyle) }
+    val scheme = paletteStyle.colorScheme(darkMode)
+    val systemDensity = LocalDensity.current
+    SideEffect {
+        window.statusBarColor = scheme.background.toArgb()
+        window.navigationBarColor = scheme.background.toArgb()
+        val lightNavigation = if (android.os.Build.VERSION.SDK_INT >= 26) View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR else 0
+        window.decorView.systemUiVisibility = if (darkMode) 0 else (View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or lightNavigation)
+    }
+    CompositionLocalProvider(LocalDensity provides Density(systemDensity.density, systemDensity.fontScale * appFontScale)) {
+        MaterialTheme(colorScheme = scheme, shapes = Shapes(
+            small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(16.dp), large = RoundedCornerShape(22.dp),
+            extraLarge = RoundedCornerShape(28.dp)
+        ), typography = SchedulerTypography) {
+            Box(Modifier.fillMaxSize()) {
+                if (appLock.state.locked) {
+                    AppLockScreen(appLock)
+                } else {
+                    workspaceState.SaveableStateProvider("workspace") {
+                        MeetingSchedulerApp(
+                            darkMode = darkMode,
+                            onToggleTheme = { darkMode = !darkMode; store.darkMode = darkMode },
+                            paletteStyle = paletteStyle,
+                            onPaletteStyleChange = { paletteStyle = it; store.paletteStyle = it },
+                            store = store,
+                            fontScale = appFontScale,
+                            onFontScaleChange = { appFontScale = it.coerceIn(0.85f, 1.35f); store.appFontScale = appFontScale },
+                            appLock = appLock
+                        )
+                        AppUpdatePrompt()
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, paletteStyle: AppPaletteStyle, onPaletteStyleChange: (AppPaletteStyle) -> Unit, store: LocalWorkspaceStore, fontScale: Float, onFontScaleChange: (Float) -> Unit, appLock: AppLockController) {
+    val context = LocalContext.current
+    val api = remember(context) { SchedulerApi(context) }
+    val authScope = rememberCoroutineScope()
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) MeetingPushNotifications.syncToken(context, api)
+    }
+    var signedIn by rememberSaveable { mutableStateOf(false) }
+    var authReady by rememberSaveable { mutableStateOf(false) }
+    var loginBusy by remember { mutableStateOf(false) }
+    var loginError by remember { mutableStateOf<String?>(null) }
+    var passwordChangeRequired by rememberSaveable { mutableStateOf(false) }
+    var splashFinished by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) { delay(1_050); splashFinished = true }
+    var identityName by rememberSaveable { mutableStateOf("") }
+    var identityUsername by rememberSaveable { mutableStateOf("") }
+    var identityRole by rememberSaveable { mutableStateOf("") }
+    var identityToolAccess by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var profilePhotoPath by rememberSaveable { mutableStateOf<String?>(null) }
+    var profilePhotoDataUrl by remember { mutableStateOf("") }
+    var profileDialogOpen by rememberSaveable { mutableStateOf(false) }
+    var profileNameDraft by rememberSaveable { mutableStateOf("") }
+    var profileError by remember { mutableStateOf<String?>(null) }
+    var workbookStatus by rememberSaveable { mutableStateOf("Naghahanap ng workbook para sa napiling linggo…") }
+    var workbookBusy by remember { mutableStateOf(false) }
+    var workbookCaptureLog by remember { mutableStateOf(listOf("READY · waiting for the selected meeting week")) }
+    var cloudStatus by rememberSaveable { mutableStateOf("Konektado sa website") }
+    var cloudSaveBusy by remember { mutableStateOf(false) }
+    var cloudSaveFeedback by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    var participantAdmin by rememberSaveable { mutableStateOf(false) }
+    var participantCanEdit by rememberSaveable { mutableStateOf(false) }
+    var showNotificationPermissionPrompt by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(signedIn, identityUsername, splashFinished) {
+        if (!signedIn || identityUsername.isBlank() || !splashFinished) return@LaunchedEffect
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            val permissionPrefs = context.getSharedPreferences("meeting_notification_permission", Context.MODE_PRIVATE)
+            if (!permissionPrefs.getBoolean("asked", false)) showNotificationPermissionPrompt = true
+        } else {
+            MeetingPushNotifications.syncToken(context, api)
+        }
+    }
+    LaunchedEffect(api) {
+        runCatching { api.currentUser() }.onSuccess {
+            identityName = store.profileName(it.username, it.name); identityUsername = it.username
+            profilePhotoPath = store.profilePhoto(it.username); profilePhotoDataUrl = it.photoDataUrl; identityRole = it.role; identityToolAccess = it.toolAccess; identityToolAccess = it.toolAccess
+            if (it.mustChangePassword) passwordChangeRequired = true else signedIn = true
+        }
+        authReady = true
+    }
+    if (showNotificationPermissionPrompt) {
+        AlertDialog(
+            onDismissRequest = {
+                showNotificationPermissionPrompt = false
+                context.getSharedPreferences("meeting_notification_permission", Context.MODE_PRIVATE).edit().putBoolean("asked", true).apply()
+            },
+            title = { Text("Get assignment notifications") },
+            text = { Text("We can notify you when a newly saved cloud schedule includes an assignment for you.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showNotificationPermissionPrompt = false
+                    context.getSharedPreferences("meeting_notification_permission", Context.MODE_PRIVATE).edit().putBoolean("asked", true).apply()
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }) { Text("Allow") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showNotificationPermissionPrompt = false
+                    context.getSharedPreferences("meeting_notification_permission", Context.MODE_PRIVATE).edit().putBoolean("asked", true).apply()
+                }) { Text("Not now") }
+            }
+        )
+    }
+    if (!splashFinished || !authReady) { MeetingSplashScreen(); return }
+    if (!signedIn) {
+        if (!authReady) {
+            Surface(color = AppSurface, modifier = Modifier.fillMaxSize()) { Box(contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Forest) } }
+        } else LoginScreen(
+            busy = loginBusy, error = loginError, mustChangePassword = passwordChangeRequired,
+            onRequestAccess = { name, username, note -> api.requestAccess(name, username, note); Unit },
+            onChangePassword = { currentPassword, newPassword ->
+                authScope.launch {
+                    loginBusy = true; loginError = null
+                    runCatching { api.changePassword(currentPassword, newPassword) }
+                        .onSuccess { passwordChangeRequired = false; signedIn = true }
+                        .onFailure { loginError = it.message ?: "Could not change your password." }
+                    loginBusy = false
+                }
+            },
+            onLogin = { username, password ->
+                authScope.launch {
+                    loginBusy = true; loginError = null
+                    runCatching { api.login(username, password) }
+                        .onSuccess {
+                            identityName = store.profileName(it.username, it.name); identityUsername = it.username
+                            profilePhotoPath = store.profilePhoto(it.username); profilePhotoDataUrl = it.photoDataUrl; identityRole = it.role
+                            if (it.mustChangePassword) passwordChangeRequired = true else signedIn = true
+                        }
+                        .onFailure { loginError = it.message ?: "Could not sign in." }
+                    loginBusy = false
+                }
+            }
+        )
+        return
+    }
+
+    var current by rememberSaveable { mutableStateOf(Screen.HOME) }
+    val officialPreviewWebView = remember { mutableStateOf<WebView?>(null) }
+    var toolsOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(profileDialogOpen, toolsOpen) {
+        if (profileDialogOpen || toolsOpen) runCatching { api.currentUser() }
+            .onSuccess { profilePhotoDataUrl = it.photoDataUrl; identityToolAccess = it.toolAccess; identityRole = it.role }
+    }
+    var weekStart by rememberSaveable { mutableStateOf(store.detail("week", LocalDate.of(2026, 11, 9).toString())) }
+    var bible by rememberSaveable { mutableStateOf(store.detail("bible", "Jeremias 31")) }
+    var openingSong by rememberSaveable { mutableStateOf(store.detail("opening", "27")) }
+    var closingSong by rememberSaveable { mutableStateOf(store.detail("closing", "132")) }
+    var workbook by rememberSaveable { mutableStateOf(store.detail("workbook", "https://www.jw.org/finder?srcid=jwlshare&wtlocale=TG&prefer=lang&docid=202026249")) }
+    var datePicker by remember { mutableStateOf(false) }
+    var chairman by rememberSaveable { mutableStateOf(store.detail("chairman", "")) }
+    var openingPrayer by rememberSaveable { mutableStateOf(store.detail("opening_prayer", "")) }
+    var adviser by rememberSaveable { mutableStateOf(store.detail("adviser", "")) }
+    var audienceGroup by rememberSaveable { mutableStateOf(store.detail("audience_group", "")) }
+    val participants = remember(store) { mutableStateListOf<Participant>().apply { addAll(store.loadParticipants()) } }
+    val storedAssignments = remember(store) { store.loadAssignments() }
+    val parts = remember(store) {
+        mutableStateListOf<Assignment>().apply { addAll(deduplicateAssignmentParticipants(storedAssignments)) }
+    }
+    LaunchedEffect(storedAssignments) {
+        val unique = deduplicateAssignmentParticipants(storedAssignments)
+        if (unique != storedAssignments) store.saveAssignments(unique)
+    }
+    val history = remember(store) { mutableStateListOf<SavedSchedule>().apply { addAll(store.loadHistory()) } }
+    var participantsLoaded by remember { mutableStateOf(false) }
+    var participantsBusy by remember { mutableStateOf(false) }
+    var participantsLoadError by remember { mutableStateOf<String?>(null) }
+    var rotationStats by remember { mutableStateOf<Map<Int, ParticipantRotation>>(emptyMap()) }
+    var rotationBusy by remember { mutableStateOf(false) }
+    var rotationError by remember { mutableStateOf<String?>(null) }
+    var remoteRows by remember { mutableStateOf<List<RemoteSchedule>>(emptyList()) }
+    var homeSchedules by remember { mutableStateOf<List<RemoteSchedule>>(emptyList()) }
+    var homeLoaded by remember { mutableStateOf(false) }
+    var homeBusy by remember { mutableStateOf(false) }
+    var homeError by remember { mutableStateOf<String?>(null) }
+    var homePreviewHtml by remember { mutableStateOf<String?>(null) }
+    var homePreviewRequest by remember { mutableIntStateOf(0) }
+    var homePreviewWeek by remember { mutableStateOf<String?>(null) }
+    var homePreviewLoading by remember { mutableStateOf(false) }
+    var editingRemoteId by rememberSaveable { mutableIntStateOf(0) }
+    var suppressWeekLookup by remember { mutableStateOf(false) }
+    var remoteScheduleLoadedWeek by rememberSaveable { mutableStateOf("") }
+    var weekLoadNonce by remember { mutableIntStateOf(0) }
+    var historyLoaded by remember { mutableStateOf(false) }
+    var historyBusy by remember { mutableStateOf(false) }
+    var historyError by remember { mutableStateOf<String?>(null) }
+    var historyReloadTick by remember { mutableIntStateOf(0) }
+    var remoteAccounts by remember { mutableStateOf<List<RemoteAccount>>(emptyList()) }
+    var accountLinkParticipants by remember { mutableStateOf<List<AccountLinkParticipant>>(emptyList()) }
+    var accountsLoaded by remember { mutableStateOf(false) }
+    var accountsBusy by remember { mutableStateOf(false) }
+    var accountsError by remember { mutableStateOf<String?>(null) }
+    var testNotificationBusy by remember { mutableStateOf(false) }
+    var testNotificationFeedback by remember { mutableStateOf<NotificationFeedback?>(null) }
+    var accountReloadTick by remember { mutableIntStateOf(0) }
+    var accountPhotoTarget by remember { mutableStateOf<RemoteAccount?>(null) }
+    var toastMessage by remember { mutableStateOf<String?>(null) }
+    var shareSuccessType by rememberSaveable { mutableStateOf<String?>(null) }
+    var exportBusyType by remember { mutableStateOf<String?>(null) }
+    val shareLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        val prefs = context.getSharedPreferences(SHARE_RESULT_PREFS, Context.MODE_PRIVATE)
+        val pending = prefs.getString("pending_type", null)
+        val selected = prefs.getString("selected_type", null)
+        if (pending != null && pending == selected) shareSuccessType = pending
+        prefs.edit().remove("pending_type").remove("selected_type").apply()
+    }
+    fun launchScheduleShare(intent: Intent, type: String, chooserTitle: String) {
+        val prefs = context.getSharedPreferences(SHARE_RESULT_PREFS, Context.MODE_PRIVATE)
+        prefs.edit().putString("pending_type", type).remove("selected_type").apply()
+        val callback = Intent(context, ShareTargetChosenReceiver::class.java)
+            .setAction(SHARE_CHOSEN_ACTION)
+            .putExtra("share_type", type)
+        val requestCode = when (type) { "png" -> 451; "slips_image" -> 454; else -> 452 }
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            requestCode,
+            callback,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+        )
+        val chooser = Intent.createChooser(intent, chooserTitle, pendingIntent.intentSender)
+        runCatching { shareLauncher.launch(chooser) }.onSuccess {
+            exportBusyType = null
+        }.onFailure {
+            prefs.edit().remove("pending_type").remove("selected_type").apply()
+            exportBusyType = null
+            toastMessage = "Hindi mabuksan ang sharing menu: ${it.message ?: "subukan muli"}"
+        }
+    }
+    var restrictedTapCount by rememberSaveable { mutableIntStateOf(0) }
+    var accessNotice by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    val week = remember(weekStart) { runCatching { LocalDate.parse(weekStart) }.getOrDefault(LocalDate.of(2026,11,9)) }
+    val weekLabel = remember(week) { week.format(DateTimeFormatter.ofPattern("MMM d")) + " – " + week.plusDays(6).format(DateTimeFormatter.ofPattern("MMM d, yyyy")) }
+    fun toolKey(screen: Screen): String = when (screen) {
+        Screen.HOME -> "home"
+        Screen.DETAILS -> "workbook"
+        Screen.ASSIGNMENTS -> "assignments"
+        Screen.PREVIEW -> "preview"
+        Screen.PARTICIPANTS -> "participants"
+        Screen.HISTORY -> "history"
+        Screen.ACCOUNTS -> "accounts"
+    }
+    fun toolMode(screen: Screen): String {
+        if (identityRole.equals("admin", true) || identityRole.equals("administrator", true)) return "edit"
+        val key = toolKey(screen)
+        if (key == "accounts") return "hidden"
+        val defaults = if (identityRole.equals("scheduler", true)) mapOf(
+            "home" to "view", "workbook" to "edit", "assignments" to "edit",
+            "preview" to "edit", "participants" to "hidden", "history" to "view"
+        ) else mapOf("home" to "view", "workbook" to "hidden", "assignments" to "hidden", "preview" to "hidden", "participants" to "hidden", "history" to "hidden")
+        return identityToolAccess[key] ?: defaults[key] ?: "hidden"
+    }
+    fun canAccess(screen: Screen): Boolean = if (screen == Screen.ACCOUNTS) signedIn else toolMode(screen) != "hidden"
+    fun canEdit(screen: Screen): Boolean = identityRole.equals("admin", true) || (identityRole.equals("scheduler", true) && toolMode(screen) == "edit")
+    fun navigateTo(screen: Screen) {
+        if (canAccess(screen)) current = screen
+        else {
+            restrictedTapCount += 1
+            accessNotice = if (restrictedTapCount >= 7)
+                "Please Don't Spam, Just Message the Administrator for Access." to true
+            else "Your Account Doesn't Have Access to This Tool." to false
+        }
+    }
+
+    LaunchedEffect(signedIn, identityToolAccess, identityRole) {
+        if (signedIn && !canAccess(current)) current = Screen.values().firstOrNull { canAccess(it) } ?: Screen.HOME
+    }
+
+    LaunchedEffect(current, signedIn, homeLoaded) {
+        if (current == Screen.HOME && signedIn && !homeLoaded && !homeBusy) {
+            homeBusy = true
+            homeError = null
+            runCatching { api.schedules() }
+                .onSuccess { homeSchedules = it; homeLoaded = true }
+                .onFailure { homeError = it.message ?: "Hindi makuha ang upcoming meetings."; homeLoaded = true }
+            homeBusy = false
+        }
+    }
+
+    LaunchedEffect(weekStart, signedIn, participantsLoaded) {
+        if (signedIn && participantsLoaded) {
+            rotationBusy = true
+            rotationError = null
+            runCatching { api.participantRotation(weekStart) }
+                .onSuccess { stats -> rotationStats = stats.associateBy { it.memberId } }
+                .onFailure { error ->
+                    rotationStats = emptyMap()
+                    rotationError = error.message ?: "Hindi makuha ang participant rotation."
+                }
+            rotationBusy = false
+        } else {
+            rotationStats = emptyMap()
+            rotationBusy = false
+            rotationError = null
+        }
+    }
+
+    LaunchedEffect(signedIn, participantsLoaded) {
+        if(signedIn && !participantsLoaded && !participantsBusy && (canAccess(Screen.PARTICIPANTS) || canAccess(Screen.ASSIGNMENTS))) {
+            participantsBusy=true
+            participantsLoadError=null
+            runCatching { api.members(includeInactive=true) }.onSuccess { response ->
+                participantAdmin=response.optBoolean("isAdmin",participantAdmin); participantCanEdit=response.optBoolean("canManageRoles",participantCanEdit)
+                val rows=response.optJSONArray("members") ?: JSONArray(); participants.clear()
+                for(i in 0 until rows.length()) rows.optJSONObject(i)?.let { row -> participants.add(Participant(row.optString("name"),row.optString("appointment"),row.optString("serviceStatus"),row.optString("gender").ifBlank{"unspecified"},row.optBoolean("active",true),row.optInt("id"),row.optBoolean("unbaptized",false))) }
+                store.saveParticipants(participants.toList()); participantsLoaded=true; participantsLoadError=null; cloudStatus="Nakuha ang participants mula sa website"
+            }.onFailure { participantsLoadError=it.message ?: "Suriin ang internet at subukan ulit."; cloudStatus="Hindi makuha ang participants: ${it.message ?: "server error"}"; participantsLoaded=true }
+            participantsBusy=false
+        }
+    }
+
+    fun saveSchedule() {
+        val saved = SavedSchedule(weekLabel, bible, LocalDate.now().format(DateTimeFormatter.ofPattern("MMM d, yyyy")), weekStart, openingSong, closingSong, parts.toList(), chairman, openingPrayer, adviser, audienceGroup)
+        history.removeAll { it.weekStart == weekStart }
+        history.add(0, saved)
+        store.saveHistory(history.toList())
+        store.saveDetails(weekStart, bible, openingSong, closingSong, workbook)
+        store.saveAssignments(parts.toList())
+        toastMessage = "Na-save sa device"
+    }
+    fun clearMeetingRoles() {
+        chairman=""; openingPrayer=""; adviser=""; audienceGroup=""
+        store.setDetail("chairman",""); store.setDetail("opening_prayer",""); store.setDetail("adviser",""); store.setDetail("audience_group","")
+    }
+    fun saveToCloud() {
+        if (!signedIn || identityRole != "admin") {
+            toastMessage = "Admin account lang ang puwedeng mag-save sa cloud"
+            return
+        }
+        if (cloudSaveBusy) return
+        authScope.launch {
+        cloudSaveBusy = true
+        cloudSaveFeedback = null
+        cloudStatus = "Sine-save sa cloud…"
+        runCatching { api.saveSchedule(weekLabel, weekStart, bible, openingSong, closingSong, parts.map { it.toJson() }, chairman, openingPrayer, adviser, audienceGroup, workbook, editingRemoteId) }
+            .onSuccess { historySaved ->
+                cloudStatus = if (historySaved) "Naka-save sa cloud" else "Na-save; hindi na-update ang assignment history"
+                cloudSaveFeedback = cloudStatus to historySaved
+                toastMessage = cloudStatus
+                historyLoaded=false
+                editingRemoteId=0
+            }
+            .onFailure {
+                cloudStatus = "Hindi na-save: ${it.message ?: "server error"}"
+                cloudSaveFeedback = cloudStatus to false
+                toastMessage = cloudStatus
+            }
+        cloudSaveBusy = false
+        }
+    }
+    fun persistDetails() = store.saveDetails(weekStart, bible, openingSong, closingSong, workbook)
+    suspend fun fetchWorkbookForSelectedWeek() {
+        workbookBusy = true
+        workbookStatus = "Kinukuha ang workbook para sa $weekLabel…"
+        workbookCaptureLog = listOf("$ capture-workbook --week $weekStart", "INIT · preparing a fresh workbook fetch")
+        clearMeetingRoles(); parts.clear(); store.saveAssignments(emptyList())
+        runCatching { api.importForWeek(weekStart) { step -> withContext(Dispatchers.Main.immediate) { workbookCaptureLog = (workbookCaptureLog + step).takeLast(7) } } }
+            .onSuccess { result ->
+                workbook = result.link
+                bible = result.meta.optString("reading", bible)
+                openingSong = result.meta.optString("openingSong", openingSong)
+                closingSong = result.meta.optString("closingSong", closingSong)
+                parts.clear()
+                result.parts.forEach { part ->
+                    parts.add(Assignment(
+                        title=part.optString("title"), detail=part.optString("detail"), person=part.optString("assignee"),
+                        id=part.optInt("id"), time=part.optString("time"), section=part.optString("section"), duration=part.optString("duration"),
+                        assistant=part.optString("assistant"), secondaryAssignee=part.optString("secondaryAssignee"), secondaryAssistant=part.optString("secondaryAssistant"),
+                        hasAssistant=part.has("assistant"), hasSecondary=part.has("secondaryAssignee"), hasSecondaryAssistant=part.has("secondaryAssistant")
+                    ))
+                }
+                val unique = deduplicateAssignmentParticipants(parts.toList())
+                parts.clear(); parts.addAll(unique)
+                persistDetails()
+                store.saveAssignments(parts.toList())
+                workbookStatus = "✓ ${result.parts.size} meeting parts imported from JW.ORG"
+                remoteScheduleLoadedWeek = weekStart
+                workbookCaptureLog = (workbookCaptureLog + "PARSED · ${result.parts.size} meeting parts" + "DONE · metadata and assignments saved locally").takeLast(7)
+            }
+            .onFailure {
+                workbookCaptureLog = (workbookCaptureLog + "ERROR · ${it.message ?: "workbook capture failed"}").takeLast(7)
+                workbookStatus = when {
+                    it.message?.contains("format was not recognized", true) == true -> "Hindi mabasa ang workbook page para sa linggong ito. Subukan ulit."
+                    it.message?.contains("No workbook", true) == true || it.message?.contains("Walang nailathalang", true) == true -> "Wala pang workbook na nailalathala para sa linggong ito."
+                    it.message?.contains("Viewer accounts", true) == true -> "Walang permission ang viewer account para mag-import ng workbook."
+                    else -> it.message ?: "Hindi makuha ang workbook. Suriin ang internet at subukan ulit."
+                }
+            }
+        workbookBusy = false
+    }
+    suspend fun applyRemoteSchedule(remote: RemoteSchedule, navigate: Boolean = false, edit: Boolean = false) {
+        val row=api.schedule(remote.id); val meta=row.optJSONObject("meta") ?: JSONObject(); val raw=row.optJSONArray("parts") ?: JSONArray()
+        val savedWeekStart=meta.optString("weekStart").ifBlank { scheduleStartDate(remote.weekLabel,remote.updatedAt)?.toString() ?: weekStart }
+        if(savedWeekStart!=weekStart) suppressWeekLookup=true
+        remoteScheduleLoadedWeek=savedWeekStart; weekLoadNonce++
+        weekStart=savedWeekStart; bible=meta.optString("reading",remote.reading)
+        openingSong=meta.optString("openingSong",openingSong); closingSong=meta.optString("closingSong",closingSong)
+        workbook=row.optString("sourceUrl",workbook)
+        chairman=meta.optString("chairman",""); openingPrayer=meta.optString("openingPrayer",""); adviser=meta.optString("adviser",""); audienceGroup=meta.optString("audienceGroup","")
+        store.setDetail("chairman",chairman); store.setDetail("opening_prayer",openingPrayer); store.setDetail("adviser",adviser); store.setDetail("audience_group",audienceGroup)
+        parts.clear()
+        val loadedParts = (0 until raw.length()).mapNotNull { raw.optJSONObject(it)?.toAssignment() }
+        parts.addAll(deduplicateAssignmentParticipants(loadedParts))
+        editingRemoteId=remote.id; persistDetails(); store.saveAssignments(parts.toList())
+        workbookStatus="✓ Na-load ang saved cloud schedule"
+        if(navigate) current=if(edit) Screen.DETAILS else Screen.PREVIEW
+    }
+    LaunchedEffect(weekStart, signedIn, weekLoadNonce, identityToolAccess) {
+        if (suppressWeekLookup) { suppressWeekLookup=false; return@LaunchedEffect }
+        if (remoteScheduleLoadedWeek==weekStart) return@LaunchedEffect
+        if (signedIn) {
+            workbookBusy=true; workbookStatus="Sinusuri kung may saved schedule sa napiling petsa…"
+            val selectedDate=runCatching { LocalDate.parse(weekStart) }.getOrDefault(week)
+            val saved=runCatching { api.schedules().firstOrNull { scheduleStartDate(it.weekLabel,it.updatedAt)==selectedDate } }.getOrNull()
+            if(saved!=null) runCatching { applyRemoteSchedule(saved) }.onFailure { workbookStatus="Hindi ma-load ang saved schedule: ${it.message ?: "server error"}"; workbookBusy=false }
+            else { clearMeetingRoles(); fetchWorkbookForSelectedWeek() }
+            workbookBusy=false
+        }
+    }
+    fun saveDraft() {
+        persistDetails()
+        store.saveAssignments(parts.toList())
+        store.saveParticipants(participants.toList())
+        toastMessage = "Na-save ang draft sa device"
+    }
+    fun printSchedule() {
+        val html = buildOfficialScheduleHtml(context, weekStart, bible, openingSong, closingSong, parts.toList(), chairman, openingPrayer, adviser, audienceGroup)
+        val web = WebView(context)
+        web.webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest): Boolean = true
+            override fun onPageFinished(view: WebView, url: String?) {
+                val manager = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
+                manager.print("Meeting schedule", view.createPrintDocumentAdapter("Meeting schedule"), android.print.PrintAttributes.Builder().build())
+            }
+        }
+        web.loadDataWithBaseURL("file:///android_asset/", html, "text/HTML", "UTF-8", null)
+    }
+    fun assignmentSlips(): List<AssignmentSlip> {
+        val date = runCatching { LocalDate.parse(weekStart).plusDays(3) }.getOrNull() ?: return emptyList()
+        val dateText = date.format(DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.ENGLISH))
+        return buildList {
+            if (chairman.isNotBlank()) add(AssignmentSlip(chairman, "", dateText, "Chairman", "Main Hall"))
+            if (openingPrayer.isNotBlank()) add(AssignmentSlip(openingPrayer, "", dateText, "Panalangin sa Simula", "Main Hall"))
+            if (adviser.isNotBlank()) add(AssignmentSlip(adviser, "", dateText, "Second Hall Adviser", "Second Hall"))
+            parts.forEachIndexed { index, part ->
+                val number = part.id.takeIf { it > 0 } ?: index + 1
+                val partTitle = when (number) {
+                    1 -> "Kayamanan Mula sa Salita ng Diyos"
+                    2 -> "Espirituwal na Hiyas"
+                    8 -> "Pag-aaral ng Kongregasyon sa Bibliya"
+                    else -> part.title.replaceFirst(Regex("^\\s*\\d+\\.\\s*"), "").trim()
+                }
+                val duration = part.duration.trim()
+                val label = buildString {
+                    append(number).append(". ").append(partTitle)
+                    if (duration.isNotBlank() && !partTitle.contains(duration, ignoreCase = true)) {
+                        append(" (").append(duration).append(")")
+                    }
+                }
+                if (part.person.isNotBlank()) add(AssignmentSlip(part.person, part.assistant, dateText, label, "Main Hall"))
+                if (part.secondaryAssignee.isNotBlank()) add(AssignmentSlip(part.secondaryAssignee, part.secondaryAssistant, dateText, label, "Second Hall"))
+            }
+        }
+    }
+    fun shareAssignmentSlipsImages() {
+        if (exportBusyType != null) return
+        val slips = assignmentSlips()
+        if (slips.isEmpty()) { toastMessage = "Magtalaga muna ng participant para sa assignment slips."; return }
+        exportBusyType = "slips_image"
+        authScope.launch {
+            runCatching {
+                val files = withContext(Dispatchers.IO) { createAssignmentSlipsImages(context, slips, weekStart) }
+                val uris = ArrayList(files.map { FileProvider.getUriForFile(context, "${context.packageName}.files", it) })
+                val multiple = uris.size > 1
+                Intent(if (multiple) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND).apply {
+                    type = "image/png"
+                    if (multiple) putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                    else putExtra(Intent.EXTRA_STREAM, uris.first())
+                    putExtra(Intent.EXTRA_SUBJECT, "Meeting assignment slips · $weekLabel")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    clipData = android.content.ClipData.newUri(context.contentResolver, "Assignment slips images", uris.first()).apply {
+                        uris.drop(1).forEach { addItem(android.content.ClipData.Item(it)) }
+                    }
+                }
+            }.onSuccess { intent -> launchScheduleShare(intent, "slips_image", "Share assignment slips images") }
+                .onFailure { exportBusyType = null; toastMessage = "Hindi mabuo ang assignment slip images: ${it.message ?: "subukan muli"}" }
+        }
+    }
+    fun shareSchedulePng() {
+        if (exportBusyType != null) return
+        exportBusyType = "png"
+        val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
+        val exportHtml = buildOfficialScheduleHtml(
+            context, weekStart, bible, openingSong, closingSong, parts.toList(), chairman, openingPrayer, adviser, audienceGroup,
+            exportMode = true
+        )
+        val outputWidth = SCHEDULE_EXPORT_WIDTH_PX
+        val outputHeight = SCHEDULE_EXPORT_HEIGHT_PX
+        var hostContext: Context = context
+        while (hostContext !is android.app.Activity && hostContext is android.content.ContextWrapper) {
+            val base = hostContext.baseContext
+            if (base === hostContext) break
+            hostContext = base
+        }
+        val activityRoot = (hostContext as? android.app.Activity)?.findViewById<android.view.ViewGroup>(android.R.id.content)
+        if (activityRoot == null) {
+            exportBusyType = null
+            toastMessage = "Hindi maihanda ang PNG renderer. Isara at buksan muli ang Preview & Export."
+            return
+        }
+        val renderer = WebView(context)
+        renderer.visibility = View.INVISIBLE
+        activityRoot.addView(renderer, android.widget.FrameLayout.LayoutParams(outputWidth, outputHeight))
+        var captureStarted = false
+        fun removeRenderer(view: WebView) {
+            (view.parent as? android.view.ViewGroup)?.removeView(view)
+            runCatching { view.stopLoading(); view.destroy() }
+        }
+        fun captureRenderedSchedule(view: WebView) {
+            if (captureStarted) return
+            captureStarted = true
+            try {
+                view.measure(
+                    View.MeasureSpec.makeMeasureSpec(outputWidth, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(outputHeight, View.MeasureSpec.EXACTLY)
+                )
+                view.layout(0, 0, outputWidth, outputHeight)
+                val bitmap = Bitmap.createBitmap(outputWidth, outputHeight, Bitmap.Config.ARGB_8888)
+                bitmap.density = SCHEDULE_EXPORT_DPI
+                view.visibility = View.VISIBLE
+                view.draw(Canvas(bitmap))
+                view.visibility = View.INVISIBLE
+                removeRenderer(view)
+                val file = File(File(context.cacheDir, "exports").apply { mkdirs() }, "meeting-schedule.png")
+                Thread {
+                    val saved = runCatching {
+                        FileOutputStream(file).use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+                        val intent = Intent(Intent.ACTION_SEND).apply {
+                            type = "image/png"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            clipData = android.content.ClipData.newUri(context.contentResolver, "Meeting schedule PNG", uri)
+                        }
+                        intent
+                    }
+                    bitmap.recycle()
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        saved.onSuccess { intent -> launchScheduleShare(intent, "png", "Share schedule image") }
+                            .onFailure { exportBusyType = null; toastMessage = "Hindi mabuo ang export image: ${it.message ?: "subukan muli"}" }
+                    }
+                }.start()
+            } catch (error: Exception) {
+                removeRenderer(view)
+                exportBusyType = null
+                toastMessage = "Hindi mabuo ang export image: ${error.message ?: "subukan muli"}"
+            }
+        }
+        renderer.apply {
+            setBackgroundColor(android.graphics.Color.WHITE)
+            settings.javaScriptEnabled = true
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
+            settings.blockNetworkLoads = true
+            settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            settings.loadsImagesAutomatically = true
+            settings.useWideViewPort = true
+            settings.loadWithOverviewMode = false
+            isVerticalScrollBarEnabled = false
+            isHorizontalScrollBarEnabled = false
+            webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest): Boolean = true
+                override fun onPageFinished(view: WebView, url: String?) {
+                    fitScheduleWebView(
+                        view = view,
+                        targetWidthPx = outputWidth,
+                        targetHeightPx = outputHeight,
+                        density = density,
+                        onReady = { captureRenderedSchedule(view) },
+                        onFailure = {
+                            if (!captureStarted) {
+                                captureStarted = true
+                                removeRenderer(view)
+                                exportBusyType = null
+                                toastMessage = "Hindi masukat ang buong schedule para sa PNG. Subukan muli."
+                            }
+                        }
+                    )
+                }
+            }
+            measure(
+                View.MeasureSpec.makeMeasureSpec(outputWidth, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(outputHeight, View.MeasureSpec.EXACTLY)
+            )
+            layout(0, 0, outputWidth, outputHeight)
+            loadDataWithBaseURL("file:///android_asset/", exportHtml, "text/html", "UTF-8", null)
+            postDelayed({
+                if (!captureStarted) {
+                    captureStarted = true
+                    removeRenderer(this)
+                    exportBusyType = null
+                    toastMessage = "Hindi natapos ang pagbuo ng PNG. Suriin ang preview at subukan muli."
+                }
+            }, 12_000L)
+        }
+    }
+    fun openSaved(item: SavedSchedule) {
+        if (item.weekStart.isNotBlank()) weekStart = item.weekStart
+        bible = item.reading; openingSong = item.openingSong; closingSong = item.closingSong
+        chairman=item.chairman; openingPrayer=item.openingPrayer; adviser=item.adviser; audienceGroup=item.audienceGroup
+        if (item.assignments.isNotEmpty()) { val unique=deduplicateAssignmentParticipants(item.assignments); parts.clear(); parts.addAll(unique); store.saveAssignments(unique) }
+        persistDetails(); current = Screen.DETAILS; toastMessage = "Na-open ang saved schedule"
+    }
+    fun duplicateSaved(item: SavedSchedule) {
+        val sourceDate = runCatching { LocalDate.parse(item.weekStart) }.getOrDefault(week.plusDays(-7))
+        weekStart = sourceDate.plusWeeks(1).toString()
+        bible = item.reading; openingSong = item.openingSong; closingSong = item.closingSong
+        chairman=item.chairman; openingPrayer=item.openingPrayer; adviser=item.adviser; audienceGroup=item.audienceGroup
+        if (item.assignments.isNotEmpty()) { val unique=deduplicateAssignmentParticipants(item.assignments); parts.clear(); parts.addAll(unique); store.saveAssignments(unique) }
+        persistDetails(); current = Screen.DETAILS; toastMessage = "Naduplicate para sa susunod na linggo"
+    }
+    fun loadRemoteSchedule(remote: RemoteSchedule, edit: Boolean) { authScope.launch {
+        runCatching { applyRemoteSchedule(remote,navigate=true,edit=edit) }.onFailure { toastMessage=it.message ?: "Hindi mabuksan ang schedule" }
+    } }
+
+    fun closeHomePreview() {
+        homePreviewRequest++
+        homePreviewWeek = null
+        homePreviewHtml = null
+        homePreviewLoading = false
+    }
+
+    fun openUpcomingPreview(remote: RemoteSchedule) {
+        val request = ++homePreviewRequest
+        homePreviewWeek = remote.weekLabel
+        homePreviewHtml = null
+        homePreviewLoading = true
+        authScope.launch {
+            runCatching {
+                val saved = api.schedule(remote.id)
+                if (request != homePreviewRequest) return@launch
+                val meta = saved.optJSONObject("meta") ?: JSONObject()
+                homePreviewWeek = meta.optString("date").ifBlank { remote.weekLabel.ifBlank { "Schedule preview" } }
+                val rawParts = saved.optJSONArray("parts") ?: JSONArray()
+                val assignments = (0 until rawParts.length()).mapNotNull { rawParts.optJSONObject(it)?.toAssignment() }
+                val start = meta.optString("weekStart").ifBlank { scheduleStartDate(meta.optString("date").ifBlank { remote.weekLabel }, remote.updatedAt)?.toString() ?: LocalDate.now().toString() }
+                buildOfficialScheduleHtml(
+                    context, start,
+                    meta.optString("reading", remote.reading),
+                    meta.optString("openingSong", "27"),
+                    meta.optString("closingSong", "132"),
+                    assignments,
+                    meta.optString("chairman"),
+                    meta.optString("openingPrayer"),
+                    meta.optString("adviser"),
+                    meta.optString("audienceGroup"),
+                    exportMode = true
+                )
+            }.onSuccess { if (request == homePreviewRequest) homePreviewHtml = it }
+                .onFailure { if (request == homePreviewRequest) {
+                    toastMessage = it.message ?: "Could not open the schedule preview."
+                    closeHomePreview()
+                } }
+            if (request == homePreviewRequest) homePreviewLoading = false
+        }
+    }
+
+    val notificationActivity = context as? MainActivity
+    val notificationScheduleId = notificationActivity?.pendingSchedulePreviewId ?: 0
+    LaunchedEffect(notificationScheduleId, signedIn) {
+        if (signedIn && notificationScheduleId > 0) {
+            notificationActivity?.consumeSchedulePreview(notificationScheduleId)
+            openUpcomingPreview(RemoteSchedule(notificationScheduleId, "Schedule preview", "", ""))
+        }
+    }
+
+    val accountPhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        val account = accountPhotoTarget
+        if (uri != null && account != null) authScope.launch {
+            accountsBusy = true
+            accountsError = null
+            runCatching {
+                val dataUrl = withContext(Dispatchers.IO) {
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+                    var sample = 1
+                    while (maxOf(bounds.outWidth, bounds.outHeight).coerceAtLeast(1) / sample > 720) sample *= 2
+                    val options = BitmapFactory.Options().apply { inSampleSize = sample }
+                    val decoded = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+                        ?: error("Hindi mabasa ang napiling larawan.")
+                    val scale = minOf(1f, 512f / maxOf(decoded.width, decoded.height).coerceAtLeast(1))
+                    val bitmap = if (scale < 1f) Bitmap.createScaledBitmap(decoded, (decoded.width * scale).toInt().coerceAtLeast(1), (decoded.height * scale).toInt().coerceAtLeast(1), true) else decoded
+                    val output = ByteArrayOutputStream()
+                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, 78, output)) { "Hindi ma-compress ang larawan." }
+                    val encoded = Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+                    check(encoded.length <= 600_000) { "Masyadong malaki ang larawan. Pumili ng mas maliit." }
+                    "data:image/jpeg;base64,$encoded"
+                }
+                api.uploadAccountPhoto(account.id, dataUrl)
+            }.onSuccess {
+                toastMessage = "Na-save sa cloud ang account photo."
+                accountsLoaded = false
+                accountReloadTick++
+            }.onFailure { accountsError = it.message ?: "Hindi na-upload ang account photo." }
+            accountsBusy = false
+        }
+        accountPhotoTarget = null
+    }
+
+    val availableScreens = Screen.entries.filter(::canAccess).toSet()
+    fun openProfile() {
+        profileNameDraft = identityName
+        profileError = null
+        profileDialogOpen = true
+    }
+    val profilePhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) authScope.launch {
+            profileError = null
+            val dataUrl = runCatching {
+                withContext(Dispatchers.IO) {
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+                    var sample = 1
+                    while (maxOf(bounds.outWidth, bounds.outHeight).coerceAtLeast(1) / sample > 720) sample *= 2
+                    val options = BitmapFactory.Options().apply { inSampleSize = sample }
+                    val decoded = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+                        ?: error("Hindi mabasa ang napiling larawan.")
+                    val scale = minOf(1f, 512f / maxOf(decoded.width, decoded.height).coerceAtLeast(1))
+                    val bitmap = if (scale < 1f) Bitmap.createScaledBitmap(decoded, (decoded.width * scale).toInt().coerceAtLeast(1), (decoded.height * scale).toInt().coerceAtLeast(1), true) else decoded
+                    val output = ByteArrayOutputStream()
+                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, 78, output)) { "Hindi ma-compress ang larawan." }
+                    val encoded = Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+                    check(encoded.length <= 600_000) { "Masyadong malaki ang larawan. Pumili ng mas maliit." }
+                    "data:image/jpeg;base64,$encoded"
+                }
+            }.getOrElse { error ->
+                profileError = error.message ?: "Hindi maihanda ang larawan."
+                null
+            }
+            if (dataUrl != null) runCatching { api.uploadOwnProfilePhoto(dataUrl) }
+                .onSuccess {
+                    profilePhotoDataUrl = dataUrl
+                    profilePhotoPath = null
+                    toastMessage = "Na-save sa cloud ang profile photo."
+                    if (identityRole == "admin") { accountsLoaded = false; accountReloadTick++ }
+                }
+                .onFailure { profileError = it.message ?: "Hindi na-save sa cloud ang profile photo." }
+        }
+    }
+    BackHandler(enabled = current != Screen.HOME && canAccess(Screen.HOME) && !profileDialogOpen && !toolsOpen) {
+        navigateTo(Screen.HOME)
+    }
+    if (toolsOpen) {
+        PreviewToolsSheet(availableScreens, current, onDismiss = { toolsOpen = false }) {
+            toolsOpen = false
+            navigateTo(it)
+        }
+    }
+    LaunchedEffect(current, signedIn, identityRole, accountReloadTick) {
+        if (current == Screen.ACCOUNTS && signedIn && identityRole.equals("admin", true) && !accountsLoaded) {
+            accountsBusy = true
+            accountsError = null
+            try {
+                val data = api.accountsWithParticipants()
+                remoteAccounts = data.first
+                accountLinkParticipants = data.second
+                accountsLoaded = true
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                accountsError = error.message ?: "Hindi makuha ang accounts at participants."
+            } finally {
+                accountsBusy = false
+            }
+        }
+    }
+
+    Scaffold(
+        containerColor = AppSurface,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("JW Meeting Scheduler", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    }
+                },
+                navigationIcon = {
+                    MeetingSchedulerBrandIcon(Modifier.padding(start = 14.dp, end = 8.dp).size(34.dp))
+                },
+                actions = {
+                    Box(Modifier.padding(end = 8.dp)) {
+                        Column(
+                            Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).clip(MaterialTheme.shapes.medium)
+                                .clickable(onClickLabel = "Open profile", onClick = ::openProfile)
+                                .padding(horizontal = 6.dp, vertical = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            ProfileAvatar(identityName, profilePhotoPath, 28.dp, profilePhotoDataUrl)
+                            Text(when (identityRole.lowercase(Locale.ROOT)) {
+                                "admin", "administrator" -> "ADMINISTRATOR"
+                                else -> identityRole.uppercase(Locale.ROOT)
+                            }, style = MaterialTheme.typography.labelSmall, maxLines = 1, fontWeight = FontWeight.Bold, color = Forest)
+                        }
+                        DropdownMenu(
+                            expanded = profileDialogOpen,
+                            onDismissRequest = { profileDialogOpen = false },
+                            modifier = Modifier.width(280.dp).heightIn(
+                                max = (LocalConfiguration.current.screenHeightDp * 0.68f).dp
+                            )
+                        ) {
+                            ProfilePreferencesMenu(
+                                identityName = identityName,
+                                identityRole = identityRole,
+                                profilePhotoPath = profilePhotoPath,
+                                profilePhotoDataUrl = profilePhotoDataUrl,
+                                nameDraft = profileNameDraft,
+                                profileError = profileError,
+                                onNameChange = { profileNameDraft = it; profileError = null },
+                                onChangePhoto = { profilePhotoPicker.launch(arrayOf("image/*")) },
+                                onSignOut = {
+                                    profileDialogOpen = false
+                                    val oldSession = api.signOut()
+                                    val pushToken = MeetingPushNotifications.savedToken(context)
+                                    authScope.launch {
+                                        if (!pushToken.isNullOrBlank()) runCatching { api.unregisterPushToken(pushToken, oldSession) }
+                                        api.revokeSession(oldSession)
+                                    }
+                                    signedIn = false
+                                    identityName = ""
+                                    identityUsername = ""
+                                    identityRole = ""
+                                    loginError = null
+                                    authReady = true
+                                },
+                                onSave = {
+                                    identityName = profileNameDraft.trim()
+                                    store.saveProfileName(identityUsername, identityName)
+                                    profileDialogOpen = false
+                                }
+                            )
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = AppSurface)
+            )
+        },
+        bottomBar = {
+            PreviewBottomNavigation(current, availableScreens, onNavigate = ::navigateTo) {
+                if (availableScreens.any { it in setOf(Screen.ASSIGNMENTS, Screen.PREVIEW, Screen.PARTICIPANTS) }) {
+                    toolsOpen = true
+                } else openProfile()
+            }
+        },
+        snackbarHost = { SnackbarHost(hostState = remember { SnackbarHostState() }) },
+        contentWindowInsets = WindowInsets.safeDrawing
+    ) { insets ->
+        val scroll = Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)
+        AnimatedContent(
+            targetState = current,
+            transitionSpec = {
+                (fadeIn(tween(180, easing = FastOutSlowInEasing)) +
+                    slideInHorizontally(tween(220, easing = FastOutSlowInEasing)) { it / 18 }) togetherWith
+                    (fadeOut(tween(120)) +
+                        slideOutHorizontally(tween(180, easing = FastOutSlowInEasing)) { -it / 18 })
+            },
+            label = "screen transition"
+        ) { destination -> when (destination) {
+            Screen.HOME -> HomeScreen(
+                modifier = scroll,
+                accountName = identityName,
+                canCreateSchedule = canEdit(Screen.DETAILS),
+                schedules = homeSchedules,
+                loading = homeBusy,
+                error = homeError,
+                onRefresh = { homeLoaded = false },
+                onOpenSchedule = ::openUpcomingPreview,
+                onCreateSchedule = { navigateTo(Screen.DETAILS) }
+            )
+            Screen.DETAILS -> DetailsScreen(
+                modifier = scroll, weekLabel = weekLabel, bible = bible, onBible = { bible = it; persistDetails() },
+                openingSong = openingSong, onOpeningSong = { openingSong = it; persistDetails() }, closingSong = closingSong,
+                onClosingSong = { closingSong = it; persistDetails() },
+                onPickDate = { datePicker = true }, onImport = { authScope.launch { fetchWorkbookForSelectedWeek() } },
+                workbookStatus = workbookStatus,
+                workbookBusy = workbookBusy, workbookCaptureLog = workbookCaptureLog,
+                canContinue = !workbookBusy && participantsLoaded && !participantsBusy,
+                canContinueToAssignments = canAccess(Screen.ASSIGNMENTS),
+                readOnly = !canEdit(Screen.DETAILS),
+                onNext = { navigateTo(Screen.ASSIGNMENTS) }
+            )
+            Screen.ASSIGNMENTS -> AssignmentsScreen(
+                modifier = scroll, parts = parts, participants = participants, rotation = rotationStats,
+                rotationBusy = rotationBusy, rotationError = rotationError,
+                chairman=chairman, openingPrayer=openingPrayer, adviser=adviser, audienceGroup=audienceGroup,
+                onRole = { role, value ->
+                    if (role != "audience_group" && value.isNotBlank()) {
+                        parts.indices.forEach { index -> parts[index] = parts[index].withoutParticipant(value) }
+                        store.saveAssignments(parts.toList())
+                        if (role != "chairman" && chairman.equals(value, true)) { chairman = ""; store.setDetail("chairman", "") }
+                        if (role != "opening_prayer" && openingPrayer.equals(value, true)) { openingPrayer = ""; store.setDetail("opening_prayer", "") }
+                        if (role != "adviser" && adviser.equals(value, true)) { adviser = ""; store.setDetail("adviser", "") }
+                    }
+                    when (role) {
+                        "chairman" -> chairman = value
+                        "opening_prayer" -> openingPrayer = value
+                        "adviser" -> adviser = value
+                        else -> audienceGroup = value
+                    }
+                    store.setDetail(role, value)
+                },
+                isAdmin = signedIn && identityRole == "admin", readOnly = !canEdit(Screen.ASSIGNMENTS), canContinueExport = canAccess(Screen.PREVIEW),
+                onAssign = { index, slot, name ->
+                    if (name.isNotBlank()) {
+                        parts.indices.forEach { i -> parts[i] = parts[i].withoutParticipant(name) }
+                        if (chairman.equals(name, true)) { chairman = ""; store.setDetail("chairman", "") }
+                        if (openingPrayer.equals(name, true)) { openingPrayer = ""; store.setDetail("opening_prayer", "") }
+                        if (adviser.equals(name, true)) { adviser = ""; store.setDetail("adviser", "") }
+                    }
+                    assignParticipantToOneSlot(parts, index, slot, name)
+                    store.saveAssignments(parts.toList())
+                },
+                cloudSaveBusy = cloudSaveBusy, cloudSaveFeedback = cloudSaveFeedback,
+                onSaveCloud = ::saveToCloud, onContinueExport = { navigateTo(Screen.PREVIEW) }
+            )
+            Screen.PREVIEW -> PreviewScreen(
+                modifier = scroll, weekStart = weekStart, bible = bible, openingSong = openingSong,
+                closingSong = closingSong, parts = parts, chairman=chairman, openingPrayer=openingPrayer,
+                adviser=adviser, audienceGroup=audienceGroup, previewWebView=officialPreviewWebView, allowExport=canEdit(Screen.PREVIEW),
+                exportBusyType = exportBusyType,
+                onExportText = {
+                    if (exportBusyType == null) {
+                        exportBusyType = "text"
+                        val text = buildOfficialScheduleText(weekStart, bible, openingSong, closingSong, parts.toList(), chairman, openingPrayer, adviser, audienceGroup)
+                        val exportWeekStart = weekStart
+                        authScope.launch {
+                            runCatching {
+                                val file = withContext(Dispatchers.IO) {
+                                    File(File(context.cacheDir, "exports").apply { mkdirs() }, "meeting-schedule-${exportWeekStart}.txt")
+                                        .apply { writeText(text, Charsets.UTF_8) }
+                                }
+                                val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+                                Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    putExtra(Intent.EXTRA_SUBJECT, "Meeting schedule · $weekLabel")
+                                    putExtra(Intent.EXTRA_TEXT, "Iskedyul ng Pulong ng Gitnang Sanlinggo · $weekLabel")
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    clipData = android.content.ClipData.newUri(context.contentResolver, "Meeting schedule text", uri)
+                                }
+                            }.onSuccess { intent -> launchScheduleShare(intent, "text", "Share schedule text") }
+                                .onFailure { exportBusyType = null; toastMessage = "Hindi mabuo ang export text: ${it.message ?: "subukan muli"}" }
+                        }
+                    }
+                }, onPng = ::shareSchedulePng, onAssignmentSlipImages = ::shareAssignmentSlipsImages
+            )
+            Screen.PARTICIPANTS -> {
+                ParticipantsScreen(modifier = scroll, participants = participants, loading = participantsBusy, loadError = participantsLoadError,
+                    onAdd = { name -> participants.add(0, Participant(name)); store.saveParticipants(participants.toList()); toastMessage = "Naidagdag si $name" },
+                    onToggle = { index -> participants[index] = participants[index].copy(enabled = !participants[index].enabled); store.saveParticipants(participants.toList()) },
+                    onEdit = { original, changed -> authScope.launch {
+                        runCatching { if (changed.id > 0 && signedIn) api.updateMember(changed.id, changed.name, changed.appointment, changed.service, changed.gender, changed.unbaptized) else JSONObject() }
+                            .onSuccess { response ->
+                                if (changed.unbaptized && !response.optBoolean("unbaptized",false)) { toastMessage = "Hindi pa updated ang website API. I-deploy muna ang backend update." }
+                                else participants.indexOfFirst { it.id == original.id && it.name == original.name }.takeIf { it >= 0 }?.let { index -> participants[index] = changed; store.saveParticipants(participants.toList()); toastMessage = "Na-update si ${changed.name}" }
+                            }
+                            .onFailure { toastMessage = it.message ?: "Hindi na-update ang participant" }
+                    } },
+                    isAdmin=participantAdmin,
+                    canEdit=canEdit(Screen.PARTICIPANTS) && participantCanEdit,
+                    onRefresh={participantsLoadError=null;participantsLoaded=false},
+                    onSetActive={ person,active -> authScope.launch {
+                        runCatching { api.setMemberActive(person.id,active) }.onSuccess {
+                            val i=participants.indexOfFirst { it.id==person.id }; if(i>=0){participants[i]=participants[i].copy(enabled=active);store.saveParticipants(participants.toList())};toastMessage=if(active)"Na-activate si ${person.name}" else "Ginawang inactive si ${person.name}"
+                        }.onFailure{toastMessage=it.message?:"Hindi nabago ang status"}
+                    } },
+                    onDelete={ person -> authScope.launch {
+                        runCatching { api.deleteMember(person.id) }.onSuccess { response -> if(response.optBoolean("deleted",false)){participants.removeAll { it.id==person.id };store.saveParticipants(participants.toList());toastMessage="Na-delete si ${person.name}"}else toastMessage="Hindi pa updated ang website API para sa permanent delete." }
+                            .onFailure{toastMessage=it.message?:"Hindi na-delete ang participant"}
+                    } })
+            }
+            Screen.HISTORY -> {
+                LaunchedEffect(current, signedIn, historyReloadTick) {
+                    if (current == Screen.HISTORY && signedIn && !historyLoaded && !historyBusy) {
+                        historyBusy = true
+                        historyError = null
+                        runCatching { api.schedules() }
+                            .onSuccess { remoteRows = it; historyLoaded = true; cloudStatus = "History mula sa website" }
+                            .onFailure { historyError = it.message ?: "Suriin ang internet at subukan ulit."; cloudStatus = "Hindi makuha ang history: ${it.message}" }
+                        historyBusy = false
+                    }
+                }
+                HistoryScreen(modifier = scroll, remoteSchedules = remoteRows, cloudStatus = cloudStatus, loading = historyBusy, error = historyError,
+                    isAdmin=signedIn && identityRole=="admin", canEdit=canEdit(Screen.HISTORY), canCreate=canEdit(Screen.DETAILS),
+                    onRefresh={historyLoaded=false;historyReloadTick++}, onView={loadRemoteSchedule(it,false)}, onEdit={loadRemoteSchedule(it,true)},
+                    onDelete={remote -> authScope.launch { runCatching { api.deleteSchedule(remote.id) }.onSuccess { historyLoaded=false;historyReloadTick++;toastMessage="Na-delete ang schedule" }.onFailure { toastMessage=it.message ?: "Hindi ma-delete" } }},
+                    onNew = { editingRemoteId=0; navigateTo(Screen.DETAILS) })
+            }
+            Screen.ACCOUNTS -> {
+                AccountsScreen(
+                    modifier=scroll, accounts=remoteAccounts, linkParticipants=accountLinkParticipants, loading=accountsBusy, error=accountsError,
+                    testNotificationBusy=testNotificationBusy, testNotificationFeedback=testNotificationFeedback,
+                    onTestNotification={
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                        ) {
+                            testNotificationFeedback = NotificationFeedback(false, "Allow notifications, then tap Send test notification again.")
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else if (!androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+                            testNotificationFeedback = NotificationFeedback(false, "Turn on notifications in Android Settings, then try again.")
+                        } else if (!testNotificationBusy) authScope.launch {
+                            testNotificationBusy = true
+                            testNotificationFeedback = null
+                            try {
+                                val token = MeetingPushNotifications.savedToken(context)
+                                    ?: throw IllegalStateException("Notifications are still being set up. Try again in a few seconds.")
+                                api.registerPushToken(token)
+                                val sent = api.sendTestNotification()
+                                testNotificationFeedback = if (sent > 0) NotificationFeedback(true, "Test notification sent to this account.") else NotificationFeedback(false, "No test notification was sent. Check app notifications and try again.")
+                            } catch (error: Exception) {
+                                testNotificationFeedback = NotificationFeedback(false, error.message ?: "Could not send the test notification. Try again.")
+                            } finally {
+                                testNotificationBusy = false
+                            }
+                        }
+                    },
+                    currentUsername=identityUsername, isAdmin=identityRole.equals("admin", true),
+                    fontScale=fontScale, onFontScaleChange=onFontScaleChange,
+                    darkMode=darkMode, onToggleTheme=onToggleTheme, paletteStyle=paletteStyle, onPaletteStyleChange=onPaletteStyleChange, appLock=appLock,
+                    onRefresh={accountsLoaded=false;accountReloadTick++},
+                    onUploadPhoto={ account -> accountPhotoTarget=account; accountPhotoPicker.launch("image/*") },
+                    onLinkParticipant={ account, memberId -> authScope.launch {
+                        accountsBusy=true; accountsError=null
+                        runCatching { api.linkAccountParticipant(account.id, memberId) }
+                            .onSuccess { response -> toastMessage=response.optString("message","Participant link updated."); accountsLoaded=false; accountReloadTick++ }
+                            .onFailure { accountsError=it.message ?: "Hindi na-link ang participant." }
+                        accountsBusy=false
+                    } },
+                    onAction={ account,action,role,password -> authScope.launch {
+                        accountsBusy=true;accountsError=null
+                        runCatching { api.accountAction(account.id,action,role,password) }
+                            .onSuccess { response -> toastMessage=response.optString("message","Account updated.");accountsLoaded=false;accountReloadTick++ }
+                            .onFailure { accountsError=it.message ?: "Hindi na-update ang account." }
+                        accountsBusy=false
+                    } },
+                    onUpdateToolAccess={ account, modes -> authScope.launch {
+                        accountsBusy=true; accountsError=null
+                        runCatching { api.updateAccountToolAccess(account.id, modes) }
+                            .onSuccess { response -> toastMessage=response.optString("message","Tool access updated."); accountsLoaded=false; accountReloadTick++ }
+                            .onFailure { accountsError=it.message ?: "Hindi na-save ang tool access." }
+                        accountsBusy=false
+                    } }
+                )
+            }
+        } }
+    }
+    if (homePreviewWeek != null) {
+        val pageAspect = SCHEDULE_EXPORT_WIDTH_PX.toFloat() / SCHEDULE_EXPORT_HEIGHT_PX
+        val previewView = remember { mutableStateOf<WebView?>(null) }
+        Dialog(
+            onDismissRequest = ::closeHomePreview,
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            val configuration = LocalConfiguration.current
+            val pageWidth = minOf(
+                (configuration.screenWidthDp.dp - 56.dp).coerceAtLeast(1.dp),
+                configuration.screenHeightDp.dp * 0.72f * pageAspect,
+                580.dp
+            )
+            Surface(
+                modifier = Modifier.width(pageWidth + 24.dp),
+                shape = MaterialTheme.shapes.extraLarge,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(homePreviewWeek.orEmpty(), modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        IconButton(onClick = ::closeHomePreview) {
+                            Icon(Icons.TwoTone.Close, contentDescription = "Close preview")
+                        }
+                    }
+                    Surface(
+                        color = Color.White,
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.width(pageWidth).aspectRatio(pageAspect)
+                    ) {
+                        val html = homePreviewHtml
+                        if (homePreviewLoading || html == null) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = Forest)
+                            }
+                        } else {
+                            OfficialScheduleWebPreview(html, previewView, Modifier.fillMaxSize()) {}
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (datePicker) {
+        val pickerState = rememberDatePickerState(initialSelectedDateMillis = week.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+        DatePickerDialog(
+            onDismissRequest = { datePicker = false },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        pickerState.selectedDateMillis?.let {
+                            remoteScheduleLoadedWeek = ""; editingRemoteId = 0
+                            val selectedWeek = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
+                                .with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)).toString()
+                            weekStart = selectedWeek
+                            store.saveDetails(selectedWeek, bible, openingSong, closingSong, workbook)
+                        }
+                        datePicker = false
+                    },
+                    shape = RoundedCornerShape(50),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Forest,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) { Text("Select") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { datePicker = false },
+                    shape = RoundedCornerShape(50),
+                    colors = ButtonDefaults.textButtonColors(containerColor = ForestContainer, contentColor = Forest)
+                ) { Text("Cancel") }
+            },
+            colors = DatePickerDefaults.colors(containerColor = AppSurface)
+        ) {
+            DatePicker(
+                state = pickerState,
+                colors = DatePickerDefaults.colors(
+                    containerColor = AppSurface,
+                    titleContentColor = Ink,
+                    headlineContentColor = Ink,
+                    weekdayContentColor = Muted,
+                    subheadContentColor = Muted,
+                    yearContentColor = Ink,
+                    currentYearContentColor = Forest,
+                    selectedYearContentColor = MaterialTheme.colorScheme.onPrimary,
+                    selectedYearContainerColor = Forest,
+                    dayContentColor = Ink,
+                    disabledDayContentColor = Muted.copy(alpha = 0.38f),
+                    selectedDayContentColor = MaterialTheme.colorScheme.onPrimary,
+                    selectedDayContainerColor = Forest,
+                    todayContentColor = Forest,
+                    todayDateBorderColor = Forest,
+                    dayInSelectionRangeContentColor = Ink,
+                    dayInSelectionRangeContainerColor = ForestContainer
+                )
+            )
+        }
+    }
+    toastMessage?.let { msg -> LaunchedEffect(msg) { Toast.makeText(context, msg, Toast.LENGTH_SHORT).show(); toastMessage = null } }
+    shareSuccessType?.let { type ->
+        AlertDialog(
+            onDismissRequest = { shareSuccessType = null },
+            icon = { Icon(Icons.TwoTone.CheckCircle, contentDescription = null, tint = Forest, modifier = Modifier.size(28.dp)) },
+            title = { Text("Matagumpay ang pag-share", fontWeight = FontWeight.Bold) },
+            text = { Text(when (type) { "png" -> "Naibahagi ang schedule PNG."; "slips_image" -> "Naibahagi ang assignment slip images."; else -> "Naibahagi ang schedule text." }) },
+            confirmButton = { TextButton(onClick = { shareSuccessType = null }) { Text("Okay", color = Forest) } },
+            containerColor = AppSurface,
+            titleContentColor = Ink,
+            textContentColor = Ink
+        )
+    }
+    accessNotice?.let { (message, warning) ->
+        LaunchedEffect(accessNotice) { delay(2_100); accessNotice = null }
+        Dialog(onDismissRequest = { accessNotice = null }) {
+            Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(24.dp)) {
+                Row(Modifier.padding(horizontal = 22.dp, vertical = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+                    Icon(if (warning) Icons.TwoTone.Warning else Icons.TwoTone.ErrorOutline, contentDescription = null, tint = Color(0xFFBA1A1A), modifier = Modifier.size(30.dp))
+                    Text(message, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, lineHeight = 19.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MeetingSplashScreen() {
+    val colors = MaterialTheme.colorScheme
+    val compact = LocalConfiguration.current.screenHeightDp < 440
+    var reveal by remember { mutableStateOf(false) }
+    val entrance = remember { Animatable(0f) }
+    val orbit = rememberInfiniteTransition(label = "splash orbit")
+    val orbitAngle by orbit.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(8_000, easing = LinearEasing), RepeatMode.Restart),
+        label = "splash orbit angle"
+    )
+    LaunchedEffect(Unit) {
+        reveal = true
+        entrance.animateTo(1f, tween(880, easing = FastOutSlowInEasing))
+    }
+    Box(
+        Modifier.fillMaxSize().background(Brush.verticalGradient(
+            listOf(colors.surfaceDim, colors.background, colors.surfaceContainerLow)
+        )),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().safeDrawingPadding()
+                .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Box(
+                Modifier.size(if (compact) 176.dp else 226.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                ComposeCanvas(
+                    Modifier.fillMaxSize().graphicsLayer { rotationZ = orbitAngle }
+                ) {
+                    val inset = size.minDimension * 0.075f
+                    val ringSize = androidx.compose.ui.geometry.Size(
+                        size.width - inset * 2f,
+                        size.height - inset * 2f
+                    )
+                    drawCircle(colors.primaryContainer.copy(alpha = 0.22f), radius = size.minDimension * 0.45f)
+                    drawArc(
+                        color = colors.primary.copy(alpha = 0.9f),
+                        startAngle = -108f, sweepAngle = 126f, useCenter = false,
+                        topLeft = androidx.compose.ui.geometry.Offset(inset, inset), size = ringSize,
+                        style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                    drawArc(
+                        color = colors.secondary.copy(alpha = 0.48f),
+                        startAngle = 78f, sweepAngle = 78f, useCenter = false,
+                        topLeft = androidx.compose.ui.geometry.Offset(inset, inset), size = ringSize,
+                        style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                    val radians = Math.toRadians(orbitAngle.toDouble())
+                    val orbitRadius = size.minDimension * 0.45f
+                    drawCircle(
+                        color = colors.tertiary,
+                        radius = 3.dp.toPx(),
+                        center = androidx.compose.ui.geometry.Offset(
+                            size.width / 2f + kotlin.math.cos(radians).toFloat() * orbitRadius,
+                            size.height / 2f + kotlin.math.sin(radians).toFloat() * orbitRadius
+                        )
+                    )
+                }
+                Surface(
+                    modifier = Modifier.size(if (compact) 112.dp else 138.dp).graphicsLayer {
+                        val scale = 0.76f + 0.24f * entrance.value
+                        scaleX = scale
+                        scaleY = scale
+                        rotationY = (1f - entrance.value) * -22f
+                        translationY = (1f - entrance.value) * 18.dp.toPx()
+                    },
+                    shape = RoundedCornerShape(if (compact) 30.dp else 38.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.48f)),
+                    shadowElevation = 18.dp
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        MeetingSchedulerBrandIcon(Modifier.size(if (compact) 82.dp else 100.dp), "JW Meeting Scheduler")
+                    }
+                }
+                if (reveal) {
+                    Surface(
+                        modifier = Modifier.align(Alignment.BottomEnd).offset(x = (-24).dp, y = (-23).dp)
+                            .graphicsLayer { scaleX = entrance.value; scaleY = entrance.value; alpha = entrance.value },
+                        shape = CircleShape,
+                        color = colors.primaryContainer,
+                        border = BorderStroke(3.dp, colors.primary),
+                        shadowElevation = 6.dp
+                    ) {
+                        Box(Modifier.size(if (compact) 34.dp else 40.dp), contentAlignment = Alignment.Center) {
+                            Icon(Icons.TwoTone.CheckCircle, contentDescription = null,
+                                tint = colors.onPrimaryContainer, modifier = Modifier.size(if (compact) 22.dp else 26.dp))
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(if (compact) 10.dp else 18.dp))
+            AnimatedVisibility(
+                visible = reveal,
+                enter = fadeIn(tween(380, delayMillis = 170)) +
+                    slideInVertically(tween(440, delayMillis = 170)) { it / 4 }
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "JW Meeting Scheduler",
+                        color = colors.onSurface,
+                        fontSize = if (compact) 20.sp else 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Aayos ang bawat bahagi ng pulong",
+                        color = colors.onSurfaceVariant,
+                        fontSize = if (compact) 11.sp else 13.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            }
+            Spacer(Modifier.height(if (compact) 18.dp else 26.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                repeat(3) { index ->
+                    Box(
+                        Modifier.size(if (index == 1) 14.dp else 5.dp, 5.dp)
+                            .clip(CircleShape)
+                            .background(if (index == 1) colors.primary else colors.primary.copy(alpha = 0.4f))
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LoginScreen(
+    busy: Boolean,
+    error: String?,
+    mustChangePassword: Boolean,
+    onLogin: (String, String) -> Unit,
+    onChangePassword: (String, String) -> Unit,
+    onRequestAccess: suspend (String, String, String) -> Unit
+) {
+    var username by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var showPassword by rememberSaveable { mutableStateOf(false) }
+    var changePasswordOpen by rememberSaveable { mutableStateOf(false) }
+    var currentTemporaryPassword by rememberSaveable { mutableStateOf("") }
+    var newPassword by rememberSaveable { mutableStateOf("") }
+    var confirmNewPassword by rememberSaveable { mutableStateOf("") }
+    var showNewPassword by rememberSaveable { mutableStateOf(false) }
+    var changePasswordError by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(mustChangePassword) {
+        if (mustChangePassword) {
+            currentTemporaryPassword = password
+            changePasswordError = null
+            changePasswordOpen = true
+        } else changePasswordOpen = false
+    }
+    var requestOpen by remember { mutableStateOf(false) }
+    var requestSuccess by remember { mutableStateOf(false) }
+    var requestBusy by remember { mutableStateOf(false) }
+    var requestError by remember { mutableStateOf<String?>(null) }
+    var requestName by rememberSaveable { mutableStateOf("") }
+    var requestUsername by rememberSaveable { mutableStateOf("") }
+    var requestMessage by rememberSaveable { mutableStateOf("") }
+    val requestScope = rememberCoroutineScope()
+    LaunchedEffect(requestSuccess) {
+        if (requestSuccess) {
+            delay(1_900)
+            requestSuccess = false
+        }
+    }
+    Surface(color = AppSurface, modifier = Modifier.fillMaxSize()) {
+        BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
+            val compact = maxHeight < 700.dp
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = if (compact) 18.dp else 28.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                MeetingSchedulerBrandIcon(Modifier.size(if (compact) 62.dp else 72.dp), "JW Meeting Scheduler")
+                Spacer(Modifier.height(13.dp))
+                Text("JW Meeting Scheduler", fontWeight = FontWeight.Bold, fontSize = 23.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                Text("Midweek meeting workspace", color = Muted, fontSize = 13.sp)
+                Spacer(Modifier.height(if (compact) 22.dp else 30.dp))
+                AnimatedVisibility(visible = true, enter = fadeIn(tween(520)) + slideInVertically(tween(520)) { it / 10 }) {
+                    Card(
+                        shape = MaterialTheme.shapes.extraLarge,
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(if (compact) 18.dp else 22.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
+                            Text("ACCOUNT ACCESS", color = Forest, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.6.sp)
+                            Text("Welcome back", fontSize = 27.sp, fontWeight = FontWeight.Bold)
+                            Text("Sign in with your account.", color = Muted, fontSize = 13.sp)
+                            OutlinedTextField(
+                                username,
+                                { username = it },
+                                label = { Text("Username") },
+                                leadingIcon = { Icon(Icons.TwoTone.Person, contentDescription = null, tint = Forest) },
+                                singleLine = true,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                password,
+                                { password = it },
+                                label = { Text("Password") },
+                                leadingIcon = { Icon(Icons.TwoTone.Lock, contentDescription = null, tint = Forest) },
+                                singleLine = true,
+                                shape = RoundedCornerShape(16.dp),
+                                visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    IconButton(onClick = { showPassword = !showPassword }) {
+                                        Icon(if (showPassword) Icons.TwoTone.VisibilityOff else Icons.TwoTone.Visibility, contentDescription = if (showPassword) "Hide password" else "Show password", tint = Forest)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            error?.let {
+                                Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Text(it, color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 12.sp, modifier = Modifier.padding(12.dp))
+                                }
+                            }
+                            Button(
+                                onClick = { onLogin(username, password) },
+                                enabled = !busy && username.isNotBlank() && password.isNotBlank(),
+                                modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth().heightIn(min = 50.dp),
+                                shape = RoundedCornerShape(18.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Forest)
+                            ) {
+                                Text(if (busy) "Signing in…" else "Sign in", fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.width(8.dp))
+                                if (busy) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                                else Icon(Icons.TwoTone.ArrowForward, contentDescription = null, modifier = Modifier.size(19.dp))
+                            }
+                            HorizontalDivider(Modifier.padding(vertical = 2.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                                Text("Don’t have an account?", color = Muted, fontSize = 12.sp)
+                                TextButton(onClick = { requestError = null; requestOpen = true }) {
+                                    Text("Request Access", color = Forest, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (changePasswordOpen) {
+        AlertDialog(
+            onDismissRequest = { if (!busy && !mustChangePassword) changePasswordOpen = false },
+            containerColor = AppSurface,
+            shape = MaterialTheme.shapes.extraLarge,
+            title = { Text("Set a new password", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("You’re using a temporary password. Choose a new password to continue.", color = Muted, fontSize = 12.sp)
+                    OutlinedTextField(currentTemporaryPassword, { currentTemporaryPassword = it; changePasswordError = null }, label = { Text("Temporary password") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(newPassword, { newPassword = it; changePasswordError = null }, label = { Text("New password") }, singleLine = true, visualTransformation = if (showNewPassword) VisualTransformation.None else PasswordVisualTransformation(), trailingIcon = { IconButton(onClick = { showNewPassword = !showNewPassword }) { Icon(if (showNewPassword) Icons.TwoTone.VisibilityOff else Icons.TwoTone.Visibility, contentDescription = "Toggle password visibility", tint = Forest) } }, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(confirmNewPassword, { confirmNewPassword = it; changePasswordError = null }, label = { Text("Confirm new password") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
+                    (changePasswordError ?: error)?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                    if (newPassword.isNotBlank() && newPassword.length < 10) Text("Use at least 10 characters.", color = Muted, fontSize = 11.sp)
+                    else if (confirmNewPassword.isNotBlank() && confirmNewPassword != newPassword) Text("The new passwords do not match.", color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !busy && currentTemporaryPassword.isNotBlank() && newPassword.length >= 10 && confirmNewPassword == newPassword,
+                    onClick = { changePasswordError = null; onChangePassword(currentTemporaryPassword, newPassword) }
+                ) { if (busy) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp, color = Forest) else Text("Change Password", color = Forest) }
+            },
+            dismissButton = { if (!mustChangePassword) TextButton(onClick = { changePasswordOpen = false }) { Text("Cancel", color = Muted) } }
+        )
+    }
+    if (requestOpen) {
+        AlertDialog(
+            onDismissRequest = { if (!requestBusy) requestOpen = false },
+            containerColor = AppSurface,
+            shape = MaterialTheme.shapes.extraLarge,
+            title = { Text("Request Access", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Send your name, username, and a message to the administrator.", color = Muted, fontSize = 12.sp)
+                    OutlinedTextField(requestName, { requestName = it; requestError = null }, label = { Text("Name") }, singleLine = true, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(requestUsername, { requestUsername = it; requestError = null }, label = { Text("Username") }, singleLine = true, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(requestMessage, { requestMessage = it; requestError = null }, label = { Text("Message for Administrator") }, minLines = 2, maxLines = 4, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
+                    requestError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !requestBusy && requestName.trim().length >= 2 && requestUsername.trim().length >= 3,
+                    onClick = {
+                        requestScope.launch {
+                            requestBusy = true
+                            requestError = null
+                            runCatching { onRequestAccess(requestName.trim(), requestUsername.trim(), requestMessage.trim()) }
+                                .onSuccess { requestOpen = false; requestSuccess = true }
+                                .onFailure { requestError = it.message ?: "Hindi naipadala ang request." }
+                            requestBusy = false
+                        }
+                    }
+                ) {
+                    if (requestBusy) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp, color = Forest)
+                    else Text("Send Request", color = Forest)
+                }
+            },
+            dismissButton = { TextButton(enabled = !requestBusy, onClick = { requestOpen = false }) { Text("Cancel", color = Muted) } }
+        )
+    }
+    if (requestSuccess) {
+        Dialog(onDismissRequest = { requestSuccess = false }) {
+            Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                Row(Modifier.padding(horizontal = 22.dp, vertical = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(Icons.TwoTone.CheckCircle, contentDescription = "Success", tint = Forest, modifier = Modifier.size(28.dp))
+                    Text("Request sent. Waiting for administrator approval.", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                }
+            }
+        }
+    }
+}
+
+private val avatarCache = object : android.util.LruCache<String, ImageBitmap>(8 * 1024 * 1024) {
+    override fun sizeOf(key: String, value: ImageBitmap): Int = value.width * value.height * 4
+}
+
+@Composable
+private fun rememberAvatarBitmap(dataUrl: String, photoPath: String? = null): ImageBitmap? {
+    var bitmap by remember(dataUrl, photoPath) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(dataUrl, photoPath) {
+        bitmap = withContext(Dispatchers.IO) {
+            val cacheKey = dataUrl.takeIf { it.isNotBlank() }?.let {
+                Base64.encodeToString(java.security.MessageDigest.getInstance("SHA-256").digest(it.toByteArray()), Base64.NO_WRAP)
+            }
+            if (cacheKey != null) avatarCache.get(cacheKey)?.let { return@withContext it }
+            runCatching {
+                if (dataUrl.length > 800_000) return@runCatching null
+                val bytes = dataUrl.substringAfter("base64,", "").takeIf { it.isNotBlank() }
+                    ?.let { Base64.decode(it, Base64.DEFAULT) }
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                if (bytes != null) BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                else if (photoPath != null) BitmapFactory.decodeFile(photoPath, bounds)
+                var sample = 1
+                while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 256) sample *= 2
+                val options = BitmapFactory.Options().apply { inSampleSize = sample }
+                val decoded = if (bytes != null) BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                    else photoPath?.let { BitmapFactory.decodeFile(it, options) }
+                decoded?.asImageBitmap()?.also { if (cacheKey != null) avatarCache.put(cacheKey, it) }
+            }.getOrNull()
+        }
+    }
+    return bitmap
+}
+
+@Composable
+private fun ProfilePreferencesMenu(
+    identityName: String,
+    identityRole: String,
+    profilePhotoPath: String?,
+    profilePhotoDataUrl: String,
+    nameDraft: String,
+    profileError: String?,
+    onNameChange: (String) -> Unit,
+    onChangePhoto: () -> Unit,
+    onSignOut: () -> Unit,
+    onSave: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val roleLabel = when (identityRole.lowercase(Locale.ROOT)) {
+        "admin", "administrator" -> "ADMINISTRATOR"
+        else -> identityRole.uppercase(Locale.ROOT).ifBlank { "ACCOUNT" }
+    }
+    Column(
+        Modifier.fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.62f).dp)
+            .verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ProfileAvatar(identityName, profilePhotoPath, 42.dp, profilePhotoDataUrl)
+            Column(Modifier.weight(1f)) {
+                Text(identityName, fontSize = 14.sp, lineHeight = 17.sp, fontWeight = FontWeight.Bold,
+                    color = colors.onSurface, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Text(roleLabel, fontSize = 10.sp, lineHeight = 13.sp, fontWeight = FontWeight.Bold,
+                    color = colors.primary, maxLines = 1)
+            }
+        }
+        TextButton(
+            onClick = onChangePhoto,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+        ) {
+            Icon(Icons.TwoTone.AddAPhoto, contentDescription = null, tint = colors.primary, modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(if (profilePhotoPath.isNullOrBlank() && profilePhotoDataUrl.isBlank()) "Add photo" else "Change photo",
+                fontSize = 12.sp, maxLines = 1)
+        }
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.medium)
+                .background(colors.surfaceContainerHigh)
+                .border(BorderStroke(1.dp, colors.outlineVariant), RoundedCornerShape(13.dp))
+                .padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.TwoTone.Edit, contentDescription = null, tint = colors.primary, modifier = Modifier.size(17.dp))
+            BasicTextField(
+                value = nameDraft,
+                onValueChange = onNameChange,
+                modifier = Modifier.weight(1f).padding(start = 8.dp),
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall.copy(color = colors.onSurface),
+                decorationBox = { innerTextField ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (nameDraft.isBlank()) Text("Name", color = colors.onSurfaceVariant, fontSize = 12.sp)
+                        innerTextField()
+                    }
+                }
+            )
+        }
+        profileError?.let {
+            Text(it, color = colors.error, fontSize = 11.sp, lineHeight = 14.sp)
+        }
+        HorizontalDivider(color = colors.outlineVariant)
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = onSave,
+                enabled = nameDraft.isNotBlank(),
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(Icons.TwoTone.CheckCircle, contentDescription = "Save",
+                    tint = colors.primary, modifier = Modifier.size(19.dp))
+            }
+            Spacer(Modifier.width(24.dp))
+            IconButton(
+                onClick = onSignOut,
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(Icons.TwoTone.Logout, contentDescription = "Sign out",
+                    tint = colors.error, modifier = Modifier.size(19.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileAvatar(name: String, photoPath: String?, size: androidx.compose.ui.unit.Dp, photoDataUrl: String = "") {
+    val bitmap = rememberAvatarBitmap(photoDataUrl, photoPath)
+    if (bitmap != null) {
+        Image(bitmap, contentDescription = "Profile photo", contentScale = ContentScale.Crop, modifier = Modifier.size(size).clip(CircleShape))
+    } else {
+        Box(Modifier.size(size).background(ForestContainer, CircleShape), contentAlignment = Alignment.Center) {
+            Text(name.split(" ").filter { it.isNotBlank() }.take(2).mapNotNull { it.firstOrNull() }.joinToString("").ifBlank { "?" }.uppercase(), color = Forest, fontWeight = FontWeight.Bold, fontSize = (size.value * .34f).sp)
+        }
+    }
+}
+
+@Composable
+private fun PageColumn(modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
+    PageFrame(modifier) { page ->
+        Column(
+            page.verticalScroll(rememberScrollState()).padding(bottom = 80.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            content = content
+        )
+    }
+}
+
+@Composable
+private fun PageHeading(title: String, subtitle: String? = null, trailing: (@Composable () -> Unit)? = null) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = Muted)
+        }
+        trailing?.invoke()
+    }
+}
+
+@Composable
+private fun M3Card(content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+    }
+}
+
+@Composable
+private fun Label(text: String) {
+    Text(text, color = Muted, style = MaterialTheme.typography.labelMedium)
+}
+
+@Composable
+private fun HomeScreen(
+    modifier: Modifier,
+    accountName: String,
+    canCreateSchedule: Boolean,
+    schedules: List<RemoteSchedule>,
+    loading: Boolean,
+    error: String?,
+    onRefresh: () -> Unit,
+    onOpenSchedule: (RemoteSchedule) -> Unit,
+    onCreateSchedule: () -> Unit
+) {
+    val hour = java.time.LocalTime.now().hour
+    val greeting = when (hour) { in 5..11 -> "Good morning"; in 12..17 -> "Good afternoon"; else -> "Good evening" }
+    val today = LocalDate.now()
+    val upcoming = remember(schedules, today) {
+        schedules.mapNotNull { remote ->
+            val weekStart = scheduleStartDate(remote.weekLabel, remote.updatedAt) ?: return@mapNotNull null
+            // Workbook weeks are normalized to Monday; this congregation meets midweek on Thursday.
+            val meetingDate = weekStart.plusDays(3)
+            if (meetingDate.isBefore(today)) null else meetingDate to remote
+        }.sortedBy { it.first }.take(6)
+    }
+    PageColumn(modifier) {
+        PageHeading("Home")
+        val greetingShape = RoundedCornerShape(26.dp)
+        val abstractAccent = MaterialTheme.colorScheme.onPrimaryContainer
+        Card(shape = greetingShape, colors = CardDefaults.cardColors(containerColor = ForestContainer)) {
+            Box(Modifier.fillMaxWidth().clip(greetingShape)) {
+                ComposeCanvas(Modifier.matchParentSize()) {
+                    val orbit = size.height * 1.35f
+                    drawCircle(
+                        color = abstractAccent.copy(alpha = 0.07f),
+                        radius = size.height * 0.68f,
+                        center = androidx.compose.ui.geometry.Offset(size.width * 0.99f, size.height * 0.02f)
+                    )
+                    drawCircle(
+                        color = abstractAccent.copy(alpha = 0.055f),
+                        radius = size.height * 0.4f,
+                        center = androidx.compose.ui.geometry.Offset(size.width * 0.79f, size.height * 0.94f)
+                    )
+                    drawArc(
+                        color = abstractAccent.copy(alpha = 0.24f),
+                        startAngle = 128f,
+                        sweepAngle = 150f,
+                        useCenter = false,
+                        topLeft = androidx.compose.ui.geometry.Offset(size.width - orbit * 0.69f, -orbit * 0.38f),
+                        size = androidx.compose.ui.geometry.Size(orbit, orbit),
+                        style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                    drawLine(
+                        color = abstractAccent.copy(alpha = 0.14f),
+                        start = androidx.compose.ui.geometry.Offset(size.width * 0.79f, size.height * 0.82f),
+                        end = androidx.compose.ui.geometry.Offset(size.width * 0.96f, size.height * 0.58f),
+                        strokeWidth = 1.dp.toPx(),
+                        cap = StrokeCap.Round
+                    )
+                }
+                Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(52.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f), RoundedCornerShape(17.dp)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.TwoTone.Home, contentDescription = null, tint = Forest, modifier = Modifier.size(27.dp))
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column {
+                        Text("$greeting,", color = Muted, fontSize = 14.sp)
+                        Text(accountName.ifBlank { "there" }, color = MaterialTheme.colorScheme.onPrimaryContainer, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                        Text(today.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.ENGLISH)), color = Muted, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Upcoming Meetings", fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                Text("Tap a meeting to preview its official schedule.", color = Muted, fontSize = 12.sp)
+            }
+            IconButton(onClick = onRefresh) { Icon(Icons.TwoTone.Refresh, contentDescription = "Refresh upcoming meetings", tint = Forest) }
+        }
+        when {
+            loading && upcoming.isEmpty() -> Surface(color = SurfaceContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest)
+                    Column { Text("Checking your schedule", fontWeight = FontWeight.SemiBold, fontSize = 13.sp); Text("Loading upcoming meetings…", color = Muted, fontSize = 12.sp) }
+                }
+            }
+            error != null && upcoming.isEmpty() -> Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.TwoTone.ErrorOutline, contentDescription = "Schedule unavailable", tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(22.dp))
+                    Text(error, color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onRefresh) { Text("Retry", color = MaterialTheme.colorScheme.onErrorContainer) }
+                }
+            }
+            upcoming.isEmpty() -> Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = SurfaceContainer)) {
+                Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(30.dp))
+                    Text("No upcoming saved meetings", fontWeight = FontWeight.SemiBold)
+                    Text("Create a workbook and save the schedule to the cloud to see it here.", color = Muted, fontSize = 12.sp)
+                    if (canCreateSchedule) FilledTonalButton(onClick = onCreateSchedule, shape = MaterialTheme.shapes.medium) {
+                        Icon(Icons.TwoTone.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(7.dp)); Text("Open Workbook")
+                    }
+                }
+            }
+            else -> {
+                if (loading || error != null) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (loading) CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp, color = Forest)
+                    Text(if (loading) "Updating · showing saved meetings" else "Couldn’t refresh · showing saved meetings", color = Muted, fontSize = 12.sp)
+                    if (error != null) TextButton(onClick = onRefresh) { Text("Retry", fontSize = 12.sp) }
+                }
+                val (nextDate, nextSchedule) = upcoming.first()
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "Preview ${nextSchedule.weekLabel}") { onOpenSchedule(nextSchedule) },
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(containerColor = ForestContainer),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(46.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.68f), RoundedCornerShape(15.dp)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(24.dp))
+                        }
+                        Column(Modifier.weight(1f).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text("NEXT MEETING", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
+                            Text(nextSchedule.weekLabel, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
+                            Text("${nextSchedule.reading} · ${nextDate.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH))}", color = Muted, fontSize = 12.sp, maxLines = 1)
+                        }
+                        Icon(Icons.TwoTone.Preview, contentDescription = "Preview next meeting schedule", tint = Forest)
+                    }
+                }
+                if (upcoming.size > 1) Text("MORE UPCOMING", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(top = 2.dp))
+                upcoming.drop(1).forEach { (date, remote) ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "Preview ${remote.weekLabel}") { onOpenSchedule(remote) },
+                    shape = MaterialTheme.shapes.medium,
+                    colors = CardDefaults.cardColors(containerColor = SurfaceContainer),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(44.dp).background(ForestContainer, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(23.dp))
+                        }
+                        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                            Text(remote.weekLabel, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Text(remote.reading, color = Muted, fontSize = 12.sp)
+                            Text(date.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH)), color = Forest, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        }
+                        Icon(Icons.TwoTone.Preview, contentDescription = "Preview schedule", tint = Forest)
+                    }
+                }
+            }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, canContinueToAssignments:Boolean, readOnly:Boolean, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
+    PageColumn(modifier) {
+        PageHeading("Workbook", "Select a week to load its meeting program.")
+        M3Card {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(38.dp).background(ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) { Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp)) }
+                Column(Modifier.weight(1f).padding(start = 11.dp)) {
+                    Label("MEETING WEEK")
+                    Text("Meeting details", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+            OutlinedButton(onClick = onPickDate, enabled=!readOnly, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), shape = MaterialTheme.shapes.medium, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
+                Text(weekLabel, modifier = Modifier.weight(1f), color = Ink, fontWeight = FontWeight.SemiBold)
+                Text("Change", color = Forest, fontSize = 12.sp)
+            }
+            OutlinedTextField(bible, onBible, enabled=!readOnly, label = { Text("Bible reading") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+            AdaptivePair(
+                { field -> OutlinedTextField(openingSong, onOpeningSong, enabled = !readOnly,
+                    label = { Text("Opening song") }, singleLine = true, modifier = field) },
+                { field -> OutlinedTextField(closingSong, onClosingSong, enabled = !readOnly,
+                    label = { Text("Closing song") }, singleLine = true, modifier = field) }
+            )
+        }
+        val fetchError = workbookStatus.contains("hindi", ignoreCase = true) || workbookStatus.contains("wala", ignoreCase = true) || workbookStatus.contains("permission", ignoreCase = true)
+        M3Card {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(38.dp).background(if (fetchError) MaterialTheme.colorScheme.error.copy(alpha = .12f) else ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
+                    Icon(if (workbookBusy) Icons.TwoTone.Refresh else if (workbookStatus.startsWith("✓")) Icons.TwoTone.CheckCircle else Icons.TwoTone.AutoStories, contentDescription = null, tint = if (fetchError) MaterialTheme.colorScheme.error else Forest, modifier = Modifier.size(22.dp))
+                }
+                Column(Modifier.weight(1f).padding(start = 11.dp)) {
+                    Label("JW.ORG WORKBOOK")
+                    Text("Weekly program", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                }
+                IconButton(onClick = onImport, enabled = !workbookBusy && !readOnly, modifier = Modifier.size(48.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(Icons.TwoTone.Refresh, contentDescription = "Refresh weekly program", tint = Forest, modifier = Modifier.size(23.dp)) }
+            }
+            if (workbookBusy) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    color = Forest,
+                    trackColor = ForestContainer
+                )
+                Text(workbookStatus, color = Muted, fontSize = 12.sp, lineHeight = 15.sp)
+            }
+            Surface(
+                color = if (IsDarkPalette) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerLow,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (workbookBusy) "CAPTURE LOG · RUNNING" else "CAPTURE LOG", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.1.sp)
+                        if (workbookBusy) CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 1.5.dp, color = Forest)
+                    }
+                    workbookCaptureLog.takeLast(6).forEach { line ->
+                        Text(
+                            "› $line",
+                            color = if (line.startsWith("ERROR")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            maxLines = 2
+                        )
+                    }
+                    if (!workbookBusy) Text(workbookStatus.removePrefix("✓ "), color = if (fetchError) MaterialTheme.colorScheme.error else Muted, fontSize = 12.sp, lineHeight = 16.sp)
+                }
+            }
+        }
+        if (canContinueToAssignments) Button(onClick = onNext, enabled=canContinue, modifier=Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, colors=ButtonDefaults.buttonColors(containerColor=Forest), contentPadding=PaddingValues(vertical=15.dp)) {
+            Text(if(workbookBusy) "Checking saved schedule…" else if(!canContinue) "Loading participants…" else "Continue to assignments")
+            Spacer(Modifier.width(9.dp))
+            Icon(Icons.TwoTone.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
+        }
+    }
+}
+
+@Composable
+private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, participants: List<Participant>, rotation: Map<Int, ParticipantRotation>, rotationBusy: Boolean, rotationError: String?, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, isAdmin:Boolean, readOnly:Boolean, canContinueExport:Boolean, cloudSaveBusy:Boolean, cloudSaveFeedback:Pair<String,Boolean>?, onRole:(String,String)->Unit, onAssign: (Int,String,String) -> Unit, onSaveCloud: () -> Unit, onContinueExport: () -> Unit) {
+    val eligible = participants.filter { it.enabled }
+    val selectedNames = buildSet {
+        listOf(chairman, openingPrayer, adviser).forEach { name ->
+            name.trim().takeIf { it.isNotEmpty() }?.let { add(it.lowercase(Locale.ROOT)) }
+        }
+        parts.forEach { part ->
+            listOf(part.person, part.assistant, part.secondaryAssignee, part.secondaryAssistant).forEach { name ->
+                name.trim().takeIf { it.isNotEmpty() }?.let { add(it.lowercase(Locale.ROOT)) }
+            }
+        }
+    }
+    PageColumn(modifier) {
+        PageHeading("Assignments")
+        if (rotationBusy || rotationError != null) {
+            Text(
+                if (rotationBusy) "Loading participant rotation for this week…" else "Could not load participant rotation: $rotationError",
+                color = if (rotationError != null) MaterialTheme.colorScheme.error else Muted,
+                fontSize = 12.sp,
+                lineHeight = 16.sp
+            )
+        }
+        Card(shape = MaterialTheme.shapes.medium, colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant), border=androidx.compose.foundation.BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
+            Column(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=10.dp), verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                    Label("MEETING ROLES")
+                    Text("Closing prayer · ${chairman.ifBlank { "Chairman" }}",color = Muted, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                }
+                AdaptivePair(
+                    { field -> SlotPicker("Chairman",chairman,eligible.filter { it.isAppointedBrother() },field,rotation,enabled=!readOnly,excludedNames=selectedNames){onRole("chairman",it)} },
+                    { field -> SlotPicker("Opening prayer",openingPrayer,eligible.filter { it.isBrother() && !it.unbaptized },field,rotation,enabled=!readOnly,excludedNames=selectedNames){onRole("opening_prayer",it)} }
+                )
+                AdaptivePair(
+                    { field -> SlotPicker("Adviser",adviser,eligible.filter { it.isAppointedBrother() },field,rotation,enabled=!readOnly,excludedNames=selectedNames){onRole("adviser",it)} },
+                    { field -> SlotPicker("Audience group",audienceGroup,(1..9).map { Participant("Group $it") },field,rotation,enabled=!readOnly){onRole("audience_group",it)} }
+                )
+            }
+        }
+        Card(shape = MaterialTheme.shapes.medium, colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant), border=androidx.compose.foundation.BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
+            Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Meeting parts", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    val done = parts.count { it.person.isNotBlank() }
+                    Text("$done of ${parts.size} assigned", color = Muted, style = MaterialTheme.typography.labelMedium)
+                }
+                Column(Modifier.fillMaxWidth().padding(top=6.dp)) {
+                    parts.forEachIndexed { index, part ->
+                        if(index>0) HorizontalDivider(Modifier.padding(vertical=6.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                        AssignmentPicker(index, part, participants, rotation, readOnly, selectedNames) { slot, name -> onAssign(index,slot,name) }
+                    }
+                }
+            }
+        }
+        if (isAdmin && !readOnly) {
+            OutlinedButton(
+                onClick = onSaveCloud,
+                enabled = !cloudSaveBusy,
+                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                shape = MaterialTheme.shapes.medium,
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 13.dp)
+            ) {
+                if (cloudSaveBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest)
+                else Icon(Icons.TwoTone.CloudUpload, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(9.dp))
+                Text(if (cloudSaveBusy) "Saving to Cloud…" else "Save to Cloud", fontWeight = FontWeight.SemiBold)
+            }
+            if (cloudSaveBusy) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                    color = Forest,
+                    trackColor = ForestContainer
+                )
+                Text("Saving the schedule and assignment history…", color = Muted, fontSize = 12.sp)
+            }
+            cloudSaveFeedback?.let { (message, success) ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Icon(
+                        if (success) Icons.TwoTone.CheckCircle else Icons.TwoTone.ErrorOutline,
+                        contentDescription = null,
+                        tint = if (success) Forest else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(17.dp)
+                    )
+                    Text(message, color = if (success) Forest else MaterialTheme.colorScheme.error, fontSize = 12.sp, lineHeight = 15.sp)
+                }
+            }
+        }
+        if (canContinueExport) Button(
+            onClick = onContinueExport,
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Forest)
+        ) {
+            Text("Continue to Export", fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.width(9.dp))
+            Icon(Icons.TwoTone.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
+        }
+    }
+}
+
+@Composable
+private fun AssignmentPicker(index: Int, part: Assignment, participants: List<Participant>, rotation: Map<Int, ParticipantRotation>, readOnly:Boolean, excludedNames: Set<String> = emptySet(), onAssign: (String,String) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val darkBadges = IsDarkPalette
+            val badgeColors = when (part.section) {
+                "ministry" -> if (darkBadges) Color(0xFF5C4300) to Color(0xFFFFD782) else Color(0xFFFFD782) to Color(0xFF513A00)
+                "living" -> if (darkBadges) Color(0xFF63342F) to Color(0xFFFFB8AE) else Color(0xFFFFB8AE) to Color(0xFF652F2A)
+                else -> if (darkBadges) Color(0xFF164C50) to Color(0xFF9DE2E0) else Color(0xFFB7E7E4) to Color(0xFF12494B)
+            }
+            Box(Modifier.size(30.dp).background(badgeColors.first, RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) {
+                Text("${part.id.takeIf { it>0 } ?: index+1}", color = badgeColors.second, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+            }
+            Spacer(Modifier.width(9.dp))
+            Column(Modifier.weight(1f)) { Text(part.title.substringAfter(". ",part.title), fontWeight = FontWeight.Bold, fontSize = 14.sp, lineHeight = 20.sp); Text(listOf(part.time,part.duration,part.detail).filter{it.isNotBlank()}.joinToString(" · "), color = Muted, fontSize = 12.sp, lineHeight = 16.sp) }
+        }
+        val title=part.title.lowercase(Locale.ROOT); val bibleReading=title.contains("pagbabasa ng bibliya"); val bibleStudy=title.contains("pag-aaral ng kongregasyon sa bibliya"); val what=title.contains("ano ang sasabihin mo")
+        val qualified=!what && (part.section=="living" || (part.section=="treasures" && !bibleReading))
+        val eligible = participants.filter { it.enabled }
+        val brothers = eligible.filter { it.isBrother() && !it.unbaptized }
+        val elders = brothers.filter { it.isAppointedBrother() }
+        // Bible Reading is a student part. The Congregation Bible Study reader uses a separate rule.
+        val bibleReaders = eligible.filter { it.isBrother() }
+        if(bibleStudy) {
+            AdaptivePair(
+                { field -> SlotPicker("Conductor", part.person, elders, field, rotation, enabled = !readOnly, excludedNames = excludedNames) { onAssign("main", it) } },
+                { field -> SlotPicker("Reader", part.assistant, brothers, field, rotation, enabled = !readOnly, excludedNames = excludedNames) { onAssign("assistant", it) } }
+            )
+        } else if((part.section=="ministry"&&!what)||bibleReading) {
+            val speakers = if (bibleReading) bibleReaders else eligible
+            val unavailable = if (bibleReading) participants else emptyList()
+            AdaptivePair(
+                first = { field ->
+                    Column(field, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        SlotPicker("Main Hall", part.person, speakers, rotation = rotation, enabled = !readOnly,
+                            excludedNames = excludedNames, unavailableChoices = unavailable) { onAssign("main", it) }
+                        if (part.hasAssistant) {
+                            SlotPicker("Assistant", part.assistant, eligible, rotation = rotation, enabled = !readOnly,
+                                excludedNames = excludedNames) { onAssign("assistant", it) }
+                        }
+                    }
+                },
+                second = { field ->
+                    Column(field, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        SlotPicker("Second Hall", part.secondaryAssignee, speakers, rotation = rotation, enabled = !readOnly,
+                            excludedNames = excludedNames, unavailableChoices = unavailable) { onAssign("secondary", it) }
+                        if (part.hasSecondaryAssistant) {
+                            SlotPicker("Assistant", part.secondaryAssistant, eligible, rotation = rotation, enabled = !readOnly,
+                                excludedNames = excludedNames) { onAssign("secondaryAssistant", it) }
+                        }
+                    }
+                }
+            )
+        } else {
+            SlotPicker(if(what) "Brother" else if(qualified) "Qualified brother" else "Participant",part.person,if(what) eligible.filter { it.isBrother() } else if(qualified) elders else eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("main",it)}
+            if(part.hasAssistant&&!what) SlotPicker("Assistant",part.assistant,eligible,rotation=rotation,enabled=!readOnly,excludedNames=excludedNames){onAssign("assistant",it)}
+        }
+    }
+}
+
+@Composable
+private fun SlotPicker(
+    label: String,
+    value: String,
+    choices: List<Participant>,
+    modifier: Modifier = Modifier,
+    rotation: Map<Int, ParticipantRotation> = emptyMap(),
+    enabled: Boolean = true,
+    excludedNames: Set<String> = emptySet(),
+    unavailableChoices: List<Participant> = emptyList(),
+    onPick: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var pending by remember { mutableStateOf<Participant?>(null) }
+    Column(modifier.padding(top = 3.dp)) {
+        Text(label, color = Muted, style = MaterialTheme.typography.labelMedium)
+        Box(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+            OutlinedButton(
+                onClick = { if (enabled) { searchQuery = ""; expanded = true } },
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                shape = MaterialTheme.shapes.medium,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Text(value.ifBlank { "Select" }, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false; searchQuery = "" },
+                modifier = Modifier.widthIn(min = 200.dp, max = minOf(320, LocalConfiguration.current.screenWidthDp - 32).coerceAtLeast(200).dp)
+                    .heightIn(max = minOf(380, (LocalConfiguration.current.screenHeightDp * 0.65f).toInt()).dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp).heightIn(min = 48.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Row(
+                        Modifier.fillMaxSize().padding(horizontal = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.TwoTone.Search, contentDescription = null, modifier = Modifier.size(17.dp), tint = Forest)
+                        androidx.compose.foundation.text.BasicTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodySmall.copy(color = Ink, fontSize = 12.sp),
+                            decorationBox = { innerTextField ->
+                                Box {
+                                    if (searchQuery.isBlank()) Text(
+                                        if (choices.isNotEmpty() && choices.all { it.isAppointedBrother() }) "Search qualified brother" else "Search participant",
+                                        color = Muted,
+                                        fontSize = 12.sp,
+                                        maxLines = 1
+                                    )
+                                    innerTextField()
+                                }
+                            }
+                        )
+                    }
+                }
+                DropdownMenuItem(
+                    text = { Text("Unassigned", fontSize = 13.sp) },
+                    enabled = enabled,
+                    onClick = { onPick(""); expanded = false; searchQuery = "" }
+                )
+                val orderedChoices = remember(choices, rotation) {
+                    choices.sortedWith(compareBy<Participant> { participantRotationRank(rotation[it.id]) }.thenBy { it.name.lowercase(Locale.ROOT) })
+                }
+                val currentName = value.trim().lowercase(Locale.ROOT)
+                val filteredChoices = remember(orderedChoices, excludedNames, currentName, searchQuery) {
+                    val normalizedQuery = searchQuery.trim()
+                    orderedChoices.filter {
+                        val key = it.name.trim().lowercase(Locale.ROOT)
+                        (key !in excludedNames || key == currentName) && it.name.contains(normalizedQuery, ignoreCase = true)
+                    }
+                }
+                val query = searchQuery.trim()
+                val unavailableMatches = if (query.isNotEmpty()) unavailableChoices.mapNotNull { participant ->
+                    val nameKey = participant.name.trim().lowercase(Locale.ROOT)
+                    if (!participant.name.contains(query, ignoreCase = true)) return@mapNotNull null
+                    val reason = when {
+                        !participant.enabled -> "Inactive participant"
+                        participant.gender.isBlank() || participant.gender.equals("unspecified", true) ->
+                            "Set the participant’s Brother / Sister status in Participants"
+                        !participant.isBrother() -> "This part is set up for brothers"
+                        nameKey != currentName && nameKey in excludedNames -> "Already assigned this meeting"
+                        else -> return@mapNotNull null
+                    }
+                    participant.name to reason
+                } else emptyList()
+                unavailableMatches.forEach { (name, reason) ->
+                    Text("$name · $reason", color = Muted, style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                }
+                if (filteredChoices.isEmpty() && unavailableMatches.isEmpty()) {
+                    DropdownMenuItem(
+                        text = { Text("No matching participants.", color = Muted, fontSize = 12.sp) },
+                        enabled = false,
+                        onClick = {}
+                    )
+                } else filteredChoices.forEach { participant ->
+                    val rawStat = rotation[participant.id]
+                    val isExempt = participant.isAppointedBrother() || rawStat?.exempt == true
+                    val stat = rawStat?.takeUnless { isExempt }
+                    DropdownMenuItem(
+                        enabled = enabled,
+                        text = {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(participant.name, color = Ink, fontSize = 13.sp, maxLines = 1)
+                                    Text(
+                                        if (isExempt) "Exempt from rotation · ${participant.appointment}"
+                                        else buildString {
+                                            append(participant.appointment)
+                                            if (stat != null) {
+                                                append(" · Main ").append(stat.mainThisMonth)
+                                                append(" · Assist ").append(stat.assistantThisMonth)
+                                                append(" · ").append(stat.totalThisMonth).append(" this month")
+                                                if (!stat.eligible) stat.nextEligibleDate?.let { append(" · After ").append(rotationShortDate(it)) }
+                                            }
+                                        },
+                                        color = Muted,
+                                        fontSize = 12.sp,
+                                        lineHeight = 16.sp,
+                                        maxLines = 2
+                                    )
+                                }
+                                if (isExempt) {
+                                    Surface(color = ForestContainer, shape = RoundedCornerShape(50)) {
+                                        Text("Exempt", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                                    }
+                                } else if (stat != null) RotationStatusTag(stat)
+                            }
+                        },
+                        onClick = {
+                            expanded = false
+                            searchQuery = ""
+                            if (stat != null && (stat.totalThisMonth > 0 || !stat.eligible)) pending = participant
+                            else onPick(participant.name)
+                        }
+                    )
+                }
+            }
+        }
+    }
+    pending?.let { participant ->
+        val stat = rotation[participant.id]
+        AlertDialog(
+            onDismissRequest = { pending = null },
+            title = { Text("Recent assignment") },
+            text = {
+                val message = when {
+                    stat == null -> "Continue assigning ${participant.name}?"
+                    stat.totalThisMonth > 0 -> "${participant.name} has ${stat.totalThisMonth} assignment(s) this month. Main: ${stat.mainThisMonth}; assistant: ${stat.assistantThisMonth}. Suggested next turn: ${stat.nextEligibleDate?.let(::rotationShortDate) ?: "not set"}."
+                    else -> "${participant.name} is not yet eligible. Next eligible date: ${stat.nextEligibleDate?.let(::rotationShortDate) ?: "not set"}."
+                }
+                Text(message)
+            },
+            confirmButton = {
+                TextButton(onClick = { onPick(participant.name); pending = null }) { Text("Assign anyway") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pending = null }) { Text("Choose another") }
+            }
+        )
+    }
+}
+
+private fun participantRotationRank(stat: ParticipantRotation?): Int = when {
+    stat == null -> 9
+    stat.exempt -> 8
+    stat.neverAssigned -> 0
+    stat.recommended -> 1
+    stat.eligible && stat.totalThisMonth == 0 -> 2
+    stat.totalThisMonth == 0 -> 3
+    else -> 4 + minOf(stat.totalThisMonth, 3)
+}
+
+@Composable
+private fun RotationStatusTag(stat: ParticipantRotation) {
+    val label = when {
+        stat.exempt -> "Exempt"
+        stat.neverAssigned -> "Priority"
+        stat.recommended -> "Recommended"
+        stat.totalThisMonth > 0 -> "${stat.totalThisMonth} this month"
+        stat.eligible -> "Available"
+        else -> stat.nextEligibleDate?.let { "After ${rotationShortDate(it)}" } ?: "Wait"
+    }
+    val scheme = MaterialTheme.colorScheme
+    val (container, content) = when {
+        stat.exempt -> scheme.surfaceVariant to scheme.onSurfaceVariant
+        stat.neverAssigned -> scheme.tertiaryContainer to scheme.onTertiaryContainer
+        stat.recommended -> scheme.primaryContainer to scheme.onPrimaryContainer
+        stat.eligible -> scheme.secondaryContainer to scheme.onSecondaryContainer
+        else -> scheme.secondaryContainer to scheme.onSecondaryContainer
+    }
+    Surface(color = container, contentColor = content, shape = RoundedCornerShape(50)) {
+        Text(label, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    }
+}
+
+private fun rotationShortDate(value: String): String = runCatching {
+    LocalDate.parse(value).format(DateTimeFormatter.ofPattern("MMM d", Locale("en", "PH")))
+}.getOrDefault(value)
+
+@Composable
+private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, openingSong:String, closingSong:String, parts:List<Assignment>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, previewWebView:MutableState<WebView?>, allowExport:Boolean, exportBusyType:String?, onExportText:()->Unit, onPng:()->Unit, onAssignmentSlipImages:()->Unit) {
+    val context = LocalContext.current
+    val html=remember(weekStart,bible,openingSong,closingSong,parts.toList(),chairman,openingPrayer,adviser,audienceGroup) {
+        buildOfficialScheduleHtml(context, weekStart,bible,openingSong,closingSong,parts,chairman,openingPrayer,adviser,audienceGroup,exportMode=true)
+    }
+    var previewReady by remember(html){mutableStateOf(false)}
+    val pageAspect = SCHEDULE_EXPORT_WIDTH_PX.toFloat() / SCHEDULE_EXPORT_HEIGHT_PX
+    PageColumn(modifier) {
+        PageHeading("Preview & Export")
+        if (allowExport) AdaptivePair(
+            first = { button ->
+                FilledTonalButton(
+                    onClick=onPng, enabled=previewReady && exportBusyType == null, modifier=button.heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.medium, contentPadding=PaddingValues(horizontal=10.dp)
+                ) {
+                    if (exportBusyType == "png") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
+                    else Icon(Icons.TwoTone.Share, contentDescription=null, modifier=Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (exportBusyType == "png") "Preparing…" else "Share PNG",fontSize=14.sp)
+                }
+            },
+            second = { button ->
+                OutlinedButton(
+                    onClick=onExportText, enabled=exportBusyType == null, modifier=button.heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.medium, contentPadding=PaddingValues(horizontal=10.dp)
+                ) {
+                    if (exportBusyType == "text") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
+                    else Icon(Icons.TwoTone.Description, contentDescription=null, modifier=Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (exportBusyType == "text") "Preparing…" else "Export text",fontSize=14.sp)
+                }
+            }
+        )
+        val hasAssignmentSlips = parts.any { it.person.isNotBlank() || it.secondaryAssignee.isNotBlank() } ||
+            chairman.isNotBlank() || openingPrayer.isNotBlank() || adviser.isNotBlank()
+        if (allowExport) OutlinedButton(
+            onClick = onAssignmentSlipImages,
+            enabled = exportBusyType == null && hasAssignmentSlips,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            shape = MaterialTheme.shapes.medium
+        ) {
+            if (exportBusyType == "slips_image") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
+            else Icon(Icons.TwoTone.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(if (exportBusyType == "slips_image") "Preparing images…" else "Share assignment slip images", fontSize = 13.sp)
+        }
+        if (exportBusyType != null || !previewReady) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = ForestContainer,
+                shape = MaterialTheme.shapes.medium
+            ) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                        CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp, color = Forest)
+                        Text(
+                            when (exportBusyType) {
+                                "png" -> "Preparing the schedule image…"
+                                "text" -> "Preparing the schedule text…"
+                                "slips_image" -> "Preparing assignment slip images…"
+                                else -> "Loading the schedule preview…"
+                            },
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Forest, trackColor = ForestContainer)
+                }
+            }
+        }
+        Surface(
+            color = Color.White, contentColor = Color(0xFF171717),
+            shape = MaterialTheme.shapes.small,
+            shadowElevation = 3.dp,
+            modifier = Modifier.fillMaxWidth().aspectRatio(pageAspect)
+        ) {
+            OfficialScheduleWebPreview(html, previewWebView, Modifier.fillMaxSize()) { previewReady = true }
+        }
+    }
+}
+
+@Composable
+private fun OfficialScheduleWebPreview(html:String,previewWebView:MutableState<WebView?>,modifier:Modifier=Modifier,onPageRendered:()->Unit) {
+    val pageRendered by rememberUpdatedState(onPageRendered)
+    var measuredWidthPx by remember { mutableIntStateOf(0) }
+    AndroidView(
+        factory = { context -> WebView(context).apply {
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            setBackgroundColor(android.graphics.Color.WHITE)
+            settings.javaScriptEnabled = true
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
+            settings.blockNetworkLoads = true
+            settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            settings.loadsImagesAutomatically = true
+            isVerticalScrollBarEnabled = true
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            tag = ""
+            webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest): Boolean = true
+                override fun onPageFinished(view: WebView, url: String?) {
+                    fitScheduleWebView(
+                        view = view,
+                        targetWidthPx = view.width,
+                        targetHeightPx = view.height,
+                        density = view.resources.displayMetrics.density.coerceAtLeast(1f),
+                        onReady = {
+                            isVerticalScrollBarEnabled = false
+                            overScrollMode = View.OVER_SCROLL_NEVER
+                            pageRendered()
+                        },
+                        onFailure = pageRendered
+                    )
+                }
+            }
+            previewWebView.value = this
+        } },
+        modifier = modifier.fillMaxWidth().onSizeChanged { size ->
+            if (size.width > 0 && size.width != measuredWidthPx) measuredWidthPx = size.width
+        },
+        update = { view ->
+            previewWebView.value = view
+            val contentKey = "$html#$measuredWidthPx"
+            if (measuredWidthPx > 0 && view.tag != contentKey) {
+                view.tag = contentKey
+                view.scrollTo(0, 0)
+                view.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "UTF-8", null)
+            }
+        },
+        onRelease = { view ->
+            if (previewWebView.value === view) previewWebView.value = null
+            view.stopLoading()
+            view.destroy()
+        }
+    )
+}
+
+private fun buildOfficialScheduleText(
+    weekStart: String, bible: String, openingSong: String, closingSong: String, parts: List<Assignment>,
+    chairman: String, openingPrayer: String, adviser: String, audienceGroup: String
+): String {
+    val start = runCatching { LocalDate.parse(weekStart) }.getOrDefault(LocalDate.now())
+    val end = start.plusDays(6)
+    val months = listOf("Enero", "Pebrero", "Marso", "Abril", "Mayo", "Hunyo", "Hulyo", "Agosto", "Setyembre", "Oktubre", "Nobyembre", "Disyembre")
+    val weekText = if (start.month == end.month) "${months[start.monthValue - 1]} ${start.dayOfMonth}–${end.dayOfMonth}" else "${months[start.monthValue - 1]} ${start.dayOfMonth}–${months[end.monthValue - 1]} ${end.dayOfMonth}"
+    fun minutes(time: String): Int {
+        val fields = time.split(":")
+        return if (fields.size == 2) (fields[0].toIntOrNull() ?: 0) * 60 + (fields[1].toIntOrNull() ?: 0) else 0
+    }
+    fun clock(value: Int): String {
+        val hour = (value / 60) % 12
+        return "${if (hour == 0) 12 else hour}:${(value % 60).toString().padStart(2, '0')}"
+    }
+    fun durationMinutes(value: String) = Regex("(\\d+)").find(value)?.value?.toIntOrNull() ?: 0
+    fun isBibleReading(part: Assignment) = part.title.contains("pagbabasa ng bibliya", true)
+    fun isBibleStudy(part: Assignment) = part.title.contains("pag-aaral ng kongregasyon sa bibliya", true)
+    fun isWhat(part: Assignment) = part.title.contains("ano ang sasabihin mo", true)
+    fun isDual(part: Assignment) = (part.section == "ministry" && !isWhat(part)) || isBibleReading(part)
+    fun sectionTitle(section: String) = when (section) {
+        "ministry" -> "MAGING MAHUSAY SA MINISTERYO"
+        "living" -> "PAMUMUHAY BILANG KRISTIYANO"
+        else -> "KAYAMANAN MULA SA SALITA NG DIYOS"
+    }
+    val firstMinute = parts.firstOrNull()?.time?.let(::minutes) ?: 366
+    val last = parts.lastOrNull()
+    val lastEnd = last?.let { minutes(it.time) + durationMinutes(it.duration) } ?: 457
+    val grouped = parts.groupBy { it.section.ifBlank { "treasures" } }
+    val order = listOf("treasures", "ministry", "living")
+    return buildString {
+        appendLine("ISKEDYUL NG PULONG NG GITNANG SANLINGGO")
+        appendLine("$weekText | ${bible.uppercase()}")
+        appendLine()
+        appendLine("${clock(firstMinute - 6)}  •  Awit $openingSong at Panalangin")
+        appendLine("       Panalangin : ${openingPrayer.ifBlank { "—" }}")
+        appendLine("${clock(firstMinute - 1)}  •  Pambungad na Mga Komento (1 min.)")
+        appendLine("       Chairman : ${chairman.ifBlank { "—" }}")
+        appendLine("       Second Hall Adviser : ${adviser.ifBlank { "—" }} / ${audienceGroup.ifBlank { "Group —" }}")
+        appendLine()
+        order.forEach { section ->
+            val rows = grouped[section].orEmpty()
+            if (rows.isNotEmpty()) {
+                appendLine(sectionTitle(section))
+                rows.forEachIndexed { index, part ->
+                    val number = part.id.takeIf { it > 0 } ?: index + 1
+                    val title = part.title.replaceFirst(Regex("^\\s*\\d+\\.\\s*"), "").trim()
+                    val heading = buildString {
+                        append(part.time.ifBlank { "—" }).append("  •  ").append(number).append(". ").append(title)
+                        if (part.duration.isNotBlank()) append(" (").append(part.duration).append(")")
+                    }
+                    appendLine(heading)
+                    if (part.detail.isNotBlank()) appendLine("       ${part.detail}")
+                    when {
+                        isBibleStudy(part) -> {
+                            appendLine("       Conductor : ${part.person.ifBlank { "—" }}")
+                            appendLine("       Reader : ${part.assistant.ifBlank { "—" }}")
+                        }
+                        isDual(part) -> {
+                            appendLine("       Main Hall : ${part.person.ifBlank { "—" }}")
+                            if (part.assistant.isNotBlank()) appendLine("       Assistant : ${part.assistant}")
+                            appendLine("       Second Hall : ${part.secondaryAssignee.ifBlank { "—" }}")
+                            if (part.secondaryAssistant.isNotBlank()) appendLine("       Assistant : ${part.secondaryAssistant}")
+                        }
+                        else -> {
+                            val qualified = !isWhat(part) && (part.section == "living" || (part.section == "treasures" && !isBibleReading(part)))
+                            appendLine("       ${if (isWhat(part)) "Brother" else if (qualified) "Qualified brother" else "Participant"} : ${part.person.ifBlank { "—" }}")
+                            if (part.assistant.isNotBlank()) appendLine("       Assistant : ${part.assistant}")
+                        }
+                    }
+                    appendLine()
+                }
+            }
+        }
+        appendLine("${clock(lastEnd)}  •  Pangwakas na Komento (3 min.)")
+        appendLine("${clock(lastEnd + 3)}  •  Awit $closingSong at Panalangin")
+        appendLine("       Panalangin : ${chairman.ifBlank { "—" }}")
+    }
+}
+
+private const val SCHEDULE_EXPORT_WIDTH_PX = 2480
+private const val SCHEDULE_EXPORT_HEIGHT_PX = 3508
+private const val SCHEDULE_EXPORT_DPI = 300
+private const val SCHEDULE_EXPORT_CSS_WIDTH = 397
+private const val SCHEDULE_EXPORT_CSS_HEIGHT = 562
+
+private fun buildOfficialScheduleHtml(context: Context, weekStart:String,bible:String,openingSong:String,closingSong:String,parts:List<Assignment>,chairman:String,openingPrayer:String,adviser:String,audienceGroup:String,exportMode:Boolean=false):String {
+    val start=runCatching{LocalDate.parse(weekStart)}.getOrDefault(LocalDate.now())
+    val end=start.plusDays(6)
+    val months=listOf("Enero","Pebrero","Marso","Abril","Mayo","Hunyo","Hulyo","Agosto","Setyembre","Oktubre","Nobyembre","Disyembre")
+    val weekText=if(start.month==end.month) "${months[start.monthValue-1]} ${start.dayOfMonth}-${end.dayOfMonth}" else "${months[start.monthValue-1]} ${start.dayOfMonth}–${months[end.monthValue-1]} ${end.dayOfMonth}"
+    fun minutes(time:String):Int { val p=time.split(":");return if(p.size==2) (p[0].toIntOrNull()?:0)*60+(p[1].toIntOrNull()?:0) else 0 }
+    fun clock(value:Int):String { val hour=(value/60)%12; return "${if(hour==0)12 else hour}:${(value%60).toString().padStart(2,'0')}" }
+    fun isBibleReading(p:Assignment)=p.title.contains("pagbabasa ng bibliya",true)
+    fun isBibleStudy(p:Assignment)=p.title.contains("pag-aaral ng kongregasyon sa bibliya",true)
+    fun isWhat(p:Assignment)=p.title.contains("ano ang sasabihin mo",true)
+    fun dual(p:Assignment)=((p.section=="ministry")&&!isWhat(p))||isBibleReading(p)
+    fun sectionMeta(section:String)=when(section){"ministry"->Triple("MAGING MAHUSAY SA MINISTERYO","#9b6d17","ministry");"living"->Triple("PAMUMUHAY BILANG KRISTIYANO","#942926","living");else->Triple("KAYAMANAN MULA SA SALITA NG DIYOS","#2a6b77","treasures")}
+    fun durationMinutes(text:String)=Regex("(\\d+)").find(text)?.value?.toIntOrNull()?:0
+    val firstMinute=parts.firstOrNull()?.time?.let(::minutes)?:366
+    val last=parts.lastOrNull()
+    val lastEnd=(last?.let{minutes(it.time)+durationMinutes(it.duration)}?:457)
+    val closeSongTime=lastEnd+3
+    val grouped=parts.groupBy{it.section.ifBlank{"treasures"}}
+    val sectionOrder=listOf("treasures","ministry","living")
+    val html=buildString {
+        val viewport = if (exportMode) "width=$SCHEDULE_EXPORT_CSS_WIDTH,initial-scale=1,maximum-scale=1,user-scalable=no" else "width=device-width,initial-scale=1"
+        append("<!doctype html><html><head><meta name=\"viewport\" content=\"").append(viewport).append("\"><style>")
+        append(scheduleFontCss(context))
+        append("*{box-sizing:border-box}html,body{margin:0;background:#fff;color:#171717;font-family:'Google Sans',sans-serif}body{padding:18px 20px 14px;font-size:6.4px;line-height:1.25")
+        if (exportMode) append(";width:${SCHEDULE_EXPORT_CSS_WIDTH}px;min-height:${SCHEDULE_EXPORT_CSS_HEIGHT}px;overflow:visible;zoom:1")
+        append("}.title{font-size:9.5px;font-weight:700;padding-bottom:5px;border-bottom:1px solid #252525}.sub{margin:7px 0 14px;color:#397782;font-size:7.2px}.toprow{display:grid;grid-template-columns:30px minmax(0,1fr) minmax(95px,.9fr);gap:5px;align-items:start;margin:0 0 5px}.time{white-space:nowrap}.bullet{font-size:6px;margin-right:3px}.role strong{margin-right:3px}.advisor{margin:7px 0 16px}.section{display:flex;align-items:center;gap:6px;margin:16px 0 8px;font-size:7.8px;font-weight:600}.badge{width:17px;height:17px;border-radius:4px;overflow:hidden;flex:0 0 17px}.badge img{display:block;width:100%;height:100%}.program{display:grid;grid-template-columns:30px minmax(80px,1.55fr) minmax(62px,1fr) minmax(62px,1fr);gap:5px;align-items:start;margin:0 0 8px}.part{overflow-wrap:anywhere}.part-dot{font-size:6px;line-height:1;margin-right:2px;vertical-align:middle}.part-number{font-size:7px;font-weight:400;line-height:1;margin-right:3px}.hall{font-size:5.6px;color:#555;text-align:left;margin-bottom:2px}.name{font-size:6.4px;font-weight:700;overflow-wrap:anywhere}.assistant{font-size:5.8px;font-weight:400;color:#777;margin-top:2px;overflow-wrap:anywhere}.single{grid-column:3/5}.footer{border-top:1px solid #ddd;margin-top:14px;padding-top:8px}.footnote{text-align:right;color:#999;font-size:5px;margin-top:20px}@media print{body{padding:18px 20px 14px}}")
+        append("</style></head><body>")
+        append("<div class=\"title\">Iskedyul ng Pulong ng Gitnang Sanlinggo</div><div class=\"sub\">").append(weekText.htmlSafe()).append(" | <b>").append(bible.uppercase().htmlSafe()).append("</b></div>")
+        append("<div class=\"toprow\"><div class=\"time\">").append(clock(firstMinute-6)).append("</div><div><span class=\"bullet\">●</span>Awit ").append(openingSong.htmlSafe()).append(" at Panalangin</div><div class=\"role\"><strong>Panalangin :</strong> ").append(openingPrayer.ifBlank{"—"}.htmlSafe()).append("</div></div>")
+        append("<div class=\"toprow\"><div class=\"time\">").append(clock(firstMinute-1)).append("</div><div><span class=\"bullet\">●</span>Pambungad na Mga Komento (1 min.)</div><div class=\"role\"><strong>Chairman :</strong> ").append(chairman.ifBlank{"—"}.htmlSafe()).append("</div></div>")
+        append("<div class=\"toprow advisor\"><div></div><div></div><div class=\"role\"><strong>Second Hall Adviser :</strong> ").append(adviser.ifBlank{"—"}.htmlSafe()).append(" / ").append(audienceGroup.ifBlank{"Group —"}.htmlSafe()).append("</div></div>")
+        var ministryHeadingsShown=false
+        sectionOrder.forEach { key ->
+            val rows=grouped[key].orEmpty(); if(rows.isEmpty()) return@forEach
+            val meta=sectionMeta(key)
+            append("<div class=\"section\" style=\"color:").append(meta.second).append("\"><span class=\"badge\"><img src=\"section-icons/").append(meta.third).append(".svg\" alt=\"\"></span>").append(meta.first).append("</div>")
+            rows.forEach { p ->
+                val bulletColor=meta.second
+                val partNumber = p.id.takeIf { it > 0 } ?: (parts.indexOf(p) + 1)
+                append("<div class=\"program\"><div class=\"time\">").append(p.time.ifBlank{"—"}.htmlSafe()).append("</div><div class=\"part\"><span class=\"part-dot\" style=\"color:").append(bulletColor).append("\">●</span><span class=\"part-number\">").append(partNumber).append(".</span>").append(p.title.replaceFirst(Regex("^\\s*\\d+\\.\\s*"),"").htmlSafe())
+                if(p.duration.isNotBlank()) append(" (").append(p.duration.htmlSafe()).append(")")
+                if(p.detail.isNotBlank()) append(" ").append(p.detail.htmlSafe())
+                append("</div>")
+                when {
+                    isBibleStudy(p) -> { append("<div><div class=\"hall\">Conductor</div><div class=\"name\">").append(p.person.ifBlank{"—"}.htmlSafe()).append("</div></div><div><div class=\"hall\">Reader</div><div class=\"name\">").append(p.assistant.ifBlank{"—"}.htmlSafe()).append("</div></div>") }
+                    dual(p) -> {
+                        val showHallHeadings=p.section!="ministry" || !ministryHeadingsShown
+                        append("<div>");if(showHallHeadings)append("<div class=\"hall\">Main Hall</div>");append("<div class=\"name\">").append(p.person.ifBlank{"—"}.htmlSafe()).append("</div>")
+                        if(p.assistant.isNotBlank())append("<div class=\"assistant\">").append(p.assistant.htmlSafe()).append("</div>")
+                        append("</div><div>");if(showHallHeadings)append("<div class=\"hall\">Second Hall</div>");append("<div class=\"name\">").append(p.secondaryAssignee.ifBlank{"—"}.htmlSafe()).append("</div>")
+                        if(p.secondaryAssistant.isNotBlank())append("<div class=\"assistant\">").append(p.secondaryAssistant.htmlSafe()).append("</div>")
+                        append("</div>");if(p.section=="ministry")ministryHeadingsShown=true
+                    }
+                    else -> { append("<div class=\"single\"><div class=\"name\">").append(p.person.ifBlank{"—"}.htmlSafe()).append("</div>");if(p.assistant.isNotBlank())append("<div class=\"assistant\">").append(p.assistant.htmlSafe()).append("</div>");append("</div>") }
+                }
+                append("</div>")
+            }
+        }
+        append("<div class=\"footer\"><div class=\"toprow\"><div class=\"time\">").append(clock(lastEnd)).append("</div><div><span class=\"bullet\">●</span>Pangwakas na Komento (3 min.)</div><div></div></div>")
+        append("<div class=\"toprow\"><div class=\"time\">").append(clock(closeSongTime)).append("</div><div><span class=\"bullet\">●</span>Awit ").append(closingSong.htmlSafe()).append(" at Panalangin</div><div class=\"role\"><strong>Panalangin :</strong> ").append(chairman.ifBlank{"—"}.htmlSafe()).append("</div></div></div>")
+        append("</body></html>")
+    }
+    return html
+}
+
+@Composable
+private fun ParticipantsScreen(
+    modifier: Modifier, participants: List<Participant>, onAdd: (String) -> Unit,
+    onToggle: (Int) -> Unit, onEdit: (Participant, Participant) -> Unit,
+    isAdmin: Boolean, canEdit: Boolean, loading: Boolean, loadError: String?, onRefresh: () -> Unit,
+    onSetActive: (Participant, Boolean) -> Unit, onDelete: (Participant) -> Unit
+) {
+    var query by rememberSaveable { mutableStateOf("") }
+    var genderFilter by rememberSaveable { mutableStateOf("all") }
+    var appointmentFilter by rememberSaveable { mutableStateOf("all") }
+    var serviceFilter by rememberSaveable { mutableStateOf("all") }
+    var baptismFilter by rememberSaveable { mutableStateOf("all") }
+    var statusFilter by rememberSaveable { mutableStateOf("active") }
+    var sortBy by rememberSaveable { mutableStateOf("name") }
+    var showFilters by remember { mutableStateOf(false) }
+    var showAdd by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
+    var editing by remember { mutableStateOf<Participant?>(null) }
+    var deleteTarget by remember { mutableStateOf<Participant?>(null) }
+    var editName by remember { mutableStateOf("") }
+    var editGender by remember { mutableStateOf("brother") }
+    var editAppointment by remember { mutableStateOf("publisher") }
+    var editService by remember { mutableStateOf("none") }
+    var editUnbaptized by remember { mutableStateOf(false) }
+    val participantsSnapshot by remember(participants) { derivedStateOf { participants.toList() } }
+    val filtered = remember(participantsSnapshot, query, genderFilter, appointmentFilter, serviceFilter, baptismFilter, statusFilter, sortBy) {
+        participantsSnapshot.withIndex().filter { (_, p) ->
+            p.name.contains(query, true) && (statusFilter == "all" || (statusFilter == "active" && p.enabled) || (statusFilter == "inactive" && !p.enabled)) &&
+                (genderFilter == "all" || p.gender == genderFilter) && (appointmentFilter == "all" || p.appointment == appointmentFilter) &&
+                (serviceFilter == "all" || p.service == serviceFilter) && (baptismFilter == "all" || (baptismFilter == "unbaptized" && p.unbaptized) || (baptismFilter == "baptized" && !p.unbaptized))
+        }.sortedWith(when (sortBy) {
+            "gender" -> compareBy<IndexedValue<Participant>> { it.value.gender }.thenBy { it.value.name.lowercase() }
+            "appointment" -> compareBy<IndexedValue<Participant>> { it.value.appointment }.thenBy { it.value.name.lowercase() }
+            "service" -> compareBy<IndexedValue<Participant>> { it.value.service }.thenBy { it.value.name.lowercase() }
+            "unbaptized" -> compareByDescending<IndexedValue<Participant>> { it.value.unbaptized }.thenBy { it.value.name.lowercase() }
+            "name_desc" -> compareByDescending<IndexedValue<Participant>> { it.value.name.lowercase() }
+            else -> compareBy { it.value.name.lowercase() }
+        })
+    }
+    fun beginEdit(p: Participant) { editing=p; editName=p.name; editGender=p.gender; editAppointment=p.appointment; editService=p.service; editUnbaptized=p.unbaptized }
+    PageFrame(modifier) { page ->
+        Column(page.fillMaxHeight().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            PageHeading("Participants") {
+                IconButton(onClick = onRefresh) {
+                    Icon(Icons.TwoTone.Refresh, contentDescription = "Refresh participants", tint = Forest)
+                }
+                if (canEdit) IconButton(onClick = { showAdd = true }) {
+                    Icon(Icons.TwoTone.PersonAdd, contentDescription = "Add participant", tint = Forest)
+                }
+            }
+            Text("${participants.size} participants · ${filtered.size} shown",color=Muted,fontSize=12.sp)
+            if (loading && participants.isNotEmpty()) Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                CircularProgressIndicator(Modifier.size(15.dp),strokeWidth=2.dp,color=Forest)
+                Text("Updating participant list · showing saved data",color=Muted,fontSize = 12.sp)
+            }
+            if (loadError != null) Surface(color=MaterialTheme.colorScheme.errorContainer,shape = MaterialTheme.shapes.medium,modifier=Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.TwoTone.ErrorOutline,contentDescription="Participant refresh failed",tint=MaterialTheme.colorScheme.onErrorContainer,modifier=Modifier.size(19.dp))
+                    Text((if (participants.isEmpty()) "Could not load participants. " else "Showing saved participants. ") + loadError,color=MaterialTheme.colorScheme.onErrorContainer,fontSize = 12.sp,modifier=Modifier.weight(1f))
+                    TextButton(onClick=onRefresh,contentPadding=PaddingValues(horizontal=6.dp)){Text("Retry",color=MaterialTheme.colorScheme.onErrorContainer,fontSize = 12.sp)}
+                }
+            }
+            Card(Modifier.fillMaxWidth().weight(1f),shape=RoundedCornerShape(22.dp),colors=CardDefaults.cardColors(containerColor=SurfaceContainer),border=androidx.compose.foundation.BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)) {
+                Column(Modifier.fillMaxSize().padding(14.dp)) {
+                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(query,{query=it},placeholder={Text("Search participant")},singleLine=true,shape = MaterialTheme.shapes.medium,modifier=Modifier.weight(1f).heightIn(min=48.dp),textStyle=MaterialTheme.typography.bodyMedium)
+                        IconButton(onClick={showFilters=true},modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(Icons.TwoTone.Sort,contentDescription="Filter and sort participants",tint=Forest,modifier=Modifier.size(22.dp))}
+                    }
+                    LazyColumn(Modifier.weight(1f).fillMaxWidth(),contentPadding=PaddingValues(top=6.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                        itemsIndexed(filtered,key={_,entry->if(entry.value.id>0)entry.value.id.toLong() else entry.index.toLong()}) { _,entry ->
+                            val (index,p)=entry
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Row(Modifier.fillMaxWidth().heightIn(min=52.dp).semantics { if (canEdit) role = Role.Button }.then(if(canEdit) Modifier.clickable { beginEdit(p) } else Modifier).padding(vertical=7.dp),verticalAlignment=Alignment.CenterVertically) {
+                                Box(Modifier.size(38.dp).background(ForestContainer,CircleShape),contentAlignment=Alignment.Center){Text(p.name.split(" ").take(2).mapNotNull{it.firstOrNull()}.joinToString("").uppercase(),color=Forest,fontWeight=FontWeight.Bold,fontSize = 12.sp)}
+                                Column(Modifier.weight(1f).padding(start=10.dp)) {
+                                    Text(p.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        if (p.unbaptized) "Unbaptized · ${genderLabel(p.gender)}${if(!p.enabled) " · Inactive" else ""}"
+                                        else "${appointmentLabel(p.appointment)} · ${serviceLabel(p.service)} · ${genderLabel(p.gender)}${if(!p.enabled) " · Inactive" else ""}",
+                                        color=Muted,fontSize = 12.sp,maxLines=1
+                                    )
+                                }
+                                if(canEdit) IconButton(onClick={beginEdit(p)},modifier=Modifier.size(48.dp)){Icon(Icons.TwoTone.Edit,contentDescription="Edit participant",tint=Forest,modifier=Modifier.size(20.dp))}
+                                if(isAdmin) {
+                                    var menu by remember(p.id){mutableStateOf(false)}
+                                    Box {
+                                        IconButton(onClick = { menu = true }) { Icon(Icons.TwoTone.MoreVert, contentDescription = "Participant actions") }
+                                        DropdownMenu(expanded=menu,onDismissRequest={menu=false},modifier=Modifier.background(AppSurface)) {
+                                            DropdownMenuItem(text={Text(if(p.enabled) "Set inactive" else "Set active")},onClick={menu=false;onSetActive(p,!p.enabled)})
+                                            DropdownMenuItem(text={Text("Delete permanently",color=MaterialTheme.colorScheme.error)},onClick={menu=false;deleteTarget=p})
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (loading && participants.isEmpty()) item {
+                            Row(Modifier.fillMaxWidth().padding(vertical=20.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                                CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp,color=Forest)
+                                Text("Loading participants…",color=Muted,fontSize=12.sp)
+                            }
+                        } else if(filtered.isEmpty()) item { Text(if (query.isNotBlank() || genderFilter!="all" || appointmentFilter!="all" || serviceFilter!="all" || baptismFilter!="all") "No participants match the current search or filters." else if (canEdit) "No participants yet. Refresh the list or add a participant." else "No participants are available yet. Refresh the list to try again.",color=Muted,fontSize=12.sp,modifier=Modifier.padding(vertical=12.dp)) }
+                    }
+                }
+            }
+        }
+    }
+    if(showAdd && canEdit) AlertDialog(onDismissRequest={showAdd=false},containerColor=MaterialTheme.colorScheme.surfaceContainerHigh,shape = MaterialTheme.shapes.extraLarge,title={Text("Add participant")},text={OutlinedTextField(newName,{newName=it},label={Text("Full name")},singleLine=true)},confirmButton={TextButton(onClick={if(newName.isNotBlank())onAdd(newName.trim());newName="";showAdd=false}){Text("Add",color=Forest)}},dismissButton={TextButton(onClick={showAdd=false}){Text("Cancel",color=Forest)}})
+    if(editing!=null && canEdit) AlertDialog(
+        onDismissRequest={editing=null},containerColor=MaterialTheme.colorScheme.surfaceContainerHigh,shape = MaterialTheme.shapes.extraLarge,title={Text("Edit participant",fontWeight=FontWeight.Bold)},
+        text={Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(editName,{editName=it},label={Text("Name")},singleLine=true,modifier=Modifier.fillMaxWidth())
+            ParticipantChoice("Gender",editGender,listOf("brother" to "Brother","sister" to "Sister")){editGender=it}
+            ParticipantChoice("Appointment",editAppointment,listOf("" to "","publisher" to "Publisher","ministerial" to "Ministerial servant","elder" to "Elder"),enabled=!editUnbaptized){editAppointment=it;if(it!="publisher")editUnbaptized=false}
+            ParticipantChoice("Service status",editService,listOf("" to "","none" to "Publisher","regular_pioneer" to "Regular pioneer"),enabled=!editUnbaptized){editService=it;if(it=="regular_pioneer")editUnbaptized=false}
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("Unbaptized",fontSize=14.sp);Switch(checked=editUnbaptized,onCheckedChange={editUnbaptized=it;if(it){editAppointment="";editService=""}},colors=SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.onPrimary, checkedTrackColor = Forest))}
+        }},
+        confirmButton={TextButton(onClick={editing?.let{old->if(editName.isNotBlank())onEdit(old,old.copy(name=editName.trim(),gender=editGender,appointment=editAppointment,service=editService,unbaptized=editUnbaptized))};editing=null}){Text("Save",color=Forest)}},
+        dismissButton={TextButton(onClick={editing=null}){Text("Cancel",color=Forest)}}
+    )
+    if(showFilters) AlertDialog(
+        onDismissRequest={showFilters=false},containerColor=MaterialTheme.colorScheme.surfaceContainerHigh,shape = MaterialTheme.shapes.extraLarge,title={Text("Filter and sort",fontWeight=FontWeight.Bold)},
+        text={Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            ParticipantChoice("Status",statusFilter,listOf("active" to "Active","inactive" to "Inactive","all" to "All")){statusFilter=it}
+            ParticipantChoice("Baptism",baptismFilter,listOf("all" to "All","baptized" to "Baptized","unbaptized" to "Unbaptized")){baptismFilter=it}
+            ParticipantChoice("Brother / Sister",genderFilter,listOf("all" to "All","brother" to "Brother","sister" to "Sister")){genderFilter=it}
+            ParticipantChoice("Appointment",appointmentFilter,listOf("all" to "All","elder" to "Elder","ministerial" to "Ministerial servant","publisher" to "Publisher")){appointmentFilter=it}
+            ParticipantChoice("Service status",serviceFilter,listOf("all" to "All","regular_pioneer" to "Regular pioneer","none" to "Publisher")){serviceFilter=it}
+            ParticipantChoice("Sort by",sortBy,listOf("name" to "Name A–Z","name_desc" to "Name Z–A","gender" to "Brother / Sister","appointment" to "Appointment","service" to "Service status","unbaptized" to "Baptism status")){sortBy=it}
+        }},
+        confirmButton={TextButton(onClick={showFilters=false}){Text("Done",color=Forest)}},
+        dismissButton={TextButton(onClick={statusFilter="active";baptismFilter="all";genderFilter="all";appointmentFilter="all";serviceFilter="all";sortBy="name"}){Text("Reset",color=Forest)}}
+    )
+    if(deleteTarget!=null) AlertDialog(onDismissRequest={deleteTarget=null},containerColor=MaterialTheme.colorScheme.surfaceContainerHigh,shape = MaterialTheme.shapes.extraLarge,title={Text("Delete participant?")},text={Text("Permanent delete removes ${deleteTarget?.name} and their assignment history. This cannot be undone.")},confirmButton={TextButton(onClick={deleteTarget?.let(onDelete);deleteTarget=null}){Text("Delete",color=MaterialTheme.colorScheme.error)}},dismissButton={TextButton(onClick={deleteTarget=null}){Text("Cancel",color=Forest)}})
+}
+
+private fun appointmentLabel(value: String) = when(value.lowercase()) { "" -> ""; "elder" -> "Elder"; "ministerial" -> "Ministerial"; "publisher" -> "Publisher"; else -> "Publisher" }
+private fun serviceLabel(value: String) = when(value.lowercase()) { "" -> ""; "regular_pioneer" -> "Regular pioneer"; "none" -> "Publisher"; else -> "Publisher" }
+private fun genderLabel(value: String) = when(value.lowercase()) { "sister" -> "Sister"; "brother" -> "Brother"; else -> "Unspecified" }
+
+@Composable
+private fun ParticipantChoice(label: String, value: String, options: List<Pair<String,String>>, enabled: Boolean = true, onSelect: (String)->Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Column {
+        Text(label, color=Muted, fontSize = 12.sp)
+        Box {
+            OutlinedButton(onClick={expanded=true}, enabled=enabled, modifier=Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, contentPadding=PaddingValues(horizontal=13.dp, vertical=9.dp)) {
+                Text(options.firstOrNull { it.first==value }?.second?.ifBlank { "Not set" } ?: options.first().second.ifBlank { "Not set" }, color=Ink, modifier=Modifier.weight(1f))
+            }
+            DropdownMenu(expanded=expanded, onDismissRequest={expanded=false}, modifier=Modifier.background(AppSurface)) {
+                options.forEach { (key,title) -> DropdownMenuItem(text={Text(title.ifBlank { "Not set" })}, enabled=enabled, onClick={onSelect(key);expanded=false}) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MetricCard(label: String, value: String, modifier: Modifier = Modifier) {
+    Card(modifier, shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = SurfaceContainer)) {
+        Column(Modifier.padding(12.dp)) { Text(label, color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold); Text(value, color = Forest, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.padding(top = 4.dp)) }
+    }
+}
+
+@Composable
+private fun HistoryScreen(
+    modifier: Modifier,
+    remoteSchedules: List<RemoteSchedule>,
+    cloudStatus: String,
+    loading: Boolean,
+    error: String?,
+    isAdmin: Boolean,
+    canEdit: Boolean,
+    canCreate: Boolean,
+    onView: (RemoteSchedule) -> Unit,
+    onEdit: (RemoteSchedule) -> Unit,
+    onDelete: (RemoteSchedule) -> Unit,
+    onRefresh: () -> Unit,
+    onNew: () -> Unit
+) {
+    var deleteTarget by remember { mutableStateOf<RemoteSchedule?>(null) }
+    val sortedSchedules = remoteSchedules.sortedByDescending { scheduleStartDate(it.weekLabel) ?: LocalDate.MIN }
+    PageColumn(modifier) {
+        PageHeading("History")
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("${remoteSchedules.size} saved · newest first", color = Muted, fontSize = 12.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick=onRefresh,modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(Icons.TwoTone.Refresh,contentDescription="Refresh schedule history",tint=Forest,modifier=Modifier.size(20.dp))}
+                if (canCreate) FilledTonalButton(onClick = onNew, shape = MaterialTheme.shapes.medium) {
+                    Icon(Icons.TwoTone.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("New schedule")
+                }
+            }
+        }
+        if (loading && remoteSchedules.isNotEmpty()) Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            CircularProgressIndicator(Modifier.size(15.dp),strokeWidth=2.dp,color=Forest)
+            Text("Refreshing · showing saved schedules",color=Muted,fontSize = 12.sp)
+        }
+        if (error != null) Surface(color=MaterialTheme.colorScheme.errorContainer,shape = MaterialTheme.shapes.medium,modifier=Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.TwoTone.ErrorOutline,contentDescription="History refresh failed",tint=MaterialTheme.colorScheme.onErrorContainer,modifier=Modifier.size(19.dp))
+                Text((if(remoteSchedules.isEmpty()) "Could not load history. " else "Showing saved history. ")+error,color=MaterialTheme.colorScheme.onErrorContainer,fontSize = 12.sp,modifier=Modifier.weight(1f))
+                TextButton(onClick=onRefresh,contentPadding=PaddingValues(horizontal=6.dp)){Text("Retry",color=MaterialTheme.colorScheme.onErrorContainer,fontSize = 12.sp)}
+            }
+        }
+        M3Card {
+            if (remoteSchedules.isEmpty()) {
+                if (loading) Row(Modifier.fillMaxWidth().padding(vertical=18.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                    CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp,color=Forest)
+                    Text("Loading saved schedules…",color=Muted,fontSize=12.sp)
+                } else if (error == null) Column(Modifier.fillMaxWidth().padding(vertical=18.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.TwoTone.CalendarMonth,contentDescription=null,tint=Forest,modifier=Modifier.size(28.dp))
+                    Text("No saved schedules yet",fontWeight=FontWeight.SemiBold,fontSize=14.sp)
+                    Text("Schedules saved to the cloud will appear here.",color=Muted,fontSize=12.sp)
+                    if(canCreate) FilledTonalButton(onClick=onNew,shape = MaterialTheme.shapes.medium){Icon(Icons.TwoTone.Add,contentDescription=null,modifier=Modifier.size(17.dp));Spacer(Modifier.width(6.dp));Text("Create schedule")}
+                }
+            }
+            sortedSchedules.forEach { remote ->
+                HorizontalDivider(Modifier.padding(vertical = 6.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(36.dp).background(ForestContainer, CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(Icons.TwoTone.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp))
+                    }
+                    Column(Modifier.weight(1f).padding(start = 9.dp)) {
+                        Text(remote.weekLabel, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text("${remote.reading} · ${remote.updatedAt.take(10)}", color = Muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                    TextButton(onClick = { onView(remote) }, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                        Icon(Icons.TwoTone.Visibility, contentDescription = null, tint = Forest, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("View", fontSize = 12.sp, color = Forest)
+                    }
+                    if (isAdmin) {
+                        var menu by remember(remote.id) { mutableStateOf(false) }
+                        Box {
+                            IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp)) {
+                                Icon(Icons.TwoTone.MoreVert, contentDescription = "Schedule actions", tint = Forest)
+                            }
+                            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, modifier = Modifier.background(AppSurface)) {
+                                if (canEdit) DropdownMenuItem(
+                                    text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.TwoTone.Edit, contentDescription = null, tint = Forest, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(10.dp)); Text("Edit") } },
+                                    onClick = { menu = false; onEdit(remote) }
+                                )
+                                if (isAdmin) DropdownMenuItem(
+                                    text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.TwoTone.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(10.dp)); Text("Delete", color = MaterialTheme.colorScheme.error) } },
+                                    onClick = { menu = false; deleteTarget = remote }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    deleteTarget?.let { item ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            containerColor = AppSurface,
+            shape = RoundedCornerShape(26.dp),
+            title = { Text("Delete saved schedule?") },
+            text = { Text("${item.weekLabel} will be removed from schedule history. Assignment history will be archived safely.", color = Muted) },
+            confirmButton = { TextButton(onClick = { onDelete(item); deleteTarget = null }) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancel", color = Forest) } }
+        )
+    }
+}
+
+private fun scheduleStartDate(label:String, updatedAt:String=""): LocalDate? = runCatching {
+    val clean=label.substringBefore('|').trim().replace(Regex("(?i)^week of\\s+"),"")
+    Regex("^\\d{4}-\\d{2}-\\d{2}$").takeIf { it.matches(clean) }?.let { return LocalDate.parse(clean) }
+    val match=Regex("^([\\p{L}]+)\\s+(\\d{1,2})\\s*[–—-]\\s*(?:([\\p{L}]+)\\s+)?(\\d{1,2})(?:,?\\s*(\\d{4}))?").find(clean)
+    if(match==null) {
+        updatedAt.take(10).takeIf { it.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) }?.let { LocalDate.parse(it) } ?: return null
+    } else {
+        fun monthValue(raw:String):Int {
+            val normalized=raw.lowercase(Locale.ROOT).take(3)
+            return when(normalized){"jan","ene"->1;"feb","peb"->2;"mar"->3;"apr","abr"->4;"may"->5;"jun","hun"->6;"jul","hul"->7;"aug","ago"->8;"sep","set"->9;"oct","okt"->10;"nov","nob"->11;"dec","dic","dis"->12;else->throw IllegalArgumentException("Unknown month: $raw")}
+        }
+        val startMonth=monthValue(match.groupValues[1]); val endMonth=monthValue(match.groupValues[3].ifBlank { match.groupValues[1] })
+        val year=match.groupValues[5].toIntOrNull() ?: updatedAt.take(4).toIntOrNull() ?: LocalDate.now().year
+        LocalDate.of(if(startMonth>endMonth) year-1 else year,startMonth,match.groupValues[2].toInt())
+    }
+}.getOrNull()
+
+private data class NotificationFeedback(val sent: Boolean, val message: String)
+
+@Composable
+private fun AccountsScreen(
+    modifier: Modifier, accounts: List<RemoteAccount>, linkParticipants: List<AccountLinkParticipant>, loading: Boolean, error: String?,
+    testNotificationBusy: Boolean, testNotificationFeedback: NotificationFeedback?, onTestNotification: () -> Unit, currentUsername: String,
+    isAdmin: Boolean, fontScale: Float, onFontScaleChange: (Float) -> Unit,
+    darkMode: Boolean, onToggleTheme: () -> Unit, paletteStyle: AppPaletteStyle, onPaletteStyleChange: (AppPaletteStyle) -> Unit, appLock: AppLockController,
+    onRefresh: () -> Unit, onUploadPhoto: (RemoteAccount) -> Unit,
+    onLinkParticipant: (RemoteAccount, Int?) -> Unit,
+    onAction: (RemoteAccount, String, String, String) -> Unit,
+    onUpdateToolAccess: (RemoteAccount, Map<String, String>) -> Unit
+) {
+    var selectedAccount by remember { mutableStateOf<RemoteAccount?>(null) }
+    var actionTarget by remember { mutableStateOf<RemoteAccount?>(null) }
+    var selectedAction by remember { mutableStateOf("") }
+    var temporaryPassword by remember { mutableStateOf("") }
+    var selectedRole by remember { mutableStateOf("viewer") }
+    val filtered = accounts.sortedWith(compareBy<RemoteAccount>({ if (it.role == "admin") 0 else 1 }, { when (it.status) { "requested" -> 0; "active" -> 1; else -> 2 } }, { it.displayName.lowercase() }))
+    fun beginAction(account: RemoteAccount, action: String) {
+        selectedAccount = null
+        actionTarget = account
+        selectedAction = action
+        temporaryPassword = ""
+        selectedRole = account.role.ifBlank { "viewer" }
+    }
+    PageColumn(modifier) {
+        PageHeading("Settings") {
+            if (isAdmin) IconButton(onClick = onRefresh, enabled = !loading) {
+                if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                else Icon(Icons.TwoTone.Refresh, contentDescription = "Refresh accounts", tint = Forest)
+            }
+        }
+        M3Card {
+            Text("Preferences", style = MaterialTheme.typography.titleMedium)
+            Surface(
+                color = ForestContainer,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 12.dp, vertical = 0.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(if (darkMode) Icons.TwoTone.DarkMode else Icons.TwoTone.LightMode, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
+                    Text("Dark mode", modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                    Switch(checked = darkMode, onCheckedChange = { checked -> if (checked != darkMode) onToggleTheme() })
+                }
+            }
+            Text("Color palette", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
+            Text("Choose the accent colors used throughout the app.", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                AppPaletteStyle.entries.forEach { option ->
+                    val selected = option == paletteStyle
+                    Column(
+                        modifier = Modifier.width(88.dp).clip(MaterialTheme.shapes.medium)
+                            .clickable { onPaletteStyleChange(option) }
+                            .padding(4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Column(
+                            Modifier.fillMaxWidth().height(62.dp).clip(RoundedCornerShape(12.dp))
+                                .then(if (selected) Modifier.border(2.dp, Forest, RoundedCornerShape(12.dp)) else Modifier)
+                        ) {
+                            option.swatches.forEach { swatch ->
+                                Box(Modifier.weight(1f).fillMaxWidth().background(swatch))
+                            }
+                        }
+                        Text(option.label, color = if (selected) Forest else Ink, style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+                    }
+                }
+            }
+            BiometricLockPreference(appLock)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.TwoTone.ManageAccounts, contentDescription = null, tint = Forest, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(9.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("App font size", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text("${(fontScale * 100).toInt()}%", color = Muted, fontSize = 12.sp)
+                }
+                TextButton(onClick = { onFontScaleChange(1f) }, enabled = fontScale != 1f) { Text("Reset", color = Forest) }
+            }
+            Slider(value = fontScale, onValueChange = onFontScaleChange, valueRange = 0.85f..1.35f, steps = 9)
+            Text("Applies across the app and is saved on this device.", color = Muted, fontSize = 12.sp)
+        }
+        M3Card {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.TwoTone.NotificationsActive, contentDescription = null, tint = Forest, modifier = Modifier.size(22.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Test notification", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text("Check that this account can receive push notifications.", color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            OutlinedButton(onClick = onTestNotification, enabled = !testNotificationBusy,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.medium) {
+                if (testNotificationBusy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                else Icon(Icons.TwoTone.NotificationsActive, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (testNotificationBusy) "Sending…" else "Send test notification")
+            }
+            testNotificationFeedback?.let { feedback ->
+                val colors = MaterialTheme.colorScheme
+                Surface(
+                    color = if (feedback.sent) colors.primaryContainer else colors.errorContainer,
+                    contentColor = if (feedback.sent) colors.onPrimaryContainer else colors.onErrorContainer,
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(if (feedback.sent) Icons.TwoTone.CheckCircle else Icons.TwoTone.ErrorOutline,
+                            contentDescription = null, modifier = Modifier.size(20.dp))
+                        Text(feedback.message, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+        if (isAdmin) M3Card {
+            Text("Accounts", style = MaterialTheme.typography.titleMedium)
+            if (loading && accounts.isEmpty()) Box(Modifier.fillMaxWidth().padding(22.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Forest, modifier = Modifier.size(24.dp), strokeWidth = 2.dp) }
+            if (error != null) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+            if (accounts.isEmpty() && !loading && error == null) Text("No accounts available.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp))
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val columns = (maxWidth / 100.dp).toInt().coerceIn(2, 7)
+                Column {
+                    filtered.chunked(columns).forEach { rowAccounts ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            rowAccounts.forEach { account ->
+                                Column(
+                                    Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).clickable(role = Role.Button, onClickLabel = "Open account details") { selectedAccount = account }
+                                        .semantics { contentDescription = account.displayName.ifBlank { account.username } }.padding(vertical = 10.dp, horizontal = 3.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Box {
+                                        AccountPhotoAvatar(account, 68.dp)
+                                        if (account.status == "requested") Box(Modifier.align(Alignment.TopEnd).size(11.dp).background(MaterialTheme.colorScheme.error, CircleShape))
+                                        if (account.role.equals("admin", true)) {
+                                            Surface(Modifier.align(Alignment.BottomEnd).size(24.dp), shape = CircleShape, color = ForestContainer, border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                                                Box(contentAlignment = Alignment.Center) { Icon(Icons.TwoTone.AdminPanelSettings, contentDescription = "Administrator", tint = Forest, modifier = Modifier.size(15.dp)) }
+                                            }
+                                        } else if (account.status.equals("active", true) || account.status.equals("disabled", true)) {
                                             val active = account.status.equals("active", true)
                                             Surface(
                                                 Modifier.align(Alignment.BottomEnd).size(24.dp),
