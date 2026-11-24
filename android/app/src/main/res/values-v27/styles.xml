@@ -2,4 +2,28 @@
     <style name="AppTheme" parent="BaseAppTheme">
         <item name="android:windowLightNavigationBar">true</item>
     </style>
+    <style name="AppThemeTonalSpot" parent="AppTheme">
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+    <style name="AppThemeNeutral" parent="AppTheme">
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+    <style name="AppThemeVibrant" parent="AppTheme">
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+    <style name="AppThemeExpressive" parent="AppTheme">
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+    <style name="AppThemeTonalSpotDark" parent="AppTheme">
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+    <style name="AppThemeNeutralDark" parent="AppTheme">
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+    <style name="AppThemeVibrantDark" parent="AppTheme">
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+    <style name="AppThemeExpressiveDark" parent="AppTheme">
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
 </resources>

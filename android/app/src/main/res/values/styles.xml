@@ -13,55 +13,47 @@
         <item name="android:statusBarColor">@color/splash_tonal_spot_light</item>
         <item name="android:navigationBarColor">@color/splash_tonal_spot_light</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
     </style>
     <style name="AppThemeNeutral" parent="AppTheme">
         <item name="android:windowBackground">@color/splash_neutral_light</item>
         <item name="android:statusBarColor">@color/splash_neutral_light</item>
         <item name="android:navigationBarColor">@color/splash_neutral_light</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
     </style>
     <style name="AppThemeVibrant" parent="AppTheme">
         <item name="android:windowBackground">@color/splash_vibrant_light</item>
         <item name="android:statusBarColor">@color/splash_vibrant_light</item>
         <item name="android:navigationBarColor">@color/splash_vibrant_light</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
     </style>
     <style name="AppThemeExpressive" parent="AppTheme">
         <item name="android:windowBackground">@color/splash_expressive_light</item>
         <item name="android:statusBarColor">@color/splash_expressive_light</item>
         <item name="android:navigationBarColor">@color/splash_expressive_light</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
     </style>
     <style name="AppThemeTonalSpotDark" parent="AppTheme">
         <item name="android:windowBackground">@color/splash_tonal_spot_dark</item>
         <item name="android:statusBarColor">@color/splash_tonal_spot_dark</item>
         <item name="android:navigationBarColor">@color/splash_tonal_spot_dark</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
     </style>
     <style name="AppThemeNeutralDark" parent="AppTheme">
         <item name="android:windowBackground">@color/splash_neutral_dark</item>
         <item name="android:statusBarColor">@color/splash_neutral_dark</item>
         <item name="android:navigationBarColor">@color/splash_neutral_dark</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
     </style>
     <style name="AppThemeVibrantDark" parent="AppTheme">
         <item name="android:windowBackground">@color/splash_vibrant_dark</item>
         <item name="android:statusBarColor">@color/splash_vibrant_dark</item>
         <item name="android:navigationBarColor">@color/splash_vibrant_dark</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
     </style>
     <style name="AppThemeExpressiveDark" parent="AppTheme">
         <item name="android:windowBackground">@color/splash_expressive_dark</item>
         <item name="android:statusBarColor">@color/splash_expressive_dark</item>
         <item name="android:navigationBarColor">@color/splash_expressive_dark</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
     </style>
 </resources>
