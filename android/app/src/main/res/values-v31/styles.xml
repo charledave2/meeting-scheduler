@@ -6,4 +6,24 @@
         <item name="android:windowSplashScreenIconBackgroundColor">#0B4A2B</item>
         <item name="android:windowSplashScreenAnimationDuration">420</item>
     </style>
+    <style name="AppThemeTonalSpot" parent="AppTheme">
+        <item name="android:windowSplashScreenBackground">#0B4A2B</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_tonal_spot</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#0B4A2B</item>
+    </style>
+    <style name="AppThemeNeutral" parent="AppTheme">
+        <item name="android:windowSplashScreenBackground">#394541</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_neutral</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#394541</item>
+    </style>
+    <style name="AppThemeVibrant" parent="AppTheme">
+        <item name="android:windowSplashScreenBackground">#005047</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_vibrant</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#005047</item>
+    </style>
+    <style name="AppThemeExpressive" parent="AppTheme">
+        <item name="android:windowSplashScreenBackground">#653900</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_expressive</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#653900</item>
+    </style>
 </resources>

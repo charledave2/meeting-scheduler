@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.45.26 — 2026-11-24
+
+- Update the launcher icon and Android 12+ launch screen to match the selected palette.
+- Use theme-aware colors for the animated splash and workbook capture log across all palettes.
+- Add bottom breathing room so the Workbook action remains reachable above navigation.
+- Use consistent English copy for workbook import success.
+
 ## v0.45.25 — 2026-11-24
 
 - Recolor the in-app brand icon from the selected palette in the header, sign-in, splash, and app-lock screens.

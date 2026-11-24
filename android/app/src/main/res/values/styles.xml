@@ -8,5 +8,9 @@
         <item name="android:windowBackground">@drawable/launch_background</item>
     </style>
     <style name="AppTheme" parent="BaseAppTheme" />
+    <style name="AppThemeTonalSpot" parent="AppTheme" />
+    <style name="AppThemeNeutral" parent="AppTheme" />
+    <style name="AppThemeVibrant" parent="AppTheme" />
+    <style name="AppThemeExpressive" parent="AppTheme" />
 </resources>
 
