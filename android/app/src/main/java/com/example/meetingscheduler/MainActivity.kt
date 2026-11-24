@@ -1702,6 +1702,16 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
                 canContinue = !workbookBusy && participantsLoaded && !participantsBusy,
                 canContinueToAssignments = canAccess(Screen.ASSIGNMENTS),
                 readOnly = !canEdit(Screen.DETAILS),
+                isCurrentWeek = weekStart == currentWorkbookWeekStart.toString(),
+                onThisWeek = {
+                    remoteScheduleLoadedWeek = ""
+                    editingRemoteId = 0
+                    originalCloudAssignments = emptyList()
+                    originalCloudUpdatedAt = ""
+                    suppressWeekLookup = false
+                    weekStart = currentWorkbookWeekStart.toString()
+                    persistDetails()
+                },
                 onNext = { navigateTo(Screen.ASSIGNMENTS) }
             )
             Screen.ASSIGNMENTS -> AssignmentsScreen(
@@ -2694,7 +2704,7 @@ private fun HomeScreen(
 }
 
 @Composable
-private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, canContinueToAssignments:Boolean, readOnly:Boolean, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
+private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, canContinueToAssignments:Boolean, readOnly:Boolean, isCurrentWeek:Boolean, onThisWeek: () -> Unit, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
     PageColumn(modifier) {
         PageHeading("Workbook", "Select a week to load its meeting program.")
         M3Card {
@@ -2703,6 +2713,11 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
                 Column(Modifier.weight(1f).padding(start = 11.dp)) {
                     Label("MEETING WEEK")
                     Text("Meeting details", style = MaterialTheme.typography.titleMedium)
+                }
+                if (!isCurrentWeek) {
+                    TextButton(onClick = onThisWeek, enabled = !readOnly, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+                        Text("This Week", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
             OutlinedButton(onClick = onPickDate, enabled=!readOnly, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), shape = MaterialTheme.shapes.medium, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
@@ -2817,12 +2832,19 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, parti
                     trackColor = MaterialTheme.colorScheme.outlineVariant
                 )
                 if (missingSlots.isNotEmpty()) {
-                    Text("Still needed", color = Muted, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        missingSlots.forEach { slot ->
-                            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                                Text("•", color = MaterialTheme.colorScheme.error, fontSize = 13.sp, lineHeight = 17.sp)
-                                Text(slot, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, lineHeight = 16.sp)
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = if (IsDarkPalette) .30f else .52f),
+                        shape = MaterialTheme.shapes.small,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = .28f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text("Still needed", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                            missingSlots.forEach { slot ->
+                                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Icon(Icons.TwoTone.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(15.dp).padding(top = 1.dp))
+                                    Text(slot, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, lineHeight = 16.sp)
+                                }
                             }
                         }
                     }
