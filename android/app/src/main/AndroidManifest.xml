@@ -17,7 +17,7 @@
         </provider>
         <receiver android:name=".ShareTargetChosenReceiver" android:exported="false" />
         <activity android:name=".MainActivity" android:launchMode="singleTop" android:windowSoftInputMode="adjustResize" android:exported="false" android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden" />
-        <activity-alias android:name=".LauncherTonalSpot" android:targetActivity=".MainActivity" android:label="@string/app_name" android:icon="@drawable/ic_launcher_tonal_spot" android:enabled="true" android:exported="true" android:theme="@style/AppThemeTonalSpot">
+        <activity-alias android:name=".LauncherTonalSpot" android:targetActivity=".MainActivity" android:label="@string/app_name" android:icon="@drawable/ic_launcher_tonal_spot" android:enabled="false" android:exported="true" android:theme="@style/AppThemeTonalSpot">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity-alias>
         <activity-alias android:name=".LauncherNeutral" android:targetActivity=".MainActivity" android:label="@string/app_name" android:icon="@drawable/ic_launcher_neutral" android:enabled="false" android:exported="true" android:theme="@style/AppThemeNeutral">
@@ -27,6 +27,18 @@
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity-alias>
         <activity-alias android:name=".LauncherExpressive" android:targetActivity=".MainActivity" android:label="@string/app_name" android:icon="@drawable/ic_launcher_expressive" android:enabled="false" android:exported="true" android:theme="@style/AppThemeExpressive">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".LauncherTonalSpotDark" android:targetActivity=".MainActivity" android:label="@string/app_name" android:icon="@drawable/ic_launcher_tonal_spot" android:enabled="true" android:exported="true" android:theme="@style/AppThemeTonalSpotDark">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".LauncherNeutralDark" android:targetActivity=".MainActivity" android:label="@string/app_name" android:icon="@drawable/ic_launcher_neutral" android:enabled="false" android:exported="true" android:theme="@style/AppThemeNeutralDark">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".LauncherVibrantDark" android:targetActivity=".MainActivity" android:label="@string/app_name" android:icon="@drawable/ic_launcher_vibrant" android:enabled="false" android:exported="true" android:theme="@style/AppThemeVibrantDark">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+        </activity-alias>
+        <activity-alias android:name=".LauncherExpressiveDark" android:targetActivity=".MainActivity" android:label="@string/app_name" android:icon="@drawable/ic_launcher_expressive" android:enabled="false" android:exported="true" android:theme="@style/AppThemeExpressiveDark">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity-alias>
     </application>

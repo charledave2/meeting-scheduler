@@ -1,9 +1,13 @@
 <resources>
     <color name="splash_background">#D8DED5</color>
-    <color name="splash_tonal_spot">#F0EDEC</color>
-    <color name="splash_neutral">#F4F5F0</color>
-    <color name="splash_vibrant">#EEF5ED</color>
-    <color name="splash_expressive">#F6F3E9</color>
+    <color name="splash_tonal_spot_light">#F7F8F2</color>
+    <color name="splash_neutral_light">#F1F3ED</color>
+    <color name="splash_vibrant_light">#EEF3ED</color>
+    <color name="splash_expressive_light">#F3F2EA</color>
+    <color name="splash_tonal_spot_dark">#151812</color>
+    <color name="splash_neutral_dark">#1E221C</color>
+    <color name="splash_vibrant_dark">#19231C</color>
+    <color name="splash_expressive_dark">#222117</color>
     <color name="launcher_background">#0B4A2B</color>
     <color name="launcher_sage">#DDE9D9</color>
     <color name="launcher_sage_mid">#A8C3A4</color>

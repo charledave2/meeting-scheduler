@@ -1,7 +1,3 @@
 <resources>
     <color name="splash_background">#10150F</color>
-    <color name="splash_tonal_spot">#1D211A</color>
-    <color name="splash_neutral">#1F2320</color>
-    <color name="splash_vibrant">#17221C</color>
-    <color name="splash_expressive">#222117</color>
 </resources>

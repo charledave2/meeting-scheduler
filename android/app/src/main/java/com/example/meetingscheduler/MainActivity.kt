@@ -280,6 +280,8 @@ private enum class AppPaletteStyle(
         EXPRESSIVE -> "LauncherExpressive"
     }
 
+    fun launcherAlias(darkMode: Boolean): String = if (darkMode) "${launcherAlias}Dark" else launcherAlias
+
     fun colorScheme(dark: Boolean): ColorScheme {
         val base = if (dark) DarkPalette else LightPalette
         if (this == TONAL_SPOT) return base
@@ -310,18 +312,20 @@ private enum class AppPaletteStyle(
     }
 }
 
-private fun syncLauncherPalette(context: Context, selected: AppPaletteStyle) {
+private fun syncLauncherPalette(context: Context, selected: AppPaletteStyle, darkMode: Boolean) {
     val packageManager = context.packageManager
-    fun setEnabled(style: AppPaletteStyle, enabled: Boolean) {
-        val component = ComponentName(context, "${context.packageName}.${style.launcherAlias}")
+    fun setEnabled(alias: String, enabled: Boolean) {
+        val component = ComponentName(context, "${context.packageName}.$alias")
         packageManager.setComponentEnabledSetting(
             component,
             if (enabled) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
             PackageManager.DONT_KILL_APP
         )
     }
-    setEnabled(selected, true)
-    AppPaletteStyle.entries.filterNot { it == selected }.forEach { setEnabled(it, false) }
+    val activeAlias = selected.launcherAlias(darkMode)
+    val allAliases = AppPaletteStyle.entries.flatMap { listOf(it.launcherAlias, it.launcherAlias(darkMode = true)) }
+    setEnabled(activeAlias, true)
+    allAliases.filterNot { it == activeAlias }.forEach { setEnabled(it, false) }
 }
 
 private val Forest @Composable get() = MaterialTheme.colorScheme.primary
@@ -788,7 +792,7 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
     var darkMode by rememberSaveable { mutableStateOf(store.darkMode) }
     var paletteStyle by rememberSaveable { mutableStateOf(store.paletteStyle) }
     var appFontScale by rememberSaveable { mutableFloatStateOf(store.appFontScale) }
-    LaunchedEffect(paletteStyle) { syncLauncherPalette(context, paletteStyle) }
+    LaunchedEffect(paletteStyle, darkMode) { syncLauncherPalette(context, paletteStyle, darkMode) }
     val scheme = paletteStyle.colorScheme(darkMode)
     val systemDensity = LocalDensity.current
     SideEffect {

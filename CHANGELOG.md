@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.45.34 — 2026-11-24
+
+- Match the system splash, status bar, and navigation bar to the saved app theme and selected palette.
+- Correct Tonal Spot launch colors and keep each splash color aligned with its app background.
+- Update the launcher theme when either the palette or dark-mode setting changes.
+
 ## v0.45.33 — 2026-11-24
 
 - Show participant rotation status in the assignment picker while preserving eligibility and rotation rules.
