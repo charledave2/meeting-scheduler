@@ -26,7 +26,15 @@ import javax.crypto.spec.SecretKeySpec
 
 internal data class ApiIdentity(val name: String, val username: String, val role: String, val mustChangePassword: Boolean, val photoDataUrl: String = "", val toolAccess: Map<String, String> = emptyMap())
 internal data class WorkbookImport(val link: String, val meta: JSONObject, val parts: List<JSONObject>)
-internal data class RemoteSchedule(val id: Int, val weekLabel: String, val reading: String, val updatedAt: String)
+internal data class RemoteSchedule(
+    val id: Int,
+    val weekLabel: String,
+    val reading: String,
+    val updatedAt: String,
+    val weekStart: String = "",
+    val assignedNames: List<String> = emptyList()
+)
+internal data class SchedulePage(val schedules: List<RemoteSchedule>, val nextOffset: Int, val hasMore: Boolean, val years: List<Int>)
 internal data class RemoteAccount(val id: Int, val displayName: String, val username: String, val status: String, val role: String, val createdAt: String, val requestNote: String, val photoDataUrl: String = "", val toolAccess: Map<String, String> = emptyMap(), val memberId: Int? = null, val memberName: String = "")
 internal data class AccountLinkParticipant(val id: Int, val name: String)
 internal data class ParticipantRotation(
@@ -89,19 +97,33 @@ internal class SchedulerApi(context: Context) {
 
     suspend fun saveSchedule(weekLabel: String, weekStart: String, reading: String, openingSong: String, closingSong: String,
                              parts: List<JSONObject>, chairman: String, openingPrayer: String, adviser: String, audienceGroup: String,
-                             sourceUrl: String, id: Int = 0): Boolean = withContext(Dispatchers.IO) {
+                             sourceUrl: String, id: Int = 0, expectedUpdatedAt: String = ""): Boolean = withContext(Dispatchers.IO) {
         val meta = JSONObject().put("date", weekLabel).put("weekStart", weekStart).put("reading", reading)
             .put("openingSong", openingSong).put("closingSong", closingSong).put("chairman", chairman)
             .put("openingPrayer", openingPrayer).put("adviser", adviser).put("audienceGroup", audienceGroup)
         val body = JSONObject().put("meta", meta).put("parts", JSONArray(parts)).put("sourceUrl", sourceUrl)
-        if (id > 0) body.put("id", id)
+        if (id > 0) body.put("id", id).put("expectedUpdatedAt", expectedUpdatedAt)
         val result = request("/api/schedules", "POST", body)
         result.optBoolean("historySaved", true)
     }
 
-    suspend fun schedules(): List<RemoteSchedule> = withContext(Dispatchers.IO) {
-        val rows = request("/api/schedules", "GET", null).optJSONArray("schedules") ?: JSONArray()
-        (0 until rows.length()).mapNotNull { i -> rows.optJSONObject(i)?.let { RemoteSchedule(it.optInt("id"), it.optString("weekLabel"), it.optString("bibleReading"), it.optString("updatedAt")) } }
+    suspend fun schedules(): List<RemoteSchedule> = schedulePage(limit = 100).schedules
+
+    suspend fun schedulePage(offset: Int = 0, limit: Int = 30): SchedulePage = withContext(Dispatchers.IO) {
+        val response = request("/api/schedules?offset=${offset.coerceAtLeast(0)}&limit=${limit.coerceIn(1, 100)}", "GET", null)
+        val rows = response.optJSONArray("schedules") ?: JSONArray()
+        val schedules = (0 until rows.length()).mapNotNull { i -> rows.optJSONObject(i)?.let { row ->
+            val names = row.optJSONArray("assignedNames")
+            RemoteSchedule(
+                row.optInt("id"), row.optString("weekLabel"), row.optString("bibleReading"), row.optString("updatedAt"),
+                row.optString("weekStart"),
+                (0 until (names?.length() ?: 0)).mapNotNull { index -> names?.optString(index)?.trim()?.takeIf { it.isNotBlank() } }
+            )
+        } }
+        val years = response.optJSONArray("years")?.let { values ->
+            (0 until values.length()).mapNotNull { index -> values.optInt(index).takeIf { it > 0 } }
+        }.orEmpty()
+        SchedulePage(schedules, response.optInt("nextOffset", offset + rows.length()), response.optBoolean("hasMore"), years)
     }
 
     suspend fun schedule(id: Int): JSONObject = withContext(Dispatchers.IO) { request("/api/schedules?id=$id", "GET", null).optJSONObject("schedule") ?: throw IllegalStateException("Hindi mabasa ang schedule.") }

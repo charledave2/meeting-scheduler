@@ -977,13 +977,19 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
     var homePreviewWeek by remember { mutableStateOf<String?>(null) }
     var homePreviewLoading by remember { mutableStateOf(false) }
     var editingRemoteId by rememberSaveable { mutableIntStateOf(0) }
+    var originalCloudUpdatedAt by rememberSaveable { mutableStateOf("") }
     var cloudSaveReviewVisible by remember { mutableStateOf(false) }
+    var cloudConflictVisible by remember { mutableStateOf(false) }
     var originalCloudAssignments by remember { mutableStateOf<List<ScheduleAssignmentValue>>(emptyList()) }
     var suppressWeekLookup by remember { mutableStateOf(false) }
     var remoteScheduleLoadedWeek by rememberSaveable { mutableStateOf("") }
     var weekLoadNonce by remember { mutableIntStateOf(0) }
     var historyLoaded by remember { mutableStateOf(false) }
     var historyBusy by remember { mutableStateOf(false) }
+    var historyLoadingMore by remember { mutableStateOf(false) }
+    var historyHasMore by remember { mutableStateOf(false) }
+    var historyNextOffset by remember { mutableIntStateOf(0) }
+    var availableHistoryYears by remember { mutableStateOf<List<Int>>(emptyList()) }
     var historyError by remember { mutableStateOf<String?>(null) }
     var historyReloadTick by remember { mutableIntStateOf(0) }
     var remoteAccounts by remember { mutableStateOf<List<RemoteAccount>>(emptyList()) }
@@ -1095,8 +1101,9 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
         }
     }
 
-    LaunchedEffect(signedIn, participantsLoaded) {
-        if(signedIn && !participantsLoaded && !participantsBusy && (canAccess(Screen.PARTICIPANTS) || canAccess(Screen.ASSIGNMENTS))) {
+    LaunchedEffect(signedIn, participantsLoaded, current) {
+        val participantDataNeeded = current == Screen.PARTICIPANTS || current == Screen.ASSIGNMENTS || current == Screen.WORKBOOK
+        if(signedIn && participantDataNeeded && !participantsLoaded && !participantsBusy && (canAccess(Screen.PARTICIPANTS) || canAccess(Screen.ASSIGNMENTS))) {
             participantsBusy=true
             participantsLoadError=null
             runCatching { api.members(includeInactive=true) }.onSuccess { response ->
@@ -1153,7 +1160,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
         cloudSaveBusy = true
         cloudSaveFeedback = null
         cloudStatus = "Sine-save sa cloud…"
-        runCatching { api.saveSchedule(weekLabel, weekStart, bible, openingSong, closingSong, parts.map { it.toJson() }, chairman, openingPrayer, adviser, audienceGroup, workbook, editingRemoteId) }
+        runCatching { api.saveSchedule(weekLabel, weekStart, bible, openingSong, closingSong, parts.map { it.toJson() }, chairman, openingPrayer, adviser, audienceGroup, workbook, editingRemoteId, originalCloudUpdatedAt) }
             .onSuccess { historySaved ->
                 cloudStatus = if (historySaved) "Naka-save sa cloud" else "Na-save; hindi na-update ang assignment history"
                 cloudSaveFeedback = cloudStatus to historySaved
@@ -1161,11 +1168,13 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
                 historyLoaded=false
                 originalCloudAssignments = scheduleAssignmentValues(parts.toList(), chairman, openingPrayer, adviser, audienceGroup)
                 editingRemoteId=0
+                originalCloudUpdatedAt=""
             }
             .onFailure {
                 cloudStatus = "Hindi na-save: ${it.message ?: "server error"}"
                 cloudSaveFeedback = cloudStatus to false
                 toastMessage = cloudStatus
+                if (it.message?.startsWith("SCHEDULE_CONFLICT:") == true) cloudConflictVisible = true
             }
         cloudSaveBusy = false
         }
@@ -1212,7 +1221,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
     }
     suspend fun applyRemoteSchedule(remote: RemoteSchedule, navigate: Boolean = false, edit: Boolean = false) {
         val row=api.schedule(remote.id); val meta=row.optJSONObject("meta") ?: JSONObject(); val raw=row.optJSONArray("parts") ?: JSONArray()
-        val savedWeekStart=meta.optString("weekStart").ifBlank { scheduleStartDate(remote.weekLabel,remote.updatedAt)?.toString() ?: weekStart }
+        val savedWeekStart=meta.optString("weekStart").ifBlank { remoteScheduleStartDate(remote)?.toString() ?: weekStart }
         if(savedWeekStart!=weekStart) suppressWeekLookup=true
         remoteScheduleLoadedWeek=savedWeekStart; weekLoadNonce++
         weekStart=savedWeekStart; bible=meta.optString("reading",remote.reading)
@@ -1224,6 +1233,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
         val loadedParts = (0 until raw.length()).mapNotNull { raw.optJSONObject(it)?.toAssignment() }
         parts.addAll(deduplicateAssignmentParticipants(loadedParts))
         originalCloudAssignments = scheduleAssignmentValues(parts.toList(), chairman, openingPrayer, adviser, audienceGroup)
+        originalCloudUpdatedAt = row.optString("updatedAt")
         editingRemoteId=remote.id; persistDetails(); store.saveAssignments(parts.toList())
         workbookStatus="✓ Na-load ang saved cloud schedule"
         if(navigate) current=if(edit) Screen.DETAILS else Screen.PREVIEW
@@ -1428,7 +1438,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
         }
     }
     fun openSaved(item: SavedSchedule) {
-        editingRemoteId = 0; originalCloudAssignments = emptyList()
+        editingRemoteId = 0; originalCloudAssignments = emptyList(); originalCloudUpdatedAt = ""
         if (item.weekStart.isNotBlank()) weekStart = item.weekStart
         bible = item.reading; openingSong = item.openingSong; closingSong = item.closingSong
         chairman=item.chairman; openingPrayer=item.openingPrayer; adviser=item.adviser; audienceGroup=item.audienceGroup
@@ -1436,7 +1446,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
         persistDetails(); current = Screen.DETAILS; toastMessage = "Na-open ang saved schedule"
     }
     fun duplicateSaved(item: SavedSchedule) {
-        editingRemoteId = 0; originalCloudAssignments = emptyList()
+        editingRemoteId = 0; originalCloudAssignments = emptyList(); originalCloudUpdatedAt = ""
         val sourceDate = runCatching { LocalDate.parse(item.weekStart) }.getOrDefault(week.plusDays(-7))
         weekStart = sourceDate.plusWeeks(1).toString()
         bible = item.reading; openingSong = item.openingSong; closingSong = item.closingSong
@@ -1808,17 +1818,33 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
                     if (current == Screen.HISTORY && signedIn && !historyLoaded && !historyBusy) {
                         historyBusy = true
                         historyError = null
-                        runCatching { api.schedules() }
-                            .onSuccess { remoteRows = it; historyLoaded = true; cloudStatus = "History mula sa website" }
+                        runCatching { api.schedulePage() }
+                            .onSuccess { page -> remoteRows = page.schedules; historyNextOffset = page.nextOffset; historyHasMore = page.hasMore; availableHistoryYears = page.years; historyLoaded = true; cloudStatus = "History mula sa website" }
                             .onFailure { historyError = it.message ?: "Suriin ang internet at subukan ulit."; cloudStatus = "Hindi makuha ang history: ${it.message}" }
                         historyBusy = false
                     }
                 }
                 HistoryScreen(modifier = scroll, remoteSchedules = remoteRows, cloudStatus = cloudStatus, loading = historyBusy, error = historyError,
+                    hasMore = historyHasMore, loadingMore = historyLoadingMore, availableYears = availableHistoryYears,
+                    onLoadMore = {
+                        if (!historyLoadingMore && historyHasMore) authScope.launch {
+                            historyLoadingMore = true
+                            runCatching { api.schedulePage(historyNextOffset) }
+                                .onSuccess { page ->
+                                    val knownWeeks = remoteRows.map { it.weekLabel.trim().lowercase(Locale.ROOT) }.toMutableSet()
+                                    remoteRows = remoteRows + page.schedules.filter { knownWeeks.add(it.weekLabel.trim().lowercase(Locale.ROOT)) }
+                                    historyNextOffset = page.nextOffset
+                                    historyHasMore = page.hasMore
+                                    availableHistoryYears = page.years
+                                }
+                                .onFailure { historyError = it.message ?: "Could not load more schedules." }
+                            historyLoadingMore = false
+                        }
+                    },
                     isAdmin=signedIn && identityRole=="admin", canEdit=canEdit(Screen.HISTORY), canCreate=canEdit(Screen.DETAILS),
                     onRefresh={historyLoaded=false;historyReloadTick++}, onView={loadRemoteSchedule(it,false)}, onEdit={loadRemoteSchedule(it,true)},
                     onDelete={remote -> authScope.launch { runCatching { api.deleteSchedule(remote.id) }.onSuccess { historyLoaded=false;historyReloadTick++;toastMessage="Na-delete ang schedule" }.onFailure { toastMessage=it.message ?: "Hindi ma-delete" } }},
-        onNew = { editingRemoteId=0; originalCloudAssignments=emptyList(); navigateTo(Screen.DETAILS) })
+        onNew = { editingRemoteId=0; originalCloudAssignments=emptyList(); originalCloudUpdatedAt=""; navigateTo(Screen.DETAILS) })
             }
             Screen.ACCOUNTS -> {
                 AccountsScreen(
@@ -1951,6 +1977,42 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
             }
         )
     }
+    if (cloudConflictVisible) {
+        AlertDialog(
+            onDismissRequest = { cloudConflictVisible = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = MaterialTheme.shapes.extraLarge,
+            title = { Text("Cloud schedule changed", fontWeight = FontWeight.SemiBold) },
+            text = {
+                Text(
+                    "Another admin updated or removed this schedule after you opened it. Your edits are still on this screen, and they were not saved. Reload the cloud version before making further changes.",
+                    color = Muted,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val target = RemoteSchedule(editingRemoteId, weekLabel, bible, originalCloudUpdatedAt, weekStart)
+                        authScope.launch {
+                            runCatching { applyRemoteSchedule(target, navigate = false, edit = true) }
+                                .onSuccess {
+                                    cloudConflictVisible = false
+                                    historyLoaded = false
+                                    toastMessage = "Loaded the latest cloud schedule. Review it before saving."
+                                }
+                                .onFailure { toastMessage = it.message ?: "Could not reload the cloud schedule." }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Forest)
+                ) { Text("Reload latest") }
+            },
+            dismissButton = {
+                TextButton(onClick = { cloudConflictVisible = false }) { Text("Keep editing", color = Forest) }
+            }
+        )
+    }
     if (homePreviewWeek != null) {
         val pageAspect = SCHEDULE_EXPORT_WIDTH_PX.toFloat() / SCHEDULE_EXPORT_HEIGHT_PX
         val previewView = remember { mutableStateOf<WebView?>(null) }
@@ -2004,7 +2066,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
                 Button(
                     onClick = {
                         pickerState.selectedDateMillis?.let {
-                            remoteScheduleLoadedWeek = ""; editingRemoteId = 0; originalCloudAssignments = emptyList()
+                            remoteScheduleLoadedWeek = ""; editingRemoteId = 0; originalCloudAssignments = emptyList(); originalCloudUpdatedAt = ""
                             val selectedWeek = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
                                 .with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)).toString()
                             weekStart = selectedWeek
@@ -2596,7 +2658,7 @@ private fun HomeScreen(
     val today = LocalDate.now()
     val upcoming = remember(schedules, today) {
         schedules.mapNotNull { remote ->
-            val weekStart = scheduleStartDate(remote.weekLabel, remote.updatedAt) ?: return@mapNotNull null
+            val weekStart = remoteScheduleStartDate(remote) ?: return@mapNotNull null
             // Workbook weeks are normalized to Monday; this congregation meets midweek on Thursday.
             val meetingDate = weekStart.plusDays(3)
             if (meetingDate.isBefore(today)) null else meetingDate to remote
@@ -3026,138 +3088,127 @@ private fun SlotPicker(
     var expanded by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var pending by remember { mutableStateOf<Participant?>(null) }
+    val orderedChoices = remember(choices) { choices.sortedBy { it.name.trim().lowercase(Locale.ROOT) } }
+    val currentName = value.trim().lowercase(Locale.ROOT)
+    val filteredChoices = remember(orderedChoices, excludedNames, currentName, searchQuery) {
+        val normalizedQuery = searchQuery.trim()
+        orderedChoices.filter {
+            val key = it.name.trim().lowercase(Locale.ROOT)
+            (key !in excludedNames || key == currentName) && it.name.contains(normalizedQuery, ignoreCase = true)
+        }
+    }
+    val query = searchQuery.trim()
+    val unavailableMatches = if (query.isNotEmpty()) unavailableChoices.mapNotNull { participant ->
+        val nameKey = participant.name.trim().lowercase(Locale.ROOT)
+        if (!participant.name.contains(query, ignoreCase = true)) return@mapNotNull null
+        val reason = when {
+            !participant.enabled -> "Inactive participant"
+            participant.gender.isBlank() || participant.gender.equals("unspecified", true) ->
+                "Set Brother / Sister status in Participants"
+            !participant.isBrother() -> "This part requires a brother"
+            nameKey != currentName && nameKey in excludedNames -> "Already assigned this meeting"
+            else -> return@mapNotNull null
+        }
+        participant.name to reason
+    } else emptyList()
     Column(modifier.padding(top = 3.dp)) {
         Text(label, color = Muted, style = MaterialTheme.typography.labelMedium)
-        Box(Modifier.fillMaxWidth().padding(top = 2.dp)) {
-            OutlinedButton(
-                onClick = { if (enabled) { searchQuery = ""; expanded = true } },
-                enabled = enabled,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                shape = MaterialTheme.shapes.medium,
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+        OutlinedButton(
+            onClick = { if (enabled) { searchQuery = ""; expanded = true } },
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp).heightIn(min = 48.dp),
+            shape = MaterialTheme.shapes.medium,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            Text(value.ifBlank { "Select" }, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+    }
+    if (expanded) {
+        val screenHeight = LocalConfiguration.current.screenHeightDp
+        val maxDialogHeight = minOf(620, screenHeight - 48).coerceAtLeast(240)
+        val minDialogHeight = minOf(340, maxDialogHeight)
+        Dialog(
+            onDismissRequest = { expanded = false; searchQuery = "" },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().widthIn(max = 520.dp).padding(horizontal = 16.dp)
+                    .heightIn(min = minDialogHeight.dp, max = maxDialogHeight.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(28.dp),
+                tonalElevation = 5.dp
             ) {
-                Text(value.ifBlank { "Select" }, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false; searchQuery = "" },
-                modifier = Modifier.widthIn(min = 200.dp, max = minOf(320, LocalConfiguration.current.screenWidthDp - 32).coerceAtLeast(200).dp)
-                    .heightIn(max = minOf(380, (LocalConfiguration.current.screenHeightDp * 0.65f).toInt()).dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp).heightIn(min = 48.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                ) {
-                    Row(
-                        Modifier.fillMaxSize().padding(horizontal = 11.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(Icons.TwoTone.Search, contentDescription = null, modifier = Modifier.size(17.dp), tint = Forest)
-                        androidx.compose.foundation.text.BasicTextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            textStyle = MaterialTheme.typography.bodySmall.copy(color = Ink, fontSize = 12.sp),
-                            decorationBox = { innerTextField ->
-                                Box {
-                                    if (searchQuery.isBlank()) Text(
-                                        if (choices.isNotEmpty() && choices.all { it.isAppointedBrother() }) "Search qualified brother" else "Search participant",
-                                        color = Muted,
-                                        fontSize = 12.sp,
-                                        maxLines = 1
-                                    )
-                                    innerTextField()
-                                }
-                            }
-                        )
-                    }
-                }
-                DropdownMenuItem(
-                    text = { Text("Unassigned", fontSize = 13.sp) },
-                    enabled = enabled,
-                    onClick = { onPick(""); expanded = false; searchQuery = "" }
-                )
-                val orderedChoices = remember(choices, rotation) {
-                    choices.sortedWith(compareBy<Participant> { participantRotationRank(rotation[it.id]) }.thenBy { it.name.lowercase(Locale.ROOT) })
-                }
-                val currentName = value.trim().lowercase(Locale.ROOT)
-                val filteredChoices = remember(orderedChoices, excludedNames, currentName, searchQuery) {
-                    val normalizedQuery = searchQuery.trim()
-                    orderedChoices.filter {
-                        val key = it.name.trim().lowercase(Locale.ROOT)
-                        (key !in excludedNames || key == currentName) && it.name.contains(normalizedQuery, ignoreCase = true)
-                    }
-                }
-                val query = searchQuery.trim()
-                val unavailableMatches = if (query.isNotEmpty()) unavailableChoices.mapNotNull { participant ->
-                    val nameKey = participant.name.trim().lowercase(Locale.ROOT)
-                    if (!participant.name.contains(query, ignoreCase = true)) return@mapNotNull null
-                    val reason = when {
-                        !participant.enabled -> "Inactive participant"
-                        participant.gender.isBlank() || participant.gender.equals("unspecified", true) ->
-                            "Set the participant’s Brother / Sister status in Participants"
-                        !participant.isBrother() -> "This part is set up for brothers"
-                        nameKey != currentName && nameKey in excludedNames -> "Already assigned this meeting"
-                        else -> return@mapNotNull null
-                    }
-                    participant.name to reason
-                } else emptyList()
-                unavailableMatches.forEach { (name, reason) ->
-                    Text("$name · $reason", color = Muted, style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                }
-                if (filteredChoices.isEmpty() && unavailableMatches.isEmpty()) {
-                    DropdownMenuItem(
-                        text = { Text("No matching participants.", color = Muted, fontSize = 12.sp) },
-                        enabled = false,
-                        onClick = {}
-                    )
-                } else filteredChoices.forEach { participant ->
-                    val rawStat = rotation[participant.id]
-                    val isExempt = participant.isAppointedBrother() || rawStat?.exempt == true
-                    val stat = rawStat?.takeUnless { isExempt }
-                    DropdownMenuItem(
-                        enabled = enabled,
-                        text = {
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(participant.name, color = Ink, fontSize = 13.sp, maxLines = 1)
-                                    Text(
-                                        if (isExempt) "Exempt from rotation · ${participant.appointment}"
-                                        else buildString {
-                                            append(participant.appointment)
-                                            if (stat != null) {
-                                                append(" · Main ").append(stat.mainThisMonth)
-                                                append(" · Assist ").append(stat.assistantThisMonth)
-                                                append(" · ").append(stat.totalThisMonth).append(" this month")
-                                                if (!stat.eligible) stat.nextEligibleDate?.let { append(" · After ").append(rotationShortDate(it)) }
-                                            }
-                                        },
-                                        color = Muted,
-                                        fontSize = 12.sp,
-                                        lineHeight = 16.sp,
-                                        maxLines = 2
-                                    )
-                                }
-                                if (isExempt) {
-                                    Surface(color = ForestContainer, shape = RoundedCornerShape(50)) {
-                                        Text("Exempt", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
-                                    }
-                                } else if (stat != null) RotationStatusTag(stat)
-                            }
-                        },
-                        onClick = {
-                            expanded = false
-                            searchQuery = ""
-                            if (stat != null && (stat.totalThisMonth > 0 || !stat.eligible)) pending = participant
-                            else onPick(participant.name)
+                Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 16.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Select $label", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                            Text("Choose one participant", color = Muted, style = MaterialTheme.typography.bodySmall)
                         }
+                        IconButton(onClick = { expanded = false; searchQuery = "" }) {
+                            Icon(Icons.TwoTone.Close, contentDescription = "Close participant picker", tint = Muted)
+                        }
+                    }
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        placeholder = { Text(if (choices.isNotEmpty() && choices.all { it.isAppointedBrother() }) "Search qualified brother" else "Search by name") },
+                        leadingIcon = { Icon(Icons.TwoTone.Search, contentDescription = null, tint = Forest) },
+                        trailingIcon = if (searchQuery.isNotBlank()) ({
+                            IconButton(onClick = { searchQuery = "" }) { Icon(Icons.TwoTone.Close, contentDescription = "Clear search") }
+                        }) else null,
+                        singleLine = true,
+                        shape = MaterialTheme.shapes.medium
                     )
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 10.dp).clip(MaterialTheme.shapes.medium)
+                            .clickable(enabled = enabled) { onPick(""); expanded = false; searchQuery = "" }
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(Icons.TwoTone.Close, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
+                        Text("Unassigned", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                        if (value.isBlank()) Icon(Icons.TwoTone.Check, contentDescription = "Currently unassigned", tint = Forest, modifier = Modifier.size(18.dp))
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    if (unavailableMatches.isNotEmpty()) {
+                        Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                            unavailableMatches.forEach { (name, reason) ->
+                                Text("$name · $reason", color = Muted, style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp))
+                            }
+                        }
+                    }
+                    if (filteredChoices.isEmpty() && unavailableMatches.isEmpty()) {
+                        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            Text(if (query.isBlank()) "No participants available." else "No matching participants.", color = Muted, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            contentPadding = PaddingValues(top = 4.dp, bottom = 6.dp)
+                        ) {
+                            itemsIndexed(filteredChoices, key = { _, participant -> if (participant.id > 0) "id:${participant.id}" else "name:${participant.name.lowercase(Locale.ROOT)}" }) { _, participant ->
+                                val stat = rotation[participant.id]?.takeUnless { participant.isAppointedBrother() || it.exempt }
+                                Row(
+                                    Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small)
+                                        .clickable(enabled = enabled) {
+                                            expanded = false
+                                            searchQuery = ""
+                                            if (stat != null && (stat.totalThisMonth > 0 || !stat.eligible)) pending = participant
+                                            else onPick(participant.name)
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 13.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(participant.name, color = Ink, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    if (participant.name.equals(value, ignoreCase = true)) Icon(Icons.TwoTone.Check, contentDescription = "Currently selected", tint = Forest, modifier = Modifier.size(19.dp))
+                                }
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -3166,12 +3217,12 @@ private fun SlotPicker(
         val stat = rotation[participant.id]
         AlertDialog(
             onDismissRequest = { pending = null },
-            title = { Text("Recent assignment") },
+            title = { Text("Check assignment") },
             text = {
                 val message = when {
                     stat == null -> "Continue assigning ${participant.name}?"
-                    stat.totalThisMonth > 0 -> "${participant.name} has ${stat.totalThisMonth} assignment(s) this month. Main: ${stat.mainThisMonth}; assistant: ${stat.assistantThisMonth}. Suggested next turn: ${stat.nextEligibleDate?.let(::rotationShortDate) ?: "not set"}."
-                    else -> "${participant.name} is not yet eligible. Next eligible date: ${stat.nextEligibleDate?.let(::rotationShortDate) ?: "not set"}."
+                    stat.totalThisMonth > 0 -> "${participant.name} already has a part this month. Do you want to assign them again?"
+                    else -> "${participant.name} is still within the rotation interval${stat.nextEligibleDate?.let { ". Suggested next turn: ${rotationShortDate(it)}" } ?: ""}. Continue anyway?"
                 }
                 Text(message)
             },
@@ -3179,42 +3230,9 @@ private fun SlotPicker(
                 TextButton(onClick = { onPick(participant.name); pending = null }) { Text("Assign anyway") }
             },
             dismissButton = {
-                TextButton(onClick = { pending = null }) { Text("Choose another") }
+                TextButton(onClick = { pending = null; expanded = true; searchQuery = "" }) { Text("Choose another") }
             }
         )
-    }
-}
-
-private fun participantRotationRank(stat: ParticipantRotation?): Int = when {
-    stat == null -> 9
-    stat.exempt -> 8
-    stat.neverAssigned -> 0
-    stat.recommended -> 1
-    stat.eligible && stat.totalThisMonth == 0 -> 2
-    stat.totalThisMonth == 0 -> 3
-    else -> 4 + minOf(stat.totalThisMonth, 3)
-}
-
-@Composable
-private fun RotationStatusTag(stat: ParticipantRotation) {
-    val label = when {
-        stat.exempt -> "Exempt"
-        stat.neverAssigned -> "Priority"
-        stat.recommended -> "Recommended"
-        stat.totalThisMonth > 0 -> "${stat.totalThisMonth} this month"
-        stat.eligible -> "Available"
-        else -> stat.nextEligibleDate?.let { "After ${rotationShortDate(it)}" } ?: "Wait"
-    }
-    val scheme = MaterialTheme.colorScheme
-    val (container, content) = when {
-        stat.exempt -> scheme.surfaceVariant to scheme.onSurfaceVariant
-        stat.neverAssigned -> scheme.tertiaryContainer to scheme.onTertiaryContainer
-        stat.recommended -> scheme.primaryContainer to scheme.onPrimaryContainer
-        stat.eligible -> scheme.secondaryContainer to scheme.onSecondaryContainer
-        else -> scheme.secondaryContainer to scheme.onSecondaryContainer
-    }
-    Surface(color = container, contentColor = content, shape = RoundedCornerShape(50)) {
-        Text(label, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
 
@@ -3538,6 +3556,8 @@ private fun ParticipantsScreen(
     var editAppointment by remember { mutableStateOf("publisher") }
     var editService by remember { mutableStateOf("none") }
     var editUnbaptized by remember { mutableStateOf(false) }
+    var visibleCount by rememberSaveable { mutableIntStateOf(50) }
+    LaunchedEffect(query, genderFilter, appointmentFilter, serviceFilter, baptismFilter, statusFilter, sortBy) { visibleCount = 50 }
     val participantsSnapshot by remember(participants) { derivedStateOf { participants.toList() } }
     val filtered = remember(participantsSnapshot, query, genderFilter, appointmentFilter, serviceFilter, baptismFilter, statusFilter, sortBy) {
         participantsSnapshot.withIndex().filter { (_, p) ->
@@ -3564,7 +3584,7 @@ private fun ParticipantsScreen(
                     Icon(Icons.TwoTone.PersonAdd, contentDescription = "Add participant", tint = Forest)
                 }
             }
-            Text("${participants.size} participants · ${filtered.size} shown",color=Muted,fontSize=12.sp)
+            Text("${participants.size} participants · showing ${minOf(visibleCount, filtered.size)} of ${filtered.size} matches",color=Muted,fontSize=12.sp)
             if (loading && participants.isNotEmpty()) Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 CircularProgressIndicator(Modifier.size(15.dp),strokeWidth=2.dp,color=Forest)
                 Text("Updating participant list · showing saved data",color=Muted,fontSize = 12.sp)
@@ -3583,7 +3603,7 @@ private fun ParticipantsScreen(
                         IconButton(onClick={showFilters=true},modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(Icons.TwoTone.Sort,contentDescription="Filter and sort participants",tint=Forest,modifier=Modifier.size(22.dp))}
                     }
                     LazyColumn(Modifier.weight(1f).fillMaxWidth(),contentPadding=PaddingValues(top=6.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
-                        itemsIndexed(filtered,key={_,entry->if(entry.value.id>0)entry.value.id.toLong() else entry.index.toLong()}) { _,entry ->
+                        itemsIndexed(filtered.take(visibleCount),key={_,entry->if(entry.value.id>0)entry.value.id.toLong() else entry.index.toLong()}) { _,entry ->
                             val (index,p)=entry
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             Row(Modifier.fillMaxWidth().heightIn(min=52.dp).semantics { if (canEdit) role = Role.Button }.then(if(canEdit) Modifier.clickable { beginEdit(p) } else Modifier).padding(vertical=7.dp),verticalAlignment=Alignment.CenterVertically) {
@@ -3615,6 +3635,15 @@ private fun ParticipantsScreen(
                                 Text("Loading participants…",color=Muted,fontSize=12.sp)
                             }
                         } else if(filtered.isEmpty()) item { Text(if (query.isNotBlank() || genderFilter!="all" || appointmentFilter!="all" || serviceFilter!="all" || baptismFilter!="all") "No participants match the current search or filters." else if (canEdit) "No participants yet. Refresh the list or add a participant." else "No participants are available yet. Refresh the list to try again.",color=Muted,fontSize=12.sp,modifier=Modifier.padding(vertical=12.dp)) }
+                        if (filtered.size > visibleCount) item {
+                            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.Center) {
+                                FilledTonalButton(onClick = { visibleCount += 50 }, shape = MaterialTheme.shapes.medium) {
+                                    Icon(Icons.TwoTone.ExpandMore, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(7.dp))
+                                    Text("Show next ${minOf(50, filtered.size - visibleCount)} participants")
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -3683,6 +3712,10 @@ private fun HistoryScreen(
     cloudStatus: String,
     loading: Boolean,
     error: String?,
+    hasMore: Boolean,
+    loadingMore: Boolean,
+    availableYears: List<Int>,
+    onLoadMore: () -> Unit,
     isAdmin: Boolean,
     canEdit: Boolean,
     canCreate: Boolean,
@@ -3693,11 +3726,26 @@ private fun HistoryScreen(
     onNew: () -> Unit
 ) {
     var deleteTarget by remember { mutableStateOf<RemoteSchedule?>(null) }
-    val sortedSchedules = remoteSchedules.sortedByDescending { scheduleStartDate(it.weekLabel) ?: LocalDate.MIN }
+    var historyQuery by rememberSaveable { mutableStateOf("") }
+    var selectedYear by rememberSaveable { mutableStateOf("all") }
+    val sortedSchedules = remoteSchedules.sortedWith(
+        compareByDescending<RemoteSchedule> { remoteScheduleStartDate(it) ?: LocalDate.MIN }
+            .thenByDescending { it.updatedAt }
+    )
+    val historyYears = (availableYears + sortedSchedules.mapNotNull { remoteScheduleStartDate(it)?.year }).distinct().sortedDescending()
+    val filteredSchedules = sortedSchedules.filter { schedule ->
+        val startDate = remoteScheduleStartDate(schedule)
+        val matchesYear = selectedYear == "all" || startDate?.year?.toString() == selectedYear
+        val matchesQuery = historyQuery.isBlank() || schedule.weekLabel.contains(historyQuery.trim(), ignoreCase = true) ||
+            schedule.reading.contains(historyQuery.trim(), ignoreCase = true) ||
+            schedule.updatedAt.contains(historyQuery.trim(), ignoreCase = true) ||
+            schedule.assignedNames.any { it.contains(historyQuery.trim(), ignoreCase = true) }
+        matchesYear && matchesQuery
+    }
     PageColumn(modifier) {
         PageHeading("History")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("${remoteSchedules.size} saved · newest first", color = Muted, fontSize = 12.sp)
+            Text("${remoteSchedules.size} loaded · newest first", color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick=onRefresh,modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(Icons.TwoTone.Refresh,contentDescription="Refresh schedule history",tint=Forest,modifier=Modifier.size(20.dp))}
                 if (canCreate) FilledTonalButton(onClick = onNew, shape = MaterialTheme.shapes.medium) {
@@ -3729,8 +3777,48 @@ private fun HistoryScreen(
                     Text("Schedules saved to the cloud will appear here.",color=Muted,fontSize=12.sp)
                     if(canCreate) FilledTonalButton(onClick=onNew,shape = MaterialTheme.shapes.medium){Icon(Icons.TwoTone.Add,contentDescription=null,modifier=Modifier.size(17.dp));Spacer(Modifier.width(6.dp));Text("Create schedule")}
                 }
+            } else {
+                OutlinedTextField(
+                    value = historyQuery,
+                    onValueChange = { historyQuery = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Search loaded weeks, readings, or names") },
+                    leadingIcon = { Icon(Icons.TwoTone.Search, contentDescription = null, tint = Forest) },
+                    trailingIcon = if (historyQuery.isNotBlank()) ({
+                        IconButton(onClick = { historyQuery = "" }) { Icon(Icons.TwoTone.Close, contentDescription = "Clear history search") }
+                    }) else null,
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.medium
+                )
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilterChip(
+                        selected = selectedYear == "all",
+                        onClick = { selectedYear = "all" },
+                        label = { Text("All years", fontSize = 12.sp) },
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    historyYears.forEach { year ->
+                        FilterChip(
+                            selected = selectedYear == year.toString(),
+                            onClick = { selectedYear = year.toString() },
+                            label = { Text(year.toString(), fontSize = 12.sp) },
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+                }
+                if (filteredSchedules.isEmpty()) {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.TwoTone.Search, contentDescription = null, tint = Muted, modifier = Modifier.size(25.dp))
+                        Text("No schedules match your search or year filter.", color = Muted, fontSize = 12.sp)
+                        TextButton(onClick = { historyQuery = ""; selectedYear = "all" }) { Text("Clear search and filters", color = Forest) }
+                    }
+                }
             }
-            sortedSchedules.forEach { remote ->
+            filteredSchedules.forEach { remote ->
                 HorizontalDivider(Modifier.padding(vertical = 6.dp), color = MaterialTheme.colorScheme.outlineVariant)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(36.dp).background(ForestContainer, CircleShape), contentAlignment = Alignment.Center) {
@@ -3765,6 +3853,16 @@ private fun HistoryScreen(
                     }
                 }
             }
+            if (hasMore) {
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.Center) {
+                    FilledTonalButton(onClick = onLoadMore, enabled = !loadingMore, shape = MaterialTheme.shapes.medium) {
+                        if (loadingMore) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Forest)
+                        else Icon(Icons.TwoTone.ExpandMore, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(7.dp))
+                        Text(if (loadingMore) "Loading…" else if (historyQuery.isNotBlank()) "Load more to continue search" else "Load more schedules")
+                    }
+                }
+            }
         }
     }
     deleteTarget?.let { item ->
@@ -3796,6 +3894,10 @@ private fun scheduleStartDate(label:String, updatedAt:String=""): LocalDate? = r
         LocalDate.of(if(startMonth>endMonth) year-1 else year,startMonth,match.groupValues[2].toInt())
     }
 }.getOrNull()
+
+private fun remoteScheduleStartDate(schedule: RemoteSchedule): LocalDate? =
+    runCatching { LocalDate.parse(schedule.weekStart) }.getOrNull()
+        ?: scheduleStartDate(schedule.weekLabel, schedule.updatedAt)
 
 private data class NotificationFeedback(val sent: Boolean, val message: String)
 
