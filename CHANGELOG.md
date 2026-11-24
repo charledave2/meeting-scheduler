@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.45.35 — 2026-11-24
+
+- Replace the bottom Settings tab with a Profile shortcut and move account settings into its profile menu.
+- Move profile photo and display-name editing into Account & Settings.
+- Keep Profile available in the rightmost navigation position for accounts with different tool access.
+
 ## v0.45.34 — 2026-11-24
 
 - Match the system splash, status bar, and navigation bar to the saved app theme and selected palette.

@@ -36,7 +36,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
@@ -98,7 +97,6 @@ import androidx.compose.material.icons.twotone.MoreVert
 import androidx.compose.material.icons.twotone.Edit
 import androidx.compose.material.icons.twotone.Delete
 import androidx.compose.material.icons.twotone.AddAPhoto
-import androidx.compose.material.icons.twotone.Logout
 import androidx.compose.material.icons.twotone.Assignment
 import androidx.compose.material.icons.twotone.Groups
 import androidx.compose.material.icons.twotone.History
@@ -570,7 +568,7 @@ internal enum class Screen(val title: String, val section: String) {
     PREVIEW("Preview & Export", "SCHEDULE TOOLS"),
     PARTICIPANTS("Participants", "CONGREGATION"),
     HISTORY("History", "CONGREGATION"),
-    ACCOUNTS("Settings", "ACCOUNT")
+    ACCOUNTS("Account & Settings", "ACCOUNT")
 }
 
 private class LocalWorkspaceStore(context: Context) {
@@ -851,8 +849,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
     var identityToolAccess by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var profilePhotoPath by rememberSaveable { mutableStateOf<String?>(null) }
     var profilePhotoDataUrl by remember { mutableStateOf("") }
-    var profileDialogOpen by rememberSaveable { mutableStateOf(false) }
-    var profileNameDraft by rememberSaveable { mutableStateOf("") }
+    var profileMenuOpen by rememberSaveable { mutableStateOf(false) }
     var profileError by remember { mutableStateOf<String?>(null) }
     var workbookStatus by rememberSaveable { mutableStateOf("Naghahanap ng workbook para sa napiling linggo…") }
     var workbookBusy by remember { mutableStateOf(false) }
@@ -941,8 +938,8 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
     var current by rememberSaveable { mutableStateOf(Screen.HOME) }
     val officialPreviewWebView = remember { mutableStateOf<WebView?>(null) }
     var toolsOpen by remember { mutableStateOf(false) }
-    LaunchedEffect(profileDialogOpen, toolsOpen) {
-        if (profileDialogOpen || toolsOpen) runCatching { api.currentUser() }
+    LaunchedEffect(profileMenuOpen, toolsOpen) {
+        if (profileMenuOpen || toolsOpen) runCatching { api.currentUser() }
             .onSuccess { profilePhotoDataUrl = it.photoDataUrl; identityToolAccess = it.toolAccess; identityRole = it.role }
     }
     var weekStart by rememberSaveable { mutableStateOf(store.detail("week", LocalDate.of(2026, 11, 9).toString())) }
@@ -1547,10 +1544,20 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
     }
 
     val availableScreens = Screen.entries.filter(::canAccess).toSet()
-    fun openProfile() {
-        profileNameDraft = identityName
-        profileError = null
-        profileDialogOpen = true
+    fun signOut() {
+        profileMenuOpen = false
+        val oldSession = api.signOut()
+        val pushToken = MeetingPushNotifications.savedToken(context)
+        authScope.launch {
+            if (!pushToken.isNullOrBlank()) runCatching { api.unregisterPushToken(pushToken, oldSession) }
+            api.revokeSession(oldSession)
+        }
+        signedIn = false
+        identityName = ""
+        identityUsername = ""
+        identityRole = ""
+        loginError = null
+        authReady = true
     }
     val profilePhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) authScope.launch {
@@ -1586,7 +1593,7 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
                 .onFailure { profileError = it.message ?: "Hindi na-save sa cloud ang profile photo." }
         }
     }
-    BackHandler(enabled = current != Screen.HOME && canAccess(Screen.HOME) && !profileDialogOpen && !toolsOpen) {
+    BackHandler(enabled = current != Screen.HOME && canAccess(Screen.HOME) && !profileMenuOpen && !toolsOpen) {
         navigateTo(Screen.HOME)
     }
     if (toolsOpen) {
@@ -1625,70 +1632,24 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
                 navigationIcon = {
                     MeetingSchedulerBrandIcon(Modifier.padding(start = 14.dp, end = 8.dp).size(34.dp))
                 },
-                actions = {
-                    Box(Modifier.padding(end = 8.dp)) {
-                        Column(
-                            Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).clip(MaterialTheme.shapes.medium)
-                                .clickable(onClickLabel = "Open profile", onClick = ::openProfile)
-                                .padding(horizontal = 6.dp, vertical = 4.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                        ) {
-                            ProfileAvatar(identityName, profilePhotoPath, 28.dp, profilePhotoDataUrl)
-                            Text(when (identityRole.lowercase(Locale.ROOT)) {
-                                "admin", "administrator" -> "ADMINISTRATOR"
-                                else -> identityRole.uppercase(Locale.ROOT)
-                            }, style = MaterialTheme.typography.labelSmall, maxLines = 1, fontWeight = FontWeight.Bold, color = Forest)
-                        }
-                        DropdownMenu(
-                            expanded = profileDialogOpen,
-                            onDismissRequest = { profileDialogOpen = false },
-                            modifier = Modifier.width(280.dp).heightIn(
-                                max = (LocalConfiguration.current.screenHeightDp * 0.68f).dp
-                            )
-                        ) {
-                            ProfilePreferencesMenu(
-                                identityName = identityName,
-                                identityRole = identityRole,
-                                profilePhotoPath = profilePhotoPath,
-                                profilePhotoDataUrl = profilePhotoDataUrl,
-                                nameDraft = profileNameDraft,
-                                profileError = profileError,
-                                onNameChange = { profileNameDraft = it; profileError = null },
-                                onChangePhoto = { profilePhotoPicker.launch(arrayOf("image/*")) },
-                                onSignOut = {
-                                    profileDialogOpen = false
-                                    val oldSession = api.signOut()
-                                    val pushToken = MeetingPushNotifications.savedToken(context)
-                                    authScope.launch {
-                                        if (!pushToken.isNullOrBlank()) runCatching { api.unregisterPushToken(pushToken, oldSession) }
-                                        api.revokeSession(oldSession)
-                                    }
-                                    signedIn = false
-                                    identityName = ""
-                                    identityUsername = ""
-                                    identityRole = ""
-                                    loginError = null
-                                    authReady = true
-                                },
-                                onSave = {
-                                    identityName = profileNameDraft.trim()
-                                    store.saveProfileName(identityUsername, identityName)
-                                    profileDialogOpen = false
-                                }
-                            )
-                        }
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = AppSurface)
             )
         },
         bottomBar = {
-            PreviewBottomNavigation(current, availableScreens, onNavigate = ::navigateTo) {
-                if (availableScreens.any { it in setOf(Screen.ASSIGNMENTS, Screen.PREVIEW, Screen.PARTICIPANTS) }) {
-                    toolsOpen = true
-                } else openProfile()
-            }
+            PreviewBottomNavigation(
+                current = current,
+                available = availableScreens,
+                onNavigate = ::navigateTo,
+                onCenterClick = { profileMenuOpen = false; toolsOpen = true },
+                profileName = identityName,
+                profileRole = identityRole,
+                profileAvatar = { size -> ProfileAvatar(identityName, profilePhotoPath, size, profilePhotoDataUrl) },
+                profileMenuOpen = profileMenuOpen,
+                onProfileMenuToggle = { toolsOpen = false; profileMenuOpen = !profileMenuOpen },
+                onProfileMenuDismiss = { profileMenuOpen = false },
+                onProfileSettings = { profileMenuOpen = false; navigateTo(Screen.ACCOUNTS) },
+                onProfileSignOut = ::signOut
+            )
         },
         snackbarHost = { SnackbarHost(hostState = remember { SnackbarHostState() }) },
         contentWindowInsets = WindowInsets.safeDrawing
@@ -1854,6 +1815,16 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
                 AccountsScreen(
                     modifier=scroll, accounts=remoteAccounts, linkParticipants=accountLinkParticipants, loading=accountsBusy, error=accountsError,
                     testNotificationBusy=testNotificationBusy, testNotificationFeedback=testNotificationFeedback,
+                    profileName=identityName, profileUsername=identityUsername, profileRole=identityRole,
+                    profilePhotoPath=profilePhotoPath, profilePhotoDataUrl=profilePhotoDataUrl, profileError=profileError,
+                    onChangeOwnPhoto={ profileError = null; profilePhotoPicker.launch(arrayOf("image/*")) },
+                    onSaveOwnName={ value ->
+                        val cleanName = value.trim()
+                        if (cleanName.isNotEmpty()) {
+                            identityName = cleanName
+                            store.saveProfileName(identityUsername, cleanName)
+                        }
+                    },
                     onTestNotification={
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -2499,99 +2470,6 @@ private fun rememberAvatarBitmap(dataUrl: String, photoPath: String? = null): Im
         }
     }
     return bitmap
-}
-
-@Composable
-private fun ProfilePreferencesMenu(
-    identityName: String,
-    identityRole: String,
-    profilePhotoPath: String?,
-    profilePhotoDataUrl: String,
-    nameDraft: String,
-    profileError: String?,
-    onNameChange: (String) -> Unit,
-    onChangePhoto: () -> Unit,
-    onSignOut: () -> Unit,
-    onSave: () -> Unit
-) {
-    val colors = MaterialTheme.colorScheme
-    val roleLabel = when (identityRole.lowercase(Locale.ROOT)) {
-        "admin", "administrator" -> "ADMINISTRATOR"
-        else -> identityRole.uppercase(Locale.ROOT).ifBlank { "ACCOUNT" }
-    }
-    Column(
-        Modifier.fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.62f).dp)
-            .verticalScroll(rememberScrollState()).padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            ProfileAvatar(identityName, profilePhotoPath, 42.dp, profilePhotoDataUrl)
-            Column(Modifier.weight(1f)) {
-                Text(identityName, fontSize = 14.sp, lineHeight = 17.sp, fontWeight = FontWeight.Bold,
-                    color = colors.onSurface, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                Text(roleLabel, fontSize = 10.sp, lineHeight = 13.sp, fontWeight = FontWeight.Bold,
-                    color = colors.primary, maxLines = 1)
-            }
-        }
-        TextButton(
-            onClick = onChangePhoto,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-        ) {
-            Icon(Icons.TwoTone.AddAPhoto, contentDescription = null, tint = colors.primary, modifier = Modifier.size(17.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(if (profilePhotoPath.isNullOrBlank() && profilePhotoDataUrl.isBlank()) "Add photo" else "Change photo",
-                fontSize = 12.sp, maxLines = 1)
-        }
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.medium)
-                .background(colors.surfaceContainerHigh)
-                .border(BorderStroke(1.dp, colors.outlineVariant), RoundedCornerShape(13.dp))
-                .padding(horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.TwoTone.Edit, contentDescription = null, tint = colors.primary, modifier = Modifier.size(17.dp))
-            BasicTextField(
-                value = nameDraft,
-                onValueChange = onNameChange,
-                modifier = Modifier.weight(1f).padding(start = 8.dp),
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodySmall.copy(color = colors.onSurface),
-                decorationBox = { innerTextField ->
-                    Box(contentAlignment = Alignment.CenterStart) {
-                        if (nameDraft.isBlank()) Text("Name", color = colors.onSurfaceVariant, fontSize = 12.sp)
-                        innerTextField()
-                    }
-                }
-            )
-        }
-        profileError?.let {
-            Text(it, color = colors.error, fontSize = 11.sp, lineHeight = 14.sp)
-        }
-        HorizontalDivider(color = colors.outlineVariant)
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(
-                onClick = onSave,
-                enabled = nameDraft.isNotBlank(),
-                modifier = Modifier.size(48.dp)
-            ) {
-                Icon(Icons.TwoTone.CheckCircle, contentDescription = "Save",
-                    tint = colors.primary, modifier = Modifier.size(19.dp))
-            }
-            Spacer(Modifier.width(24.dp))
-            IconButton(
-                onClick = onSignOut,
-                modifier = Modifier.size(48.dp)
-            ) {
-                Icon(Icons.TwoTone.Logout, contentDescription = "Sign out",
-                    tint = colors.error, modifier = Modifier.size(19.dp))
-            }
-        }
-    }
 }
 
 @Composable
@@ -3932,6 +3810,8 @@ private data class NotificationFeedback(val sent: Boolean, val message: String)
 private fun AccountsScreen(
     modifier: Modifier, accounts: List<RemoteAccount>, linkParticipants: List<AccountLinkParticipant>, loading: Boolean, error: String?,
     testNotificationBusy: Boolean, testNotificationFeedback: NotificationFeedback?, onTestNotification: () -> Unit, currentUsername: String,
+    profileName: String, profileUsername: String, profileRole: String, profilePhotoPath: String?, profilePhotoDataUrl: String,
+    profileError: String?, onChangeOwnPhoto: () -> Unit, onSaveOwnName: (String) -> Unit,
     isAdmin: Boolean, fontScale: Float, onFontScaleChange: (Float) -> Unit,
     darkMode: Boolean, onToggleTheme: () -> Unit, paletteStyle: AppPaletteStyle, onPaletteStyleChange: (AppPaletteStyle) -> Unit, appLock: AppLockController,
     onRefresh: () -> Unit, onUploadPhoto: (RemoteAccount) -> Unit,
@@ -3944,6 +3824,8 @@ private fun AccountsScreen(
     var selectedAction by remember { mutableStateOf("") }
     var temporaryPassword by remember { mutableStateOf("") }
     var selectedRole by remember { mutableStateOf("viewer") }
+    var editProfileNameOpen by remember { mutableStateOf(false) }
+    var profileNameDraft by rememberSaveable(profileName) { mutableStateOf(profileName) }
     val filtered = accounts.sortedWith(compareBy<RemoteAccount>({ if (it.role == "admin") 0 else 1 }, { when (it.status) { "requested" -> 0; "active" -> 1; else -> 2 } }, { it.displayName.lowercase() }))
     fun beginAction(account: RemoteAccount, action: String) {
         selectedAccount = null
@@ -3953,11 +3835,47 @@ private fun AccountsScreen(
         selectedRole = account.role.ifBlank { "viewer" }
     }
     PageColumn(modifier) {
-        PageHeading("Settings") {
+        PageHeading("Account & Settings") {
             if (isAdmin) IconButton(onClick = onRefresh, enabled = !loading) {
                 if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 else Icon(Icons.TwoTone.Refresh, contentDescription = "Refresh accounts", tint = Forest)
             }
+        }
+        M3Card {
+            Text("Profile", style = MaterialTheme.typography.titleMedium)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ProfileAvatar(profileName, profilePhotoPath, 64.dp, profilePhotoDataUrl)
+                Column(Modifier.weight(1f)) {
+                    Text(profileName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("@$profileUsername", color = Muted, style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        when (profileRole.lowercase(Locale.ROOT)) {
+                            "admin", "administrator" -> "ADMINISTRATOR"
+                            else -> profileRole.uppercase(Locale.ROOT)
+                        },
+                        color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onChangeOwnPhoto, modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.medium) {
+                    Icon(Icons.TwoTone.AddAPhoto, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Change photo", maxLines = 1)
+                }
+                OutlinedButton(onClick = { profileNameDraft = profileName; editProfileNameOpen = true },
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = MaterialTheme.shapes.medium) {
+                    Icon(Icons.TwoTone.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Edit name", maxLines = 1)
+                }
+            }
+            profileError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         }
         M3Card {
             Text("Preferences", style = MaterialTheme.typography.titleMedium)
@@ -4102,6 +4020,29 @@ private fun AccountsScreen(
             }
         }
     }
+    if (editProfileNameOpen) AlertDialog(
+        onDismissRequest = { editProfileNameOpen = false },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = MaterialTheme.shapes.extraLarge,
+        title = { Text("Edit profile name") },
+        text = {
+            OutlinedTextField(
+                value = profileNameDraft,
+                onValueChange = { profileNameDraft = it },
+                label = { Text("Name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onSaveOwnName(profileNameDraft.trim())
+                editProfileNameOpen = false
+            }, enabled = profileNameDraft.isNotBlank()) { Text("Save", color = MaterialTheme.colorScheme.primary) }
+        },
+        dismissButton = { TextButton(onClick = { editProfileNameOpen = false }) { Text("Cancel") } }
+    )
     selectedAccount?.let { selected ->
         val account = accounts.firstOrNull { it.id == selected.id } ?: selected
         var linkedParticipantId by remember(account.id, account.memberId) { mutableIntStateOf(account.memberId ?: 0) }
