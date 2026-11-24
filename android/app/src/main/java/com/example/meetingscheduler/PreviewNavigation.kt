@@ -16,8 +16,9 @@ import androidx.compose.material.icons.twotone.CalendarMonth
 import androidx.compose.material.icons.twotone.Groups
 import androidx.compose.material.icons.twotone.History
 import androidx.compose.material.icons.twotone.Home
-import androidx.compose.material.icons.twotone.ManageAccounts
 import androidx.compose.material.icons.twotone.Person
+import androidx.compose.material.icons.twotone.Settings
+import androidx.compose.material.icons.twotone.Logout
 import androidx.compose.material.icons.twotone.Preview
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,6 +32,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 
 /** Floating navigation preview; the center slot stays centered as role permissions change. */
@@ -39,7 +41,15 @@ internal fun PreviewBottomNavigation(
     current: Screen,
     available: Set<Screen>,
     onNavigate: (Screen) -> Unit,
-    onCenterClick: () -> Unit
+    onCenterClick: () -> Unit,
+    profileName: String,
+    profileRole: String,
+    profileAvatar: @Composable (Dp) -> Unit,
+    profileMenuOpen: Boolean,
+    onProfileMenuToggle: () -> Unit,
+    onProfileMenuDismiss: () -> Unit,
+    onProfileSettings: () -> Unit,
+    onProfileSignOut: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
     val labelGrowth = ((LocalDensity.current.fontScale - 1f).coerceAtLeast(0f) * 32f).dp
@@ -49,47 +59,158 @@ internal fun PreviewBottomNavigation(
     Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 14.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center) {
         BoxWithConstraints(Modifier.widthIn(max = 640.dp).fillMaxWidth().height(bodyHeight + 24.dp)) {
-            val centerSlotWidth = maxWidth / 5
-            Surface(
-                modifier = Modifier.fillMaxWidth().height(bodyHeight).align(Alignment.BottomCenter),
-                shape = RoundedCornerShape(28.dp), color = colors.surfaceContainerHigh,
-                border = BorderStroke(1.dp, colors.outlineVariant.copy(alpha = 0.65f)),
-                shadowElevation = 3.dp
-            ) {
-                Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                    Row(Modifier.weight(1f)) {
-                        listOf(Screen.HOME, Screen.DETAILS).filter { it in available }.forEach { screen ->
-                            PreviewNavItem(screen, current == screen, Modifier.weight(1f)) { onNavigate(screen) }
-                        }
-                    }
-                    Spacer(Modifier.width(centerSlotWidth))
-                    Row(Modifier.weight(1f)) {
-                        listOf(Screen.HISTORY, Screen.ACCOUNTS).filter { it in available }.forEach { screen ->
-                            PreviewNavItem(screen, current == screen, Modifier.weight(1f)) { onNavigate(screen) }
-                        }
-                    }
-                }
-            }
-            Column(Modifier.align(Alignment.TopCenter).width(76.dp),
-                horizontalAlignment = Alignment.CenterHorizontally) {
+            if (tools) {
+                val centerSlotWidth = maxWidth / 5
                 Surface(
-                    onClick = onCenterClick,
-                    modifier = Modifier.size(64.dp).semantics {
-                        contentDescription = if (tools) "Open schedule tools" else "Open profile"
-                    },
-                    shape = CircleShape, color = colors.primary, contentColor = colors.onPrimary,
-                    shadowElevation = 6.dp, border = BorderStroke(4.dp, colors.primaryContainer)
+                    modifier = Modifier.fillMaxWidth().height(bodyHeight).align(Alignment.BottomCenter),
+                    shape = RoundedCornerShape(28.dp), color = colors.surfaceContainerHigh,
+                    border = BorderStroke(1.dp, colors.outlineVariant.copy(alpha = 0.65f)),
+                    shadowElevation = 3.dp
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(if (tools) Icons.TwoTone.Add else Icons.TwoTone.Person,
-                            contentDescription = null, modifier = Modifier.size(30.dp))
+                    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.weight(1f)) {
+                            listOf(Screen.HOME, Screen.DETAILS).filter { it in available }.forEach { screen ->
+                                PreviewNavItem(screen, current == screen, Modifier.weight(1f)) { onNavigate(screen) }
+                            }
+                        }
+                        Spacer(Modifier.width(centerSlotWidth))
+                        Row(Modifier.weight(1f)) {
+                            if (Screen.HISTORY in available) {
+                                PreviewNavItem(Screen.HISTORY, current == Screen.HISTORY, Modifier.weight(1f)) {
+                                    onNavigate(Screen.HISTORY)
+                                }
+                            }
+                            ProfileNavItem(
+                                selected = current == Screen.ACCOUNTS,
+                                name = profileName,
+                                role = profileRole,
+                                avatar = profileAvatar,
+                                expanded = profileMenuOpen,
+                                modifier = Modifier.weight(1f),
+                                onClick = onProfileMenuToggle,
+                                onDismiss = onProfileMenuDismiss,
+                                onSettings = onProfileSettings,
+                                onSignOut = onProfileSignOut
+                            )
+                        }
                     }
                 }
-                Spacer(Modifier.height(6.dp))
-                Text(if (tools) "Tools" else "Profile", style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold, color = if (centerSelected) colors.primary else colors.onSurfaceVariant)
-                if (centerSelected) Box(Modifier.padding(top = 4.dp).size(4.dp).background(colors.primary, CircleShape))
+                Column(Modifier.align(Alignment.TopCenter).width(76.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    Surface(
+                        onClick = onCenterClick,
+                        modifier = Modifier.size(64.dp).semantics { contentDescription = "Open schedule tools" },
+                        shape = CircleShape, color = colors.primary, contentColor = colors.onPrimary,
+                        shadowElevation = 6.dp, border = BorderStroke(4.dp, colors.primaryContainer)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.TwoTone.Add, contentDescription = null, modifier = Modifier.size(30.dp))
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text("Tools", style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold, color = if (centerSelected) colors.primary else colors.onSurfaceVariant)
+                    if (centerSelected) Box(Modifier.padding(top = 4.dp).size(4.dp).background(colors.primary, CircleShape))
+                }
+            } else {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().height(bodyHeight).align(Alignment.BottomCenter),
+                    shape = RoundedCornerShape(28.dp), color = colors.surfaceContainerHigh,
+                    border = BorderStroke(1.dp, colors.outlineVariant.copy(alpha = 0.65f)),
+                    shadowElevation = 3.dp
+                ) {
+                    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                        listOf(Screen.HOME, Screen.DETAILS, Screen.HISTORY).filter { it in available }.forEach { screen ->
+                            PreviewNavItem(screen, current == screen, Modifier.weight(1f)) { onNavigate(screen) }
+                        }
+                        ProfileNavItem(
+                            selected = current == Screen.ACCOUNTS,
+                            name = profileName,
+                            role = profileRole,
+                            avatar = profileAvatar,
+                            expanded = profileMenuOpen,
+                            modifier = Modifier.weight(1f),
+                            onClick = onProfileMenuToggle,
+                            onDismiss = onProfileMenuDismiss,
+                            onSettings = onProfileSettings,
+                            onSignOut = onProfileSignOut
+                        )
+                    }
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun ProfileNavItem(
+    selected: Boolean,
+    name: String,
+    role: String,
+    avatar: @Composable (Dp) -> Unit,
+    expanded: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+    onDismiss: () -> Unit,
+    onSettings: () -> Unit,
+    onSignOut: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val roleLabel = when (role.lowercase()) {
+        "admin", "administrator" -> "ADMINISTRATOR"
+        else -> role.uppercase().ifBlank { "ACCOUNT" }
+    }
+    Box(modifier.fillMaxHeight(), contentAlignment = Alignment.Center) {
+        Column(
+            Modifier.fillMaxSize().clip(MaterialTheme.shapes.large)
+                .selectable(selected = selected || expanded, role = Role.Tab, onClick = onClick)
+                .padding(top = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                Modifier.size(32.dp).background(
+                    if (selected || expanded) colors.primaryContainer else colors.surfaceContainerHigh,
+                    CircleShape
+                ),
+                contentAlignment = Alignment.Center
+            ) { avatar(26.dp) }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Profile", style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                fontWeight = if (selected || expanded) FontWeight.Bold else FontWeight.Medium,
+                color = if (selected || expanded) colors.primary else colors.onSurfaceVariant
+            )
+            if (selected || expanded) Box(Modifier.padding(top = 4.dp).size(4.dp).background(colors.primary, CircleShape))
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = onDismiss,
+            modifier = Modifier.width(276.dp).heightIn(max = 320.dp)
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                avatar(44.dp)
+                Column(Modifier.weight(1f)) {
+                    Text(name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(roleLabel, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
+                        color = colors.primary, maxLines = 1)
+                }
+            }
+            HorizontalDivider(color = colors.outlineVariant)
+            DropdownMenuItem(
+                text = { Text("Settings") },
+                leadingIcon = { Icon(Icons.TwoTone.Settings, contentDescription = null, tint = colors.primary) },
+                onClick = onSettings
+            )
+            DropdownMenuItem(
+                text = { Text("Sign out", color = colors.error) },
+                leadingIcon = { Icon(Icons.TwoTone.Logout, contentDescription = null, tint = colors.error) },
+                onClick = onSignOut
+            )
         }
     }
 }
@@ -101,13 +222,15 @@ private fun PreviewNavItem(screen: Screen, selected: Boolean, modifier: Modifier
         Screen.HOME -> "Home"
         Screen.DETAILS -> "Workbook"
         Screen.HISTORY -> "History"
-        else -> "Settings"
+        Screen.ACCOUNTS -> "Profile"
+        else -> screen.title
     }
     val icon = when (screen) {
         Screen.HOME -> Icons.TwoTone.Home
         Screen.DETAILS -> Icons.TwoTone.CalendarMonth
         Screen.HISTORY -> Icons.TwoTone.History
-        else -> Icons.TwoTone.ManageAccounts
+        Screen.ACCOUNTS -> Icons.TwoTone.Person
+        else -> Icons.TwoTone.Person
     }
     Column(
         modifier.fillMaxHeight().clip(MaterialTheme.shapes.large)
