@@ -165,6 +165,7 @@ import java.util.Locale
 
 private const val SHARE_RESULT_PREFS = "schedule_share_result"
 private const val SHARE_CHOSEN_ACTION = "com.example.meetingscheduler.SHARE_TARGET_CHOSEN"
+private const val LEGACY_WORKBOOK_WEEK_START = "2026-11-09"
 
 class ShareTargetChosenReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -590,6 +591,14 @@ private class LocalWorkspaceStore(context: Context) {
         set(value) { prefs.edit().putFloat("app_font_scale", value.coerceIn(0.85f, 1.35f)).apply() }
     fun detail(key: String, fallback: String) = prefs.getString("detail_$key", fallback) ?: fallback
     fun setDetail(key: String, value: String) { prefs.edit().putString("detail_$key", value).apply() }
+    fun workbookWeekStart(fallback: String): String {
+        val saved = prefs.getString("detail_week", null) ?: return fallback
+        if (saved == LEGACY_WORKBOOK_WEEK_START && loadHistory().none { it.weekStart == LEGACY_WORKBOOK_WEEK_START }) {
+            setDetail("week", fallback)
+            return fallback
+        }
+        return saved
+    }
     fun saveDetails(week: String, bible: String, opening: String, closing: String, workbook: String) {
         prefs.edit().putString("detail_week", week).putString("detail_bible", bible)
             .putString("detail_opening", opening).putString("detail_closing", closing)
@@ -942,7 +951,12 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
         if (profileMenuOpen || toolsOpen) runCatching { api.currentUser() }
             .onSuccess { profilePhotoDataUrl = it.photoDataUrl; identityToolAccess = it.toolAccess; identityRole = it.role }
     }
-    var weekStart by rememberSaveable { mutableStateOf(store.detail("week", LocalDate.of(2026, 11, 9).toString())) }
+    val currentWorkbookWeekStart = remember {
+        LocalDate.now().with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
+    }
+    var weekStart by rememberSaveable {
+        mutableStateOf(store.workbookWeekStart(currentWorkbookWeekStart.toString()))
+    }
     var bible by rememberSaveable { mutableStateOf(store.detail("bible", "Jeremias 31")) }
     var openingSong by rememberSaveable { mutableStateOf(store.detail("opening", "27")) }
     var closingSong by rememberSaveable { mutableStateOf(store.detail("closing", "132")) }
@@ -1036,7 +1050,9 @@ private fun MeetingSchedulerApp(darkMode: Boolean, onToggleTheme: () -> Unit, pa
     }
     var restrictedTapCount by rememberSaveable { mutableIntStateOf(0) }
     var accessNotice by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
-    val week = remember(weekStart) { runCatching { LocalDate.parse(weekStart) }.getOrDefault(LocalDate.of(2026,11,9)) }
+    val week = remember(weekStart, currentWorkbookWeekStart) {
+        runCatching { LocalDate.parse(weekStart) }.getOrDefault(currentWorkbookWeekStart)
+    }
     val weekLabel = remember(week) { week.format(DateTimeFormatter.ofPattern("MMM d")) + " – " + week.plusDays(6).format(DateTimeFormatter.ofPattern("MMM d, yyyy")) }
     fun toolKey(screen: Screen): String = when (screen) {
         Screen.HOME -> "home"
