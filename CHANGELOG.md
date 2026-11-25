@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.45.37 — 2026-11-25
+
+- Keep theme and palette changes immediate while deferring launcher icon alias updates until the app is in the background; batch alias changes atomically on Android 13 and newer.
+
 ## v0.45.36 — 2026-11-25
 
 - Add System, Light, and Dark appearance options; System follows Android's current theme while saved Light or Dark choices remain selected.

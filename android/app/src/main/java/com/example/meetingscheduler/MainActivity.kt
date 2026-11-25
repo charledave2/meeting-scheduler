@@ -318,20 +318,41 @@ private enum class AppThemeMode(val label: String) {
     SYSTEM("System"), LIGHT("Light"), DARK("Dark")
 }
 
+/**
+ * Apply launcher icon changes only after the activity has left the foreground.
+ * Some OEM launchers stop the task when a currently running launcher alias is disabled.
+ */
 private fun syncLauncherPalette(context: Context, selected: AppPaletteStyle, darkMode: Boolean) {
+    val preferenceKey = "${selected.name}:${if (darkMode) "dark" else "light"}"
+    val iconPrefs = context.getSharedPreferences("meeting_scheduler_launcher", Context.MODE_PRIVATE)
+    if (iconPrefs.getString("applied_palette", null) == preferenceKey) return
+
     val packageManager = context.packageManager
-    fun setEnabled(alias: String, enabled: Boolean) {
-        val component = ComponentName(context, "${context.packageName}.$alias")
-        packageManager.setComponentEnabledSetting(
-            component,
-            if (enabled) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-            PackageManager.DONT_KILL_APP
-        )
-    }
     val activeAlias = selected.launcherAlias(darkMode)
-    val allAliases = AppPaletteStyle.entries.flatMap { listOf(it.launcherAlias, it.launcherAlias(darkMode = true)) }
-    setEnabled(activeAlias, true)
-    allAliases.filterNot { it == activeAlias }.forEach { setEnabled(it, false) }
+    val aliases = AppPaletteStyle.entries.flatMap { listOf(it.launcherAlias, it.launcherAlias(darkMode = true)) }
+    val changes = aliases.map { alias ->
+        val component = ComponentName(context, "${context.packageName}.$alias")
+        val state = if (alias == activeAlias) PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+            else PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+        Triple(alias, component, state)
+    }
+
+    runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.setComponentEnabledSettings(changes.map { (_, component, state) ->
+                PackageManager.ComponentEnabledSetting(component, state, PackageManager.DONT_KILL_APP)
+            })
+        } else {
+            // Apply while the activity is stopped, enable the new entry before disabling the old one.
+            changes.firstOrNull { it.first == activeAlias }?.let { (_, component, state) ->
+                packageManager.setComponentEnabledSetting(component, state, PackageManager.DONT_KILL_APP)
+            }
+            changes.filterNot { it.first == activeAlias }.forEach { (_, component, state) ->
+                packageManager.setComponentEnabledSetting(component, state, PackageManager.DONT_KILL_APP)
+            }
+        }
+        iconPrefs.edit().putString("applied_palette", preferenceKey).apply()
+    }
 }
 
 private val Forest @Composable get() = MaterialTheme.colorScheme.primary
@@ -386,6 +407,15 @@ class MainActivity : FragmentActivity() {
 
     override fun onStop() {
         if (::appLock.isInitialized) appLock.onBackground()
+        runCatching {
+            val store = LocalWorkspaceStore(this)
+            val darkMode = when (store.themeMode) {
+                AppThemeMode.SYSTEM -> (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+                AppThemeMode.LIGHT -> false
+                AppThemeMode.DARK -> true
+            }
+            syncLauncherPalette(this, store.paletteStyle, darkMode)
+        }
         super.onStop()
     }
 }
@@ -815,7 +845,6 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
     }
     var paletteStyle by rememberSaveable { mutableStateOf(store.paletteStyle) }
     var appFontScale by rememberSaveable { mutableFloatStateOf(store.appFontScale) }
-    LaunchedEffect(paletteStyle, darkMode) { syncLauncherPalette(context, paletteStyle, darkMode) }
     val scheme = paletteStyle.colorScheme(darkMode)
     val systemDensity = LocalDensity.current
     SideEffect {
