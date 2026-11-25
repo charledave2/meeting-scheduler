@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.38 — 2026-11-25
+
+- Add an About this App page with app version, changelog, contributor and developer links, repository link, privacy notes, and accurate license information.
+- Remove the launcher mark from Android's launch splash so the app opens into its existing animated intro without a duplicate logo screen.
+
 ## v0.45.37 — 2026-11-25
 
 - Keep theme and palette changes immediate while deferring launcher icon alias updates until the app is in the background; batch alias changes atomically on Android 13 and newer.
