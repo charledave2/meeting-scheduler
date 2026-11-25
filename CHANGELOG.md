@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.42 — 2026-11-25
+
+- Remove the repeated toolbar title from non-Home pages; keep JW Meeting Manager in the Home toolbar only.
+
+
 ## v0.45.41 — 2026-11-25
 
 - Rename the app to JW Meeting Manager across the launcher label and in-app branding.

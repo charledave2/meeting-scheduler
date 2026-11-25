@@ -1636,18 +1636,20 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
     Scaffold(
         containerColor = AppSurface,
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        if (current == Screen.HOME) "JW Meeting Manager" else current.title,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = AppSurface)
-            )
+            if (current == Screen.HOME) {
+                TopAppBar(
+                    title = {
+                        Text(
+                            "JW Meeting Manager",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = AppSurface)
+                )
+            }
         },
         bottomBar = {
             PreviewBottomNavigation(
