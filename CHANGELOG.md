@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.43 — 2026-11-25
+
+- Add a tap-responsive otter mascot to the Home greeting card, with a subtle floating idle animation and an automatically dismissing meeting tip bubble.
+
+
 ## v0.45.42 — 2026-11-25
 
 - Remove the repeated toolbar title from non-Home pages; keep JW Meeting Manager in the Home toolbar only.

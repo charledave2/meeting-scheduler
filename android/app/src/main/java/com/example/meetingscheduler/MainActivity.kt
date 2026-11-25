@@ -81,6 +81,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
@@ -2572,6 +2573,27 @@ private fun HomeScreen(
             if (meetingDate.isBefore(today)) null else meetingDate to remote
         }.sortedBy { it.first }.take(6)
     }
+    var mascotTipVisible by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(mascotTipVisible) {
+        if (mascotTipVisible) {
+            delay(4_500)
+            mascotTipVisible = false
+        }
+    }
+    val mascotMotion = rememberInfiniteTransition(label = "home mascot idle")
+    val mascotBob by mascotMotion.animateFloat(
+        initialValue = 0f,
+        targetValue = 3f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1_800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "home mascot bob"
+    )
+    val nextMeetingDate = upcoming.firstOrNull()?.first
+    val mascotTip = nextMeetingDate?.let {
+        "May susunod kang meeting sa ${it.format(DateTimeFormatter.ofPattern("MMM d", Locale.ENGLISH))}. I-tap ang card para makita ang schedule."
+    } ?: "Wala pang paparating na meeting. Lalabas dito ang susunod mong schedule."
     PageColumn(modifier) {
         PageHeading("Home")
         val greetingShape = RoundedCornerShape(26.dp)
@@ -2607,15 +2629,69 @@ private fun HomeScreen(
                         cap = StrokeCap.Round
                     )
                 }
-                Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(52.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f), RoundedCornerShape(17.dp)), contentAlignment = Alignment.Center) {
-                        Icon(SproutIcons.Home, contentDescription = null, tint = Forest, modifier = Modifier.size(27.dp))
+                Column(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("$greeting,", color = Muted, fontSize = 14.sp)
+                            Text(
+                                accountName.ifBlank { "there" },
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                fontSize = 23.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                today.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.ENGLISH)),
+                                color = Muted,
+                                fontSize = 12.sp,
+                                maxLines = 1
+                            )
+                        }
+                        Image(
+                            painter = painterResource(R.drawable.meeting_otter_mascot),
+                            contentDescription = "Tap the otter mascot for a meeting tip",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .size(76.dp)
+                                .offset(y = mascotBob.dp)
+                                .clip(CircleShape)
+                                .clickable(
+                                    role = Role.Button,
+                                    onClickLabel = if (mascotTipVisible) "Hide meeting tip" else "Show meeting tip"
+                                ) { mascotTipVisible = !mascotTipVisible }
+                        )
                     }
-                    Spacer(Modifier.width(14.dp))
-                    Column {
-                        Text("$greeting,", color = Muted, fontSize = 14.sp)
-                        Text(accountName.ifBlank { "there" }, color = MaterialTheme.colorScheme.onPrimaryContainer, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                        Text(today.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.ENGLISH)), color = Muted, fontSize = 12.sp)
+                    AnimatedVisibility(
+                        visible = mascotTipVisible,
+                        enter = fadeIn(animationSpec = tween(220)) +
+                            scaleIn(initialScale = 0.94f, animationSpec = tween(220, easing = FastOutSlowInEasing)) +
+                            slideInVertically(animationSpec = tween(220, easing = FastOutSlowInEasing)) { -it / 5 },
+                        exit = fadeOut(animationSpec = tween(160)) +
+                            slideOutVertically(animationSpec = tween(160)) { -it / 6 }
+                    ) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Row(
+                                Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Icon(SproutIcons.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(18.dp))
+                                Text(
+                                    mascotTip,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 12.sp,
+                                    lineHeight = 17.sp
+                                )
+                            }
+                        }
                     }
                 }
             }
