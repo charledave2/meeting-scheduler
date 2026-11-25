@@ -1,5 +1,17 @@
 package com.example.meetingscheduler
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ArrowForward
+import androidx.compose.material.icons.outlined.Assignment
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Logout
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Preview
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -8,18 +20,6 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.twotone.Add
-import androidx.compose.material.icons.twotone.ArrowForward
-import androidx.compose.material.icons.twotone.Assignment
-import androidx.compose.material.icons.twotone.CalendarMonth
-import androidx.compose.material.icons.twotone.Groups
-import androidx.compose.material.icons.twotone.History
-import androidx.compose.material.icons.twotone.Home
-import androidx.compose.material.icons.twotone.Person
-import androidx.compose.material.icons.twotone.Settings
-import androidx.compose.material.icons.twotone.Logout
-import androidx.compose.material.icons.twotone.Preview
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -104,7 +104,7 @@ internal fun PreviewBottomNavigation(
                         shadowElevation = 6.dp, border = BorderStroke(4.dp, colors.primaryContainer)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.TwoTone.Add, contentDescription = null, modifier = Modifier.size(30.dp))
+                            Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(30.dp))
                         }
                     }
                     Spacer(Modifier.height(6.dp))
@@ -203,12 +203,12 @@ private fun ProfileNavItem(
             HorizontalDivider(color = colors.outlineVariant)
             DropdownMenuItem(
                 text = { Text("Settings") },
-                leadingIcon = { Icon(Icons.TwoTone.Settings, contentDescription = null, tint = colors.primary) },
+                leadingIcon = { Icon(Icons.Outlined.Settings, contentDescription = null, tint = colors.primary) },
                 onClick = onSettings
             )
             DropdownMenuItem(
                 text = { Text("Sign out", color = colors.error) },
-                leadingIcon = { Icon(Icons.TwoTone.Logout, contentDescription = null, tint = colors.error) },
+                leadingIcon = { Icon(Icons.Outlined.Logout, contentDescription = null, tint = colors.error) },
                 onClick = onSignOut
             )
         }
@@ -226,11 +226,11 @@ private fun PreviewNavItem(screen: Screen, selected: Boolean, modifier: Modifier
         else -> screen.title
     }
     val icon = when (screen) {
-        Screen.HOME -> Icons.TwoTone.Home
-        Screen.DETAILS -> Icons.TwoTone.CalendarMonth
-        Screen.HISTORY -> Icons.TwoTone.History
-        Screen.ACCOUNTS -> Icons.TwoTone.Person
-        else -> Icons.TwoTone.Person
+        Screen.HOME -> Icons.Outlined.Home
+        Screen.DETAILS -> Icons.Outlined.CalendarMonth
+        Screen.HISTORY -> Icons.Outlined.History
+        Screen.ACCOUNTS -> Icons.Outlined.Person
+        else -> Icons.Outlined.Person
     }
     Column(
         modifier.fillMaxHeight().clip(MaterialTheme.shapes.large)
@@ -262,9 +262,9 @@ internal fun PreviewToolsSheet(available: Set<Screen>, current: Screen, onDismis
             .padding(start = 20.dp, end = 20.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Schedule tools", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = colors.onSurface)
             listOf(
-                Triple(Screen.ASSIGNMENTS, Icons.TwoTone.Assignment, "Choose who will handle each part"),
-                Triple(Screen.PREVIEW, Icons.TwoTone.Preview, "Review and share the meeting schedule"),
-                Triple(Screen.PARTICIPANTS, Icons.TwoTone.Groups, "View your congregation participants")
+                Triple(Screen.ASSIGNMENTS, Icons.Outlined.Assignment, "Choose who will handle each part"),
+                Triple(Screen.PREVIEW, Icons.Outlined.Preview, "Review and share the meeting schedule"),
+                Triple(Screen.PARTICIPANTS, Icons.Outlined.Groups, "View your congregation participants")
             ).filter { it.first in available }.forEach { (screen, icon, description) ->
                 Surface(onClick = { onSelect(screen) }, shape = RoundedCornerShape(18.dp),
                     color = if (current == screen) colors.primaryContainer else colors.surfaceContainerHigh) {
@@ -275,7 +275,7 @@ internal fun PreviewToolsSheet(available: Set<Screen>, current: Screen, onDismis
                             Text(screen.title, fontWeight = FontWeight.SemiBold, color = colors.onSurface)
                             Text(description, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                         }
-                        Icon(Icons.TwoTone.ArrowForward, contentDescription = null,
+                        Icon(Icons.Outlined.ArrowForward, contentDescription = null,
                             tint = colors.primary, modifier = Modifier.size(18.dp))
                     }
                 }

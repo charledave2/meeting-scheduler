@@ -1,15 +1,15 @@
 package com.example.meetingscheduler
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Fingerprint
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.twotone.Fingerprint
-import androidx.compose.material.icons.twotone.Lock
-import androidx.compose.material.icons.twotone.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -29,7 +29,7 @@ internal fun BiometricLockPreference(lock: AppLockController) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Icon(Icons.TwoTone.Fingerprint, contentDescription = null,
+                Icon(Icons.Outlined.Fingerprint, contentDescription = null,
                     tint = colors.primary, modifier = Modifier.size(20.dp))
                 Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
                     Text("Biometric lock", fontSize = 13.sp, fontWeight = FontWeight.Medium,
@@ -44,7 +44,7 @@ internal fun BiometricLockPreference(lock: AppLockController) {
         lock.error?.let {
             Text(it, fontSize = 11.sp, color = colors.error)
             TextButton(onClick = { lock.openSecuritySettings() }) {
-                Icon(Icons.TwoTone.Settings, null, Modifier.size(16.dp))
+                Icon(Icons.Outlined.Settings, null, Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Security settings", fontSize = 12.sp)
             }
@@ -69,7 +69,7 @@ internal fun AppLockScreen(lock: AppLockController) {
                 Text("JW Meeting Scheduler", fontSize = 22.sp, lineHeight = 28.sp,
                     fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, color = colors.onSurface)
                 Surface(shape = RoundedCornerShape(18.dp), color = colors.primaryContainer) {
-                    Icon(Icons.TwoTone.Lock, contentDescription = null,
+                    Icon(Icons.Outlined.Lock, contentDescription = null,
                         tint = colors.primary, modifier = Modifier.padding(16.dp).size(28.dp))
                 }
                 Text("Your workspace is locked", textAlign = TextAlign.Center,
@@ -84,12 +84,12 @@ internal fun AppLockScreen(lock: AppLockController) {
                     if (lock.state.attempt != null) {
                         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp,
                             color = colors.onPrimary)
-                    } else Icon(Icons.TwoTone.Fingerprint, contentDescription = null, modifier = Modifier.size(20.dp))
+                    } else Icon(Icons.Outlined.Fingerprint, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(if (lock.state.attempt != null) "Authenticating…" else "Unlock")
                 }
                 if (lock.error != null) TextButton(onClick = { lock.openSecuritySettings() }) {
-                    Icon(Icons.TwoTone.Settings, null, Modifier.size(18.dp))
+                    Icon(Icons.Outlined.Settings, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("Android security settings")
                 }

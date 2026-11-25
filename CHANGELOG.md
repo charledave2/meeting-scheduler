@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.45.39 — 2026-11-25
+
+- Replace two-tone Material icons across the Android app with a unified rounded, green line-icon style inspired by Sprout.
+
 ## v0.45.38 — 2026-11-25
 
 - Add an About this App page with app version, changelog, contributor and developer links, repository link, privacy notes, and accurate license information.
