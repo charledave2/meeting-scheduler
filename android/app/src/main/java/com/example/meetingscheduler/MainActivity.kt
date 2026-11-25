@@ -68,6 +68,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.twotone.Check
 import androidx.compose.material.icons.outlined.DateRange
@@ -3902,12 +3903,15 @@ private fun AccountsScreen(
     onAction: (RemoteAccount, String, String, String) -> Unit,
     onUpdateToolAccess: (RemoteAccount, Map<String, String>) -> Unit
 ) {
+    val context = LocalContext.current
     var selectedAccount by remember { mutableStateOf<RemoteAccount?>(null) }
     var actionTarget by remember { mutableStateOf<RemoteAccount?>(null) }
     var selectedAction by remember { mutableStateOf("") }
     var temporaryPassword by remember { mutableStateOf("") }
     var selectedRole by remember { mutableStateOf("viewer") }
     var editProfileNameOpen by remember { mutableStateOf(false) }
+    var aboutOpen by rememberSaveable { mutableStateOf(false) }
+    var licenseInfoOpen by remember { mutableStateOf(false) }
     var profileNameDraft by rememberSaveable(profileName) { mutableStateOf(profileName) }
     val filtered = accounts.sortedWith(compareBy<RemoteAccount>({ if (it.role == "admin") 0 else 1 }, { when (it.status) { "requested" -> 0; "active" -> 1; else -> 2 } }, { it.displayName.lowercase() }))
     fun beginAction(account: RemoteAccount, action: String) {
@@ -4121,6 +4125,10 @@ private fun AccountsScreen(
                     }
             }
             }
+        }
+        M3Card {
+            Text("App", style = MaterialTheme.typography.titleMedium)
+            AboutRow("About this App", "Version, changelog, links and privacy", Icons.TwoTone.Description) { aboutOpen = true }
         }
     }
     if (editProfileNameOpen) AlertDialog(
@@ -4353,8 +4361,124 @@ private fun AccountsScreen(
             dismissButton = { TextButton(onClick = { actionTarget = null }) { Text("Cancel", color = Forest) } }
         )
     }
+    if (aboutOpen) AboutThisAppDialog(
+        onDismiss = { aboutOpen = false },
+        onOpenLink = { url ->
+            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                .onFailure { Toast.makeText(context, "Walang app na mabubuksan ang link.", Toast.LENGTH_SHORT).show() }
+        },
+        onLicenseClick = { licenseInfoOpen = true }
+    )
+    if (licenseInfoOpen) AlertDialog(
+        onDismissRequest = { licenseInfoOpen = false },
+        title = { Text("License information") },
+        text = { Text("Walang app-level LICENSE file sa repository sa ngayon, kaya hindi nakatalaga rito ang isang open-source license.") },
+        confirmButton = { TextButton(onClick = { licenseInfoOpen = false }) { Text("Okay", color = Forest) } },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    )
 }
 
+
+
+@Composable
+private fun AboutRow(
+    title: String,
+    description: String,
+    icon: ImageVector,
+    onClick: () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(icon, contentDescription = null, tint = Forest, modifier = Modifier.size(23.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+            Text(description, style = MaterialTheme.typography.bodySmall, color = Muted)
+        }
+        Icon(Icons.TwoTone.ArrowForward, contentDescription = null, tint = Muted, modifier = Modifier.size(20.dp))
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AboutThisAppDialog(
+    onDismiss: () -> Unit,
+    onOpenLink: (String) -> Unit,
+    onLicenseClick: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(Modifier.fillMaxSize(), color = AppSurface) {
+            Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+                TopAppBar(
+                    title = { Text("About this App") },
+                    navigationIcon = {
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Ink)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = AppSurface)
+                )
+                Column(
+                    Modifier.weight(1f).verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Surface(
+                        Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Column(
+                            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 28.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            MeetingSchedulerBrandIcon(Modifier.size(58.dp), "JW Meeting Scheduler")
+                            Text("JW Meeting Scheduler", style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                            Text("Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        }
+                    }
+                    M3Card {
+                        Text("App", style = MaterialTheme.typography.titleMedium)
+                        AboutRow("Changelog", "Full version history", Icons.TwoTone.History) {
+                            onOpenLink("https://github.com/charledave2/meeting-scheduler/blob/main/CHANGELOG.md")
+                        }
+                        AboutRow("Contributors", "Everyone who helped build this app", Icons.TwoTone.Groups) {
+                            onOpenLink("https://github.com/charledave2/meeting-scheduler/graphs/contributors")
+                        }
+                    }
+                    M3Card {
+                        Text("Links", style = MaterialTheme.typography.titleMedium)
+                        AboutRow("GitHub Repository", "Source code, issues and documentation", Icons.TwoTone.Description) {
+                            onOpenLink("https://github.com/charledave2/meeting-scheduler")
+                        }
+                        AboutRow("Developer", "GitHub Profile: @charledave2", Icons.TwoTone.Person) {
+                            onOpenLink("https://github.com/charledave2")
+                        }
+                        AboutRow("License", "License information", Icons.TwoTone.Lock, onLicenseClick)
+                    }
+                    M3Card {
+                        Text("Privacy", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "The app uses its connected cloud service to sync account, profile, participant and meeting schedule data with authorized users. Theme and font preferences are stored on this device. If notifications are enabled, Firebase Cloud Messaging is used to deliver assignment alerts. The app contains no ads or analytics SDK.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Muted,
+                            lineHeight = 22.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun AccountPhotoAvatar(account: RemoteAccount, size: androidx.compose.ui.unit.Dp) {
