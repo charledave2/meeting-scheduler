@@ -45,6 +45,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.fadeIn
@@ -2652,10 +2653,21 @@ private fun HomeScreen(
                                 maxLines = 1
                             )
                         }
-                        Image(
-                            painter = painterResource(R.drawable.meeting_otter_mascot),
-                            contentDescription = "Tap the otter mascot for a meeting tip",
-                            contentScale = ContentScale.Fit,
+                        AnimatedContent(
+                            targetState = mascotTipVisible,
+                            transitionSpec = {
+                                (fadeIn(animationSpec = tween(220)) +
+                                    scaleIn(
+                                        initialScale = 0.92f,
+                                        animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                    )) togetherWith
+                                    (fadeOut(animationSpec = tween(150)) +
+                                        scaleOut(
+                                            targetScale = 0.96f,
+                                            animationSpec = tween(150, easing = FastOutSlowInEasing)
+                                        ))
+                            },
+                            label = "otter tap reaction",
                             modifier = Modifier
                                 .size(76.dp)
                                 .offset(y = mascotBob.dp)
@@ -2664,7 +2676,17 @@ private fun HomeScreen(
                                     role = Role.Button,
                                     onClickLabel = if (mascotTipVisible) "Hide meeting tip" else "Show meeting tip"
                                 ) { mascotTipVisible = !mascotTipVisible }
-                        )
+                        ) { isWaving ->
+                            Image(
+                                painter = painterResource(
+                                    if (isWaving) R.drawable.meeting_otter_mascot_wave
+                                    else R.drawable.meeting_otter_mascot
+                                ),
+                                contentDescription = if (isWaving) "Otter mascot waving" else "Tap the otter mascot for a meeting tip",
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
                     AnimatedVisibility(
                         visible = mascotTipVisible,
