@@ -2582,7 +2582,18 @@ private fun HomeScreen(
         "May susunod kang meeting sa ${it.format(DateTimeFormatter.ofPattern("MMM d", Locale.ENGLISH))}. I-tap ang card para makita ang schedule."
     } ?: "Wala pang paparating na meeting. Lalabas dito ang susunod mong schedule."
     PageColumn(modifier) {
-        PageHeading("JW Meeting Manager")
+        Row(
+            Modifier.fillMaxWidth().offset(y = (-4).dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "JW Meeting Manager",
+                style = MaterialTheme.typography.headlineSmall.copy(fontSize = 30.sp),
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
         val greetingShape = RoundedCornerShape(26.dp)
         val abstractAccent = MaterialTheme.colorScheme.onPrimaryContainer
         Card(shape = greetingShape, colors = CardDefaults.cardColors(containerColor = ForestContainer)) {

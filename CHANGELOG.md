@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.46 — 2026-11-25
+
+- Raise the Home brand heading slightly and increase it to 30sp semibold using the app's bundled Google Sans font.
+
+
 ## v0.45.45 — 2026-11-25
 
 - Remove the redundant Home heading and emphasize JW Meeting Manager as the single Home page title.
