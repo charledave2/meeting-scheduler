@@ -140,13 +140,16 @@ private fun fitScheduleWebView(
     targetHeightPx: Int,
     density: Float,
     onReady: () -> Unit,
-    onFailure: () -> Unit
+    onFailure: () -> Unit,
+    isActive: () -> Boolean = { true }
 ) {
     var widthExpanded = false
     var layoutWidthCss = SCHEDULE_EXPORT_CSS_WIDTH.toFloat()
     fun measureContent(attempt: Int) {
+        if (!isActive()) return
         val measureScript = "(document.fonts && document.fonts.status === 'loading') ? -1 : document.body.scrollHeight"
         view.evaluateJavascript(measureScript) { rawHeight ->
+            if (!isActive()) return@evaluateJavascript
             val contentHeight = rawHeight?.trim()?.toFloatOrNull() ?: -1f
             if (contentHeight <= 0f) {
                 if (attempt < 30) view.postDelayed({ measureContent(attempt + 1) }, 100L) else onFailure()
@@ -170,8 +173,11 @@ private fun fitScheduleWebView(
             val heightScale = targetHeightPx / (contentHeight * density)
             val fitScale = minOf(widthScale, heightScale).coerceAtLeast(0.01f)
             view.evaluateJavascript("document.body.style.zoom='$fitScale'; true") {
+                if (!isActive()) return@evaluateJavascript
                 view.postVisualStateCallback(System.nanoTime(), object : WebView.VisualStateCallback() {
-                    override fun onComplete(requestId: Long) { view.postDelayed(onReady, 100L) }
+                    override fun onComplete(requestId: Long) {
+                        if (isActive()) view.postDelayed({ if (isActive()) onReady() }, 100L)
+                    }
                 })
             }
         }
@@ -1019,6 +1025,10 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
     var toastMessage by remember { mutableStateOf<String?>(null) }
     var shareSuccessType by rememberSaveable { mutableStateOf<String?>(null) }
     var exportBusyType by remember { mutableStateOf<String?>(null) }
+    var cancelSchedulePng by remember { mutableStateOf<(() -> Unit)?>(null) }
+    DisposableEffect(current) {
+        onDispose { cancelSchedulePng?.invoke() }
+    }
     val shareLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         val prefs = context.getSharedPreferences(SHARE_RESULT_PREFS, Context.MODE_PRIVATE)
         val pending = prefs.getString("pending_type", null)
@@ -1359,54 +1369,103 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
             return
         }
         val renderer = WebView(context)
+        val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        var active = true
+        var rendererAttached = true
+        var captureStarted = false
+        fun removeRenderer() {
+            if (!rendererAttached) return
+            rendererAttached = false
+            (renderer.parent as? android.view.ViewGroup)?.removeView(renderer)
+            renderer.stopLoading()
+            renderer.destroy()
+        }
+        fun finishExport() {
+            active = false
+            removeRenderer()
+            cancelSchedulePng = null
+            exportBusyType = null
+        }
+        fun failExport(message: String) {
+            finishExport()
+            toastMessage = message
+        }
+        val timeout = Runnable {
+            if (active && !captureStarted) {
+                failExport("Hindi natapos ang pagbuo ng PNG. Suriin ang preview at subukan muli.")
+            }
+        }
+        cancelSchedulePng = {
+            mainHandler.removeCallbacks(timeout)
+            finishExport()
+        }
         renderer.visibility = View.INVISIBLE
         activityRoot.addView(renderer, android.widget.FrameLayout.LayoutParams(outputWidth, outputHeight))
-        var captureStarted = false
-        fun removeRenderer(view: WebView) {
-            (view.parent as? android.view.ViewGroup)?.removeView(view)
-            runCatching { view.stopLoading(); view.destroy() }
-        }
+
         fun captureRenderedSchedule(view: WebView) {
-            if (captureStarted) return
+            if (!active || captureStarted) return
             captureStarted = true
-            try {
+            mainHandler.removeCallbacks(timeout)
+            val bitmap = try {
                 view.measure(
                     View.MeasureSpec.makeMeasureSpec(outputWidth, View.MeasureSpec.EXACTLY),
                     View.MeasureSpec.makeMeasureSpec(outputHeight, View.MeasureSpec.EXACTLY)
                 )
                 view.layout(0, 0, outputWidth, outputHeight)
-                val bitmap = Bitmap.createBitmap(outputWidth, outputHeight, Bitmap.Config.ARGB_8888)
-                bitmap.density = SCHEDULE_EXPORT_DPI
-                view.visibility = View.VISIBLE
-                view.draw(Canvas(bitmap))
-                view.visibility = View.INVISIBLE
-                removeRenderer(view)
-                val file = File(File(context.cacheDir, "exports").apply { mkdirs() }, "meeting-schedule.png")
-                Thread {
-                    val saved = runCatching {
-                        FileOutputStream(file).use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
-                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
-                        val intent = Intent(Intent.ACTION_SEND).apply {
+                Bitmap.createBitmap(outputWidth, outputHeight, Bitmap.Config.ARGB_8888).also { image ->
+                    try {
+                        image.density = SCHEDULE_EXPORT_DPI
+                        view.visibility = View.VISIBLE
+                        view.draw(Canvas(image))
+                    } catch (error: Throwable) {
+                        image.recycle()
+                        throw error
+                    }
+                }
+            } catch (error: Exception) {
+                failExport("Hindi mabuo ang export image: ${error.message ?: "subukan muli"}")
+                return
+            } catch (_: OutOfMemoryError) {
+                failExport("Kulang ang memory para mabuo ang PNG. Subukan muli.")
+                return
+            }
+            removeRenderer()
+            Thread {
+                var file: File? = null
+                val saved = try {
+                    runCatching {
+                        val directory = File(context.cacheDir, "exports").apply { mkdirs() }
+                        val output = File.createTempFile("meeting-schedule-", ".png", directory)
+                        file = output
+                        FileOutputStream(output).use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", output)
+                        Intent(Intent.ACTION_SEND).apply {
                             type = "image/png"
                             putExtra(Intent.EXTRA_STREAM, uri)
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             clipData = android.content.ClipData.newUri(context.contentResolver, "Meeting schedule PNG", uri)
                         }
-                        intent
                     }
+                } finally {
                     bitmap.recycle()
-                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                }
+                mainHandler.post {
+                    if (!active || current != Screen.PREVIEW) {
+                        file?.delete()
+                        if (active) finishExport()
+                    } else {
+                        finishExport()
                         saved.onSuccess { intent -> launchScheduleShare(intent, "png", "Share schedule image") }
-                            .onFailure { exportBusyType = null; toastMessage = "Hindi mabuo ang export image: ${it.message ?: "subukan muli"}" }
+                            .onFailure {
+                                file?.delete()
+                                toastMessage = "Hindi mabuo ang export image: ${it.message ?: "subukan muli"}"
+                            }
                     }
-                }.start()
-            } catch (error: Exception) {
-                removeRenderer(view)
-                exportBusyType = null
-                toastMessage = "Hindi mabuo ang export image: ${error.message ?: "subukan muli"}"
-            }
+                }
+            }.start()
         }
         renderer.apply {
+            settings.textZoom = 100
             setBackgroundColor(android.graphics.Color.WHITE)
             settings.javaScriptEnabled = true
             settings.allowFileAccess = false
@@ -1428,13 +1487,12 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
                         density = density,
                         onReady = { captureRenderedSchedule(view) },
                         onFailure = {
-                            if (!captureStarted) {
-                                captureStarted = true
-                                removeRenderer(view)
-                                exportBusyType = null
-                                toastMessage = "Hindi masukat ang buong schedule para sa PNG. Subukan muli."
+                            if (active && !captureStarted) {
+                                mainHandler.removeCallbacks(timeout)
+                                failExport("Hindi masukat ang buong schedule para sa PNG. Subukan muli.")
                             }
-                        }
+                        },
+                        isActive = { active && !captureStarted && current == Screen.PREVIEW }
                     )
                 }
             }
@@ -1444,14 +1502,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
             )
             layout(0, 0, outputWidth, outputHeight)
             loadDataWithBaseURL("file:///android_asset/", exportHtml, "text/html", "UTF-8", null)
-            postDelayed({
-                if (!captureStarted) {
-                    captureStarted = true
-                    removeRenderer(this)
-                    exportBusyType = null
-                    toastMessage = "Hindi natapos ang pagbuo ng PNG. Suriin ang preview at subukan muli."
-                }
-            }, 12_000L)
+            mainHandler.postDelayed(timeout, 12_000L)
         }
     }
     fun openSaved(item: SavedSchedule) {
