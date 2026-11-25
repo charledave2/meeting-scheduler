@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.45.40 — 2026-11-25
+
+- Replace generic Material icons with a consistent Phosphor Regular icon family throughout the Android app, using palette-aware tinting and rounded line forms inspired by Sprout.
+- Include the Phosphor MIT license notice with the Android app source.
+
+
 ## v0.45.39 — 2026-11-25
 
 - Replace two-tone Material icons across the Android app with a unified rounded, green line-icon style inspired by Sprout.

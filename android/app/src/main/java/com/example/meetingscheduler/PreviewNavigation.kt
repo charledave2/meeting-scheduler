@@ -1,17 +1,5 @@
 package com.example.meetingscheduler
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.ArrowForward
-import androidx.compose.material.icons.outlined.Assignment
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Logout
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.Preview
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -104,7 +92,7 @@ internal fun PreviewBottomNavigation(
                         shadowElevation = 6.dp, border = BorderStroke(4.dp, colors.primaryContainer)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(30.dp))
+                            Icon(SproutIcons.Add, contentDescription = null, modifier = Modifier.size(30.dp))
                         }
                     }
                     Spacer(Modifier.height(6.dp))
@@ -203,12 +191,12 @@ private fun ProfileNavItem(
             HorizontalDivider(color = colors.outlineVariant)
             DropdownMenuItem(
                 text = { Text("Settings") },
-                leadingIcon = { Icon(Icons.Outlined.Settings, contentDescription = null, tint = colors.primary) },
+                leadingIcon = { Icon(SproutIcons.Settings, contentDescription = null, tint = colors.primary) },
                 onClick = onSettings
             )
             DropdownMenuItem(
                 text = { Text("Sign out", color = colors.error) },
-                leadingIcon = { Icon(Icons.Outlined.Logout, contentDescription = null, tint = colors.error) },
+                leadingIcon = { Icon(SproutIcons.Logout, contentDescription = null, tint = colors.error) },
                 onClick = onSignOut
             )
         }
@@ -226,11 +214,11 @@ private fun PreviewNavItem(screen: Screen, selected: Boolean, modifier: Modifier
         else -> screen.title
     }
     val icon = when (screen) {
-        Screen.HOME -> Icons.Outlined.Home
-        Screen.DETAILS -> Icons.Outlined.CalendarMonth
-        Screen.HISTORY -> Icons.Outlined.History
-        Screen.ACCOUNTS -> Icons.Outlined.Person
-        else -> Icons.Outlined.Person
+        Screen.HOME -> SproutIcons.Home
+        Screen.DETAILS -> SproutIcons.CalendarMonth
+        Screen.HISTORY -> SproutIcons.History
+        Screen.ACCOUNTS -> SproutIcons.Person
+        else -> SproutIcons.Person
     }
     Column(
         modifier.fillMaxHeight().clip(MaterialTheme.shapes.large)
@@ -262,9 +250,9 @@ internal fun PreviewToolsSheet(available: Set<Screen>, current: Screen, onDismis
             .padding(start = 20.dp, end = 20.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Schedule tools", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = colors.onSurface)
             listOf(
-                Triple(Screen.ASSIGNMENTS, Icons.Outlined.Assignment, "Choose who will handle each part"),
-                Triple(Screen.PREVIEW, Icons.Outlined.Preview, "Review and share the meeting schedule"),
-                Triple(Screen.PARTICIPANTS, Icons.Outlined.Groups, "View your congregation participants")
+                Triple(Screen.ASSIGNMENTS, SproutIcons.Assignment, "Choose who will handle each part"),
+                Triple(Screen.PREVIEW, SproutIcons.Preview, "Review and share the meeting schedule"),
+                Triple(Screen.PARTICIPANTS, SproutIcons.Groups, "View your congregation participants")
             ).filter { it.first in available }.forEach { (screen, icon, description) ->
                 Surface(onClick = { onSelect(screen) }, shape = RoundedCornerShape(18.dp),
                     color = if (current == screen) colors.primaryContainer else colors.surfaceContainerHigh) {
@@ -275,7 +263,7 @@ internal fun PreviewToolsSheet(available: Set<Screen>, current: Screen, onDismis
                             Text(screen.title, fontWeight = FontWeight.SemiBold, color = colors.onSurface)
                             Text(description, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                         }
-                        Icon(Icons.Outlined.ArrowForward, contentDescription = null,
+                        Icon(SproutIcons.ArrowForward, contentDescription = null,
                             tint = colors.primary, modifier = Modifier.size(18.dp))
                     }
                 }

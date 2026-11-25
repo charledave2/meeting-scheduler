@@ -1,45 +1,5 @@
 package com.example.meetingscheduler
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.AddAPhoto
-import androidx.compose.material.icons.outlined.AdminPanelSettings
-import androidx.compose.material.icons.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.ArrowDropDown
-import androidx.compose.material.icons.outlined.ArrowForward
-import androidx.compose.material.icons.outlined.Assignment
-import androidx.compose.material.icons.outlined.AutoStories
-import androidx.compose.material.icons.outlined.Block
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.CloudUpload
-import androidx.compose.material.icons.outlined.DarkMode
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.LightMode
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.ManageAccounts
-import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.NotificationsActive
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.PersonAdd
-import androidx.compose.material.icons.outlined.Preview
-import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material.icons.outlined.Sort
-import androidx.compose.material.icons.outlined.SystemUpdateAlt
-import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material.icons.outlined.Warning
 import android.Manifest
 
 import android.content.Context
@@ -732,7 +692,7 @@ private fun AppUpdatePrompt() {
             icon = {
                 Surface(shape = CircleShape, color = ForestContainer, modifier = Modifier.size(52.dp)) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Outlined.SystemUpdateAlt, contentDescription = null, tint = Forest, modifier = Modifier.size(29.dp))
+                        Icon(SproutIcons.SystemUpdateAlt, contentDescription = null, tint = Forest, modifier = Modifier.size(29.dp))
                     }
                 }
             },
@@ -803,7 +763,7 @@ private fun AppUpdatePrompt() {
                     },
                     colors = ButtonDefaults.buttonColors()
                 ) {
-                    Icon(Icons.Outlined.SystemUpdateAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(SproutIcons.SystemUpdateAlt, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(
                         when {
@@ -2075,7 +2035,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
                         Text(homePreviewWeek.orEmpty(), modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         IconButton(onClick = ::closeHomePreview) {
-                            Icon(Icons.Outlined.Close, contentDescription = "Close preview")
+                            Icon(SproutIcons.Close, contentDescription = "Close preview")
                         }
                     }
                     Surface(
@@ -2156,7 +2116,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
     shareSuccessType?.let { type ->
         AlertDialog(
             onDismissRequest = { shareSuccessType = null },
-            icon = { Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Forest, modifier = Modifier.size(28.dp)) },
+            icon = { Icon(SproutIcons.CheckCircle, contentDescription = null, tint = Forest, modifier = Modifier.size(28.dp)) },
             title = { Text("Matagumpay ang pag-share", fontWeight = FontWeight.Bold) },
             text = { Text(when (type) { "png" -> "Naibahagi ang schedule PNG."; "slips_image" -> "Naibahagi ang assignment slip images."; else -> "Naibahagi ang schedule text." }) },
             confirmButton = { TextButton(onClick = { shareSuccessType = null }) { Text("Okay", color = Forest) } },
@@ -2170,7 +2130,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
         Dialog(onDismissRequest = { accessNotice = null }) {
             Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(24.dp)) {
                 Row(Modifier.padding(horizontal = 22.dp, vertical = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
-                    Icon(if (warning) Icons.Outlined.Warning else Icons.Outlined.ErrorOutline, contentDescription = null, tint = Color(0xFFBA1A1A), modifier = Modifier.size(30.dp))
+                    Icon(if (warning) SproutIcons.Warning else SproutIcons.ErrorOutline, contentDescription = null, tint = Color(0xFFBA1A1A), modifier = Modifier.size(30.dp))
                     Text(message, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, lineHeight = 19.sp)
                 }
             }
@@ -2270,7 +2230,7 @@ private fun MeetingSplashScreen() {
                         shadowElevation = 6.dp
                     ) {
                         Box(Modifier.size(if (compact) 34.dp else 40.dp), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Outlined.CheckCircle, contentDescription = null,
+                            Icon(SproutIcons.CheckCircle, contentDescription = null,
                                 tint = colors.onPrimaryContainer, modifier = Modifier.size(if (compact) 22.dp else 26.dp))
                         }
                     }
@@ -2379,7 +2339,7 @@ private fun LoginScreen(
                                 username,
                                 { username = it },
                                 label = { Text("Username") },
-                                leadingIcon = { Icon(Icons.Outlined.Person, contentDescription = null, tint = Forest) },
+                                leadingIcon = { Icon(SproutIcons.Person, contentDescription = null, tint = Forest) },
                                 singleLine = true,
                                 shape = RoundedCornerShape(16.dp),
                                 modifier = Modifier.fillMaxWidth()
@@ -2388,13 +2348,13 @@ private fun LoginScreen(
                                 password,
                                 { password = it },
                                 label = { Text("Password") },
-                                leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null, tint = Forest) },
+                                leadingIcon = { Icon(SproutIcons.Lock, contentDescription = null, tint = Forest) },
                                 singleLine = true,
                                 shape = RoundedCornerShape(16.dp),
                                 visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                                 trailingIcon = {
                                     IconButton(onClick = { showPassword = !showPassword }) {
-                                        Icon(if (showPassword) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, contentDescription = if (showPassword) "Hide password" else "Show password", tint = Forest)
+                                        Icon(if (showPassword) SproutIcons.VisibilityOff else SproutIcons.Visibility, contentDescription = if (showPassword) "Hide password" else "Show password", tint = Forest)
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth()
@@ -2414,7 +2374,7 @@ private fun LoginScreen(
                                 Text(if (busy) "Signing in…" else "Sign in", fontWeight = FontWeight.SemiBold)
                                 Spacer(Modifier.width(8.dp))
                                 if (busy) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-                                else Icon(Icons.Outlined.ArrowForward, contentDescription = null, modifier = Modifier.size(19.dp))
+                                else Icon(SproutIcons.ArrowForward, contentDescription = null, modifier = Modifier.size(19.dp))
                             }
                             HorizontalDivider(Modifier.padding(vertical = 2.dp), color = MaterialTheme.colorScheme.outlineVariant)
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
@@ -2439,7 +2399,7 @@ private fun LoginScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("You’re using a temporary password. Choose a new password to continue.", color = Muted, fontSize = 12.sp)
                     OutlinedTextField(currentTemporaryPassword, { currentTemporaryPassword = it; changePasswordError = null }, label = { Text("Temporary password") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(newPassword, { newPassword = it; changePasswordError = null }, label = { Text("New password") }, singleLine = true, visualTransformation = if (showNewPassword) VisualTransformation.None else PasswordVisualTransformation(), trailingIcon = { IconButton(onClick = { showNewPassword = !showNewPassword }) { Icon(if (showNewPassword) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, contentDescription = "Toggle password visibility", tint = Forest) } }, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(newPassword, { newPassword = it; changePasswordError = null }, label = { Text("New password") }, singleLine = true, visualTransformation = if (showNewPassword) VisualTransformation.None else PasswordVisualTransformation(), trailingIcon = { IconButton(onClick = { showNewPassword = !showNewPassword }) { Icon(if (showNewPassword) SproutIcons.VisibilityOff else SproutIcons.Visibility, contentDescription = "Toggle password visibility", tint = Forest) } }, shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(confirmNewPassword, { confirmNewPassword = it; changePasswordError = null }, label = { Text("Confirm new password") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), shape = RoundedCornerShape(15.dp), modifier = Modifier.fillMaxWidth())
                     (changePasswordError ?: error)?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
                     if (newPassword.isNotBlank() && newPassword.length < 10) Text("Use at least 10 characters.", color = Muted, fontSize = 11.sp)
@@ -2495,7 +2455,7 @@ private fun LoginScreen(
         Dialog(onDismissRequest = { requestSuccess = false }) {
             Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
                 Row(Modifier.padding(horizontal = 22.dp, vertical = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Icon(Icons.Outlined.CheckCircle, contentDescription = "Success", tint = Forest, modifier = Modifier.size(28.dp))
+                    Icon(SproutIcons.CheckCircle, contentDescription = "Success", tint = Forest, modifier = Modifier.size(28.dp))
                     Text("Request sent. Waiting for administrator approval.", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 }
             }
@@ -2646,7 +2606,7 @@ private fun HomeScreen(
                 }
                 Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(52.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f), RoundedCornerShape(17.dp)), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Outlined.Home, contentDescription = null, tint = Forest, modifier = Modifier.size(27.dp))
+                        Icon(SproutIcons.Home, contentDescription = null, tint = Forest, modifier = Modifier.size(27.dp))
                     }
                     Spacer(Modifier.width(14.dp))
                     Column {
@@ -2662,7 +2622,7 @@ private fun HomeScreen(
                 Text("Upcoming Meetings", fontSize = 21.sp, fontWeight = FontWeight.Bold)
                 Text("Tap a meeting to preview its official schedule.", color = Muted, fontSize = 12.sp)
             }
-            IconButton(onClick = onRefresh) { Icon(Icons.Outlined.Refresh, contentDescription = "Refresh upcoming meetings", tint = Forest) }
+            IconButton(onClick = onRefresh) { Icon(SproutIcons.Refresh, contentDescription = "Refresh upcoming meetings", tint = Forest) }
         }
         when {
             loading && upcoming.isEmpty() -> Surface(color = SurfaceContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
@@ -2673,18 +2633,18 @@ private fun HomeScreen(
             }
             error != null && upcoming.isEmpty() -> Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(Icons.Outlined.ErrorOutline, contentDescription = "Schedule unavailable", tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(22.dp))
+                    Icon(SproutIcons.ErrorOutline, contentDescription = "Schedule unavailable", tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(22.dp))
                     Text(error, color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 12.sp, modifier = Modifier.weight(1f))
                     TextButton(onClick = onRefresh) { Text("Retry", color = MaterialTheme.colorScheme.onErrorContainer) }
                 }
             }
             upcoming.isEmpty() -> Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = SurfaceContainer)) {
                 Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(Icons.Outlined.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(30.dp))
+                    Icon(SproutIcons.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(30.dp))
                     Text("No upcoming saved meetings", fontWeight = FontWeight.SemiBold)
                     Text("Create a workbook and save the schedule to the cloud to see it here.", color = Muted, fontSize = 12.sp)
                     if (canCreateSchedule) FilledTonalButton(onClick = onCreateSchedule, shape = MaterialTheme.shapes.medium) {
-                        Icon(Icons.Outlined.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(SproutIcons.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(7.dp)); Text("Open Workbook")
                     }
                 }
@@ -2704,14 +2664,14 @@ private fun HomeScreen(
                 ) {
                     Row(Modifier.fillMaxWidth().padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(46.dp).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.68f), RoundedCornerShape(15.dp)), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Outlined.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(24.dp))
+                            Icon(SproutIcons.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(24.dp))
                         }
                         Column(Modifier.weight(1f).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text("NEXT MEETING", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
                             Text(nextSchedule.weekLabel, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
                             Text("${nextSchedule.reading} · ${nextDate.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH))}", color = Muted, fontSize = 12.sp, maxLines = 1)
                         }
-                        Icon(Icons.Outlined.Preview, contentDescription = "Preview next meeting schedule", tint = Forest)
+                        Icon(SproutIcons.Preview, contentDescription = "Preview next meeting schedule", tint = Forest)
                     }
                 }
                 if (upcoming.size > 1) Text("MORE UPCOMING", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(top = 2.dp))
@@ -2724,14 +2684,14 @@ private fun HomeScreen(
                 ) {
                     Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(44.dp).background(ForestContainer, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Outlined.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(23.dp))
+                            Icon(SproutIcons.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(23.dp))
                         }
                         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                             Text(remote.weekLabel, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                             Text(remote.reading, color = Muted, fontSize = 12.sp)
                             Text(date.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH)), color = Forest, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
-                        Icon(Icons.Outlined.Preview, contentDescription = "Preview schedule", tint = Forest)
+                        Icon(SproutIcons.Preview, contentDescription = "Preview schedule", tint = Forest)
                     }
                 }
             }
@@ -2746,7 +2706,7 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
         PageHeading("Workbook", "Select a week to load its meeting program.")
         M3Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(38.dp).background(ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp)) }
+                Box(Modifier.size(38.dp).background(ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) { Icon(SproutIcons.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp)) }
                 Column(Modifier.weight(1f).padding(start = 11.dp)) {
                     Label("MEETING WEEK")
                     Text("Meeting details", style = MaterialTheme.typography.titleMedium)
@@ -2773,13 +2733,13 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
         M3Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(38.dp).background(if (fetchError) MaterialTheme.colorScheme.error.copy(alpha = .12f) else ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
-                    Icon(if (workbookBusy) Icons.Outlined.Refresh else if (workbookStatus.startsWith("✓")) Icons.Outlined.CheckCircle else Icons.Outlined.AutoStories, contentDescription = null, tint = if (fetchError) MaterialTheme.colorScheme.error else Forest, modifier = Modifier.size(22.dp))
+                    Icon(if (workbookBusy) SproutIcons.Refresh else if (workbookStatus.startsWith("✓")) SproutIcons.CheckCircle else SproutIcons.AutoStories, contentDescription = null, tint = if (fetchError) MaterialTheme.colorScheme.error else Forest, modifier = Modifier.size(22.dp))
                 }
                 Column(Modifier.weight(1f).padding(start = 11.dp)) {
                     Label("JW.ORG WORKBOOK")
                     Text("Weekly program", fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 }
-                IconButton(onClick = onImport, enabled = !workbookBusy && !readOnly, modifier = Modifier.size(48.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(Icons.Outlined.Refresh, contentDescription = "Refresh weekly program", tint = Forest, modifier = Modifier.size(23.dp)) }
+                IconButton(onClick = onImport, enabled = !workbookBusy && !readOnly, modifier = Modifier.size(48.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(SproutIcons.Refresh, contentDescription = "Refresh weekly program", tint = Forest, modifier = Modifier.size(23.dp)) }
             }
             if (workbookBusy) {
                 LinearProgressIndicator(
@@ -2815,7 +2775,7 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
         if (canContinueToAssignments) Button(onClick = onNext, enabled=canContinue, modifier=Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, colors=ButtonDefaults.buttonColors(containerColor=Forest), contentPadding=PaddingValues(vertical=15.dp)) {
             Text(if(workbookBusy) "Checking saved schedule…" else if(!canContinue) "Loading participants…" else "Continue to assignments")
             Spacer(Modifier.width(9.dp))
-            Icon(Icons.Outlined.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
+            Icon(SproutIcons.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
         }
     }
 }
@@ -2847,7 +2807,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, parti
             Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                     Icon(
-                        if (missingSlots.isEmpty()) Icons.Outlined.CheckCircle else Icons.Outlined.ErrorOutline,
+                        if (missingSlots.isEmpty()) SproutIcons.CheckCircle else SproutIcons.ErrorOutline,
                         contentDescription = null,
                         tint = if (missingSlots.isEmpty()) Forest else MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(21.dp)
@@ -2879,7 +2839,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, parti
                             Text("Still needed", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                             missingSlots.forEach { slot ->
                                 Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(15.dp).padding(top = 1.dp))
+                                    Icon(SproutIcons.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(15.dp).padding(top = 1.dp))
                                     Text(slot, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, lineHeight = 16.sp)
                                 }
                             }
@@ -2932,7 +2892,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, parti
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 13.dp)
             ) {
                 if (cloudSaveBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest)
-                else Icon(Icons.Outlined.CloudUpload, contentDescription = null, modifier = Modifier.size(20.dp))
+                else Icon(SproutIcons.CloudUpload, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(9.dp))
                 Text(if (cloudSaveBusy) "Saving to Cloud…" else "Save to Cloud", fontWeight = FontWeight.SemiBold)
             }
@@ -2947,7 +2907,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, parti
             cloudSaveFeedback?.let { (message, success) ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     Icon(
-                        if (success) Icons.Outlined.CheckCircle else Icons.Outlined.ErrorOutline,
+                        if (success) SproutIcons.CheckCircle else SproutIcons.ErrorOutline,
                         contentDescription = null,
                         tint = if (success) Forest else MaterialTheme.colorScheme.error,
                         modifier = Modifier.size(17.dp)
@@ -2965,7 +2925,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, parti
         ) {
             Text("Continue to Export", fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.width(9.dp))
-            Icon(Icons.Outlined.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
+            Icon(SproutIcons.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
         }
     }
 }
@@ -3106,7 +3066,7 @@ private fun SlotPicker(
                             Text("Choose one participant", color = Muted, style = MaterialTheme.typography.bodySmall)
                         }
                         IconButton(onClick = { expanded = false; searchQuery = "" }) {
-                            Icon(Icons.Outlined.Close, contentDescription = "Close participant picker", tint = Muted)
+                            Icon(SproutIcons.Close, contentDescription = "Close participant picker", tint = Muted)
                         }
                     }
                     OutlinedTextField(
@@ -3114,9 +3074,9 @@ private fun SlotPicker(
                         onValueChange = { searchQuery = it },
                         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                         placeholder = { Text(if (choices.isNotEmpty() && choices.all { it.isAppointedBrother() }) "Search qualified brother" else "Search by name") },
-                        leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, tint = Forest) },
+                        leadingIcon = { Icon(SproutIcons.Search, contentDescription = null, tint = Forest) },
                         trailingIcon = if (searchQuery.isNotBlank()) ({
-                            IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Outlined.Close, contentDescription = "Clear search") }
+                            IconButton(onClick = { searchQuery = "" }) { Icon(SproutIcons.Close, contentDescription = "Clear search") }
                         }) else null,
                         singleLine = true,
                         shape = MaterialTheme.shapes.medium
@@ -3128,9 +3088,9 @@ private fun SlotPicker(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Icon(Icons.Outlined.Close, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
+                        Icon(SproutIcons.Close, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
                         Text("Unassigned", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                        if (value.isBlank()) Icon(Icons.Outlined.Check, contentDescription = "Currently unassigned", tint = Forest, modifier = Modifier.size(18.dp))
+                        if (value.isBlank()) Icon(SproutIcons.Check, contentDescription = "Currently unassigned", tint = Forest, modifier = Modifier.size(18.dp))
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.48f))
                     if (unavailableMatches.isNotEmpty()) {
@@ -3183,7 +3143,7 @@ private fun SlotPicker(
                                             Text(it, color = statusColor, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         }
                                     }
-                                    if (participant.name.equals(value, ignoreCase = true)) Icon(Icons.Outlined.Check, contentDescription = "Currently selected", tint = Forest, modifier = Modifier.size(19.dp))
+                                    if (participant.name.equals(value, ignoreCase = true)) Icon(SproutIcons.Check, contentDescription = "Currently selected", tint = Forest, modifier = Modifier.size(19.dp))
                                 }
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.38f))
                             }
@@ -3237,7 +3197,7 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
                     shape = MaterialTheme.shapes.medium, contentPadding=PaddingValues(horizontal=10.dp)
                 ) {
                     if (exportBusyType == "png") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
-                    else Icon(Icons.Outlined.Share, contentDescription=null, modifier=Modifier.size(18.dp))
+                    else Icon(SproutIcons.Share, contentDescription=null, modifier=Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(if (exportBusyType == "png") "Preparing…" else "Share PNG",fontSize=14.sp)
                 }
@@ -3248,7 +3208,7 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
                     shape = MaterialTheme.shapes.medium, contentPadding=PaddingValues(horizontal=10.dp)
                 ) {
                     if (exportBusyType == "text") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
-                    else Icon(Icons.Outlined.Description, contentDescription=null, modifier=Modifier.size(18.dp))
+                    else Icon(SproutIcons.Description, contentDescription=null, modifier=Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(if (exportBusyType == "text") "Preparing…" else "Export text",fontSize=14.sp)
                 }
@@ -3263,7 +3223,7 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
             shape = MaterialTheme.shapes.medium
         ) {
             if (exportBusyType == "slips_image") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
-            else Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+            else Icon(SproutIcons.Share, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text(if (exportBusyType == "slips_image") "Preparing images…" else "Share assignment slip images", fontSize = 13.sp)
         }
@@ -3558,10 +3518,10 @@ private fun ParticipantsScreen(
         Column(page.fillMaxHeight().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             PageHeading("Participants") {
                 IconButton(onClick = onRefresh) {
-                    Icon(Icons.Outlined.Refresh, contentDescription = "Refresh participants", tint = Forest)
+                    Icon(SproutIcons.Refresh, contentDescription = "Refresh participants", tint = Forest)
                 }
                 if (canEdit) IconButton(onClick = { showAdd = true }) {
-                    Icon(Icons.Outlined.PersonAdd, contentDescription = "Add participant", tint = Forest)
+                    Icon(SproutIcons.PersonAdd, contentDescription = "Add participant", tint = Forest)
                 }
             }
             Text("${participants.size} participants · showing ${minOf(visibleCount, filtered.size)} of ${filtered.size} matches",color=Muted,fontSize=12.sp)
@@ -3571,7 +3531,7 @@ private fun ParticipantsScreen(
             }
             if (loadError != null) Surface(color=MaterialTheme.colorScheme.errorContainer,shape = MaterialTheme.shapes.medium,modifier=Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Outlined.ErrorOutline,contentDescription="Participant refresh failed",tint=MaterialTheme.colorScheme.onErrorContainer,modifier=Modifier.size(19.dp))
+                    Icon(SproutIcons.ErrorOutline,contentDescription="Participant refresh failed",tint=MaterialTheme.colorScheme.onErrorContainer,modifier=Modifier.size(19.dp))
                     Text((if (participants.isEmpty()) "Could not load participants. " else "Showing saved participants. ") + loadError,color=MaterialTheme.colorScheme.onErrorContainer,fontSize = 12.sp,modifier=Modifier.weight(1f))
                     TextButton(onClick=onRefresh,contentPadding=PaddingValues(horizontal=6.dp)){Text("Retry",color=MaterialTheme.colorScheme.onErrorContainer,fontSize = 12.sp)}
                 }
@@ -3580,7 +3540,7 @@ private fun ParticipantsScreen(
                 Column(Modifier.fillMaxSize().padding(14.dp)) {
                     Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(query,{query=it},placeholder={Text("Search participant")},singleLine=true,shape = MaterialTheme.shapes.medium,modifier=Modifier.weight(1f).heightIn(min=48.dp),textStyle=MaterialTheme.typography.bodyMedium)
-                        IconButton(onClick={showFilters=true},modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(Icons.Outlined.Sort,contentDescription="Filter and sort participants",tint=Forest,modifier=Modifier.size(22.dp))}
+                        IconButton(onClick={showFilters=true},modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(SproutIcons.Sort,contentDescription="Filter and sort participants",tint=Forest,modifier=Modifier.size(22.dp))}
                     }
                     LazyColumn(Modifier.weight(1f).fillMaxWidth(),contentPadding=PaddingValues(top=6.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
                         itemsIndexed(filtered.take(visibleCount),key={_,entry->if(entry.value.id>0)entry.value.id.toLong() else entry.index.toLong()}) { _,entry ->
@@ -3596,11 +3556,11 @@ private fun ParticipantsScreen(
                                         color=Muted,fontSize = 12.sp,maxLines=1
                                     )
                                 }
-                                if(canEdit) IconButton(onClick={beginEdit(p)},modifier=Modifier.size(48.dp)){Icon(Icons.Outlined.Edit,contentDescription="Edit participant",tint=Forest,modifier=Modifier.size(20.dp))}
+                                if(canEdit) IconButton(onClick={beginEdit(p)},modifier=Modifier.size(48.dp)){Icon(SproutIcons.Edit,contentDescription="Edit participant",tint=Forest,modifier=Modifier.size(20.dp))}
                                 if(isAdmin) {
                                     var menu by remember(p.id){mutableStateOf(false)}
                                     Box {
-                                        IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = "Participant actions") }
+                                        IconButton(onClick = { menu = true }) { Icon(SproutIcons.MoreVert, contentDescription = "Participant actions") }
                                         DropdownMenu(expanded=menu,onDismissRequest={menu=false},modifier=Modifier.background(AppSurface)) {
                                             DropdownMenuItem(text={Text(if(p.enabled) "Set inactive" else "Set active")},onClick={menu=false;onSetActive(p,!p.enabled)})
                                             DropdownMenuItem(text={Text("Delete permanently",color=MaterialTheme.colorScheme.error)},onClick={menu=false;deleteTarget=p})
@@ -3618,7 +3578,7 @@ private fun ParticipantsScreen(
                         if (filtered.size > visibleCount) item {
                             Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.Center) {
                                 FilledTonalButton(onClick = { visibleCount += 50 }, shape = MaterialTheme.shapes.medium) {
-                                    Icon(Icons.Outlined.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Icon(SproutIcons.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(Modifier.width(7.dp))
                                     Text("Show next ${minOf(50, filtered.size - visibleCount)} participants")
                                 }
@@ -3727,9 +3687,9 @@ private fun HistoryScreen(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("${remoteSchedules.size} loaded · newest first", color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick=onRefresh,modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(Icons.Outlined.Refresh,contentDescription="Refresh schedule history",tint=Forest,modifier=Modifier.size(20.dp))}
+                IconButton(onClick=onRefresh,modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(SproutIcons.Refresh,contentDescription="Refresh schedule history",tint=Forest,modifier=Modifier.size(20.dp))}
                 if (canCreate) FilledTonalButton(onClick = onNew, shape = MaterialTheme.shapes.medium) {
-                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(SproutIcons.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("New schedule")
                 }
@@ -3741,7 +3701,7 @@ private fun HistoryScreen(
         }
         if (error != null) Surface(color=MaterialTheme.colorScheme.errorContainer,shape = MaterialTheme.shapes.medium,modifier=Modifier.fillMaxWidth()) {
             Row(Modifier.padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Outlined.ErrorOutline,contentDescription="History refresh failed",tint=MaterialTheme.colorScheme.onErrorContainer,modifier=Modifier.size(19.dp))
+                Icon(SproutIcons.ErrorOutline,contentDescription="History refresh failed",tint=MaterialTheme.colorScheme.onErrorContainer,modifier=Modifier.size(19.dp))
                 Text((if(remoteSchedules.isEmpty()) "Could not load history. " else "Showing saved history. ")+error,color=MaterialTheme.colorScheme.onErrorContainer,fontSize = 12.sp,modifier=Modifier.weight(1f))
                 TextButton(onClick=onRefresh,contentPadding=PaddingValues(horizontal=6.dp)){Text("Retry",color=MaterialTheme.colorScheme.onErrorContainer,fontSize = 12.sp)}
             }
@@ -3752,10 +3712,10 @@ private fun HistoryScreen(
                     CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp,color=Forest)
                     Text("Loading saved schedules…",color=Muted,fontSize=12.sp)
                 } else if (error == null) Column(Modifier.fillMaxWidth().padding(vertical=18.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Outlined.CalendarMonth,contentDescription=null,tint=Forest,modifier=Modifier.size(28.dp))
+                    Icon(SproutIcons.CalendarMonth,contentDescription=null,tint=Forest,modifier=Modifier.size(28.dp))
                     Text("No saved schedules yet",fontWeight=FontWeight.SemiBold,fontSize=14.sp)
                     Text("Schedules saved to the cloud will appear here.",color=Muted,fontSize=12.sp)
-                    if(canCreate) FilledTonalButton(onClick=onNew,shape = MaterialTheme.shapes.medium){Icon(Icons.Outlined.Add,contentDescription=null,modifier=Modifier.size(17.dp));Spacer(Modifier.width(6.dp));Text("Create schedule")}
+                    if(canCreate) FilledTonalButton(onClick=onNew,shape = MaterialTheme.shapes.medium){Icon(SproutIcons.Add,contentDescription=null,modifier=Modifier.size(17.dp));Spacer(Modifier.width(6.dp));Text("Create schedule")}
                 }
             } else {
                 OutlinedTextField(
@@ -3763,9 +3723,9 @@ private fun HistoryScreen(
                     onValueChange = { historyQuery = it },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text("Search loaded weeks, readings, or names") },
-                    leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, tint = Forest) },
+                    leadingIcon = { Icon(SproutIcons.Search, contentDescription = null, tint = Forest) },
                     trailingIcon = if (historyQuery.isNotBlank()) ({
-                        IconButton(onClick = { historyQuery = "" }) { Icon(Icons.Outlined.Close, contentDescription = "Clear history search") }
+                        IconButton(onClick = { historyQuery = "" }) { Icon(SproutIcons.Close, contentDescription = "Clear history search") }
                     }) else null,
                     singleLine = true,
                     shape = MaterialTheme.shapes.medium
@@ -3792,7 +3752,7 @@ private fun HistoryScreen(
                 }
                 if (filteredSchedules.isEmpty()) {
                     Column(Modifier.fillMaxWidth().padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Outlined.Search, contentDescription = null, tint = Muted, modifier = Modifier.size(25.dp))
+                        Icon(SproutIcons.Search, contentDescription = null, tint = Muted, modifier = Modifier.size(25.dp))
                         Text("No schedules match your search or year filter.", color = Muted, fontSize = 12.sp)
                         TextButton(onClick = { historyQuery = ""; selectedYear = "all" }) { Text("Clear search and filters", color = Forest) }
                     }
@@ -3802,14 +3762,14 @@ private fun HistoryScreen(
                 HorizontalDivider(Modifier.padding(vertical = 6.dp), color = MaterialTheme.colorScheme.outlineVariant)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(36.dp).background(ForestContainer, CircleShape), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Outlined.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp))
+                        Icon(SproutIcons.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp))
                     }
                     Column(Modifier.weight(1f).padding(start = 9.dp)) {
                         Text(remote.weekLabel, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text("${remote.reading} · ${remote.updatedAt.take(10)}", color = Muted, style = MaterialTheme.typography.bodySmall)
                     }
                     TextButton(onClick = { onView(remote) }, contentPadding = PaddingValues(horizontal = 6.dp)) {
-                        Icon(Icons.Outlined.Visibility, contentDescription = null, tint = Forest, modifier = Modifier.size(17.dp))
+                        Icon(SproutIcons.Visibility, contentDescription = null, tint = Forest, modifier = Modifier.size(17.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("View", fontSize = 12.sp, color = Forest)
                     }
@@ -3817,15 +3777,15 @@ private fun HistoryScreen(
                         var menu by remember(remote.id) { mutableStateOf(false) }
                         Box {
                             IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp)) {
-                                Icon(Icons.Outlined.MoreVert, contentDescription = "Schedule actions", tint = Forest)
+                                Icon(SproutIcons.MoreVert, contentDescription = "Schedule actions", tint = Forest)
                             }
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, modifier = Modifier.background(AppSurface)) {
                                 if (canEdit) DropdownMenuItem(
-                                    text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Edit, contentDescription = null, tint = Forest, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(10.dp)); Text("Edit") } },
+                                    text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(SproutIcons.Edit, contentDescription = null, tint = Forest, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(10.dp)); Text("Edit") } },
                                     onClick = { menu = false; onEdit(remote) }
                                 )
                                 if (isAdmin) DropdownMenuItem(
-                                    text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(10.dp)); Text("Delete", color = MaterialTheme.colorScheme.error) } },
+                                    text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(SproutIcons.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(10.dp)); Text("Delete", color = MaterialTheme.colorScheme.error) } },
                                     onClick = { menu = false; deleteTarget = remote }
                                 )
                             }
@@ -3837,7 +3797,7 @@ private fun HistoryScreen(
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.Center) {
                     FilledTonalButton(onClick = onLoadMore, enabled = !loadingMore, shape = MaterialTheme.shapes.medium) {
                         if (loadingMore) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Forest)
-                        else Icon(Icons.Outlined.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
+                        else Icon(SproutIcons.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(7.dp))
                         Text(if (loadingMore) "Loading…" else if (historyQuery.isNotBlank()) "Load more to continue search" else "Load more schedules")
                     }
@@ -3916,7 +3876,7 @@ private fun AccountsScreen(
         PageHeading("Account & Settings") {
             if (isAdmin) IconButton(onClick = onRefresh, enabled = !loading) {
                 if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                else Icon(Icons.Outlined.Refresh, contentDescription = "Refresh accounts", tint = Forest)
+                else Icon(SproutIcons.Refresh, contentDescription = "Refresh accounts", tint = Forest)
             }
         }
         M3Card {
@@ -3942,13 +3902,13 @@ private fun AccountsScreen(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onChangeOwnPhoto, modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                     shape = MaterialTheme.shapes.medium) {
-                    Icon(Icons.Outlined.AddAPhoto, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(SproutIcons.AddAPhoto, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("Change photo", maxLines = 1)
                 }
                 OutlinedButton(onClick = { profileNameDraft = profileName; editProfileNameOpen = true },
                     modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = MaterialTheme.shapes.medium) {
-                    Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(SproutIcons.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("Edit name", maxLines = 1)
                 }
@@ -3962,9 +3922,9 @@ private fun AccountsScreen(
                 AppThemeMode.entries.forEach { option ->
                     val selected = themeMode == option
                     val icon = when (option) {
-                        AppThemeMode.SYSTEM -> Icons.Outlined.Settings
-                        AppThemeMode.LIGHT -> Icons.Outlined.LightMode
-                        AppThemeMode.DARK -> Icons.Outlined.DarkMode
+                        AppThemeMode.SYSTEM -> SproutIcons.Settings
+                        AppThemeMode.LIGHT -> SproutIcons.LightMode
+                        AppThemeMode.DARK -> SproutIcons.DarkMode
                     }
                     Column(
                         modifier = Modifier.weight(1f).clip(MaterialTheme.shapes.medium)
@@ -4023,7 +3983,7 @@ private fun AccountsScreen(
             BiometricLockPreference(appLock)
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.ManageAccounts, contentDescription = null, tint = Forest, modifier = Modifier.size(22.dp))
+                Icon(SproutIcons.ManageAccounts, contentDescription = null, tint = Forest, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.width(9.dp))
                 Column(Modifier.weight(1f)) {
                     Text("App font size", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
@@ -4036,7 +3996,7 @@ private fun AccountsScreen(
         }
         M3Card {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(Icons.Outlined.NotificationsActive, contentDescription = null, tint = Forest, modifier = Modifier.size(22.dp))
+                Icon(SproutIcons.NotificationsActive, contentDescription = null, tint = Forest, modifier = Modifier.size(22.dp))
                 Column(Modifier.weight(1f)) {
                     Text("Test notification", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                     Text("Check that this account can receive push notifications.", color = Muted, style = MaterialTheme.typography.bodySmall)
@@ -4045,7 +4005,7 @@ private fun AccountsScreen(
             OutlinedButton(onClick = onTestNotification, enabled = !testNotificationBusy,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.medium) {
                 if (testNotificationBusy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                else Icon(Icons.Outlined.NotificationsActive, contentDescription = null, modifier = Modifier.size(18.dp))
+                else Icon(SproutIcons.NotificationsActive, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(if (testNotificationBusy) "Sending…" else "Send test notification")
             }
@@ -4059,7 +4019,7 @@ private fun AccountsScreen(
                 ) {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(if (feedback.sent) Icons.Outlined.CheckCircle else Icons.Outlined.ErrorOutline,
+                        Icon(if (feedback.sent) SproutIcons.CheckCircle else SproutIcons.ErrorOutline,
                             contentDescription = null, modifier = Modifier.size(20.dp))
                         Text(feedback.message, style = MaterialTheme.typography.bodySmall)
                     }
@@ -4088,7 +4048,7 @@ private fun AccountsScreen(
                                         if (account.status == "requested") Box(Modifier.align(Alignment.TopEnd).size(11.dp).background(MaterialTheme.colorScheme.error, CircleShape))
                                         if (account.role.equals("admin", true)) {
                                             Surface(Modifier.align(Alignment.BottomEnd).size(24.dp), shape = CircleShape, color = ForestContainer, border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-                                                Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.AdminPanelSettings, contentDescription = "Administrator", tint = Forest, modifier = Modifier.size(15.dp)) }
+                                                Box(contentAlignment = Alignment.Center) { Icon(SproutIcons.AdminPanelSettings, contentDescription = "Administrator", tint = Forest, modifier = Modifier.size(15.dp)) }
                                             }
                                         } else if (account.status.equals("active", true) || account.status.equals("disabled", true)) {
                                             val active = account.status.equals("active", true)
@@ -4100,7 +4060,7 @@ private fun AccountsScreen(
                                             ) {
                                                 Box(contentAlignment = Alignment.Center) {
                                                     Icon(
-                                                        if (active) Icons.Outlined.CheckCircle else Icons.Outlined.Block,
+                                                        if (active) SproutIcons.CheckCircle else SproutIcons.Block,
                                                         contentDescription = if (active) "Active" else "Disabled",
                                                         tint = if (active) Forest else MaterialTheme.colorScheme.error,
                                                         modifier = Modifier.size(15.dp)
@@ -4122,7 +4082,7 @@ private fun AccountsScreen(
             AboutRow(
                 title = "About this App",
                 description = "Version, changelog, links and privacy",
-                icon = Icons.Outlined.Description,
+                icon = SproutIcons.Description,
                 onClick = { aboutOpen = true }
             )
         }
@@ -4167,7 +4127,7 @@ private fun AccountsScreen(
                             Text(account.displayName.ifBlank { account.username }, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                             Text("@" + account.username, color = Muted, fontSize = 12.sp)
                         }
-                        IconButton(onClick = { selectedAccount = null }, modifier = Modifier.size(48.dp)) { Icon(Icons.Outlined.Close, contentDescription = "Close account details", tint = Forest, modifier = Modifier.size(20.dp)) }
+                        IconButton(onClick = { selectedAccount = null }, modifier = Modifier.size(48.dp)) { Icon(SproutIcons.Close, contentDescription = "Close account details", tint = Forest, modifier = Modifier.size(20.dp)) }
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     AccountInfoLine("Role", roleName)
@@ -4191,7 +4151,7 @@ private fun AccountsScreen(
                                         color = Ink,
                                         fontSize = 13.sp
                                     )
-                                    Icon(Icons.Outlined.ArrowDropDown, contentDescription = null, tint = Forest)
+                                    Icon(SproutIcons.ArrowDropDown, contentDescription = null, tint = Forest)
                                 }
                                 DropdownMenu(expanded = participantMenuExpanded, onDismissRequest = { participantMenuExpanded = false }) {
                                     DropdownMenuItem(
@@ -4222,7 +4182,7 @@ private fun AccountsScreen(
                         }
                     }
                     OutlinedButton(onClick = { onUploadPhoto(account) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.medium) {
-                        Icon(Icons.Outlined.AddAPhoto, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
+                        Icon(SproutIcons.AddAPhoto, contentDescription = null, tint = Forest, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(if (account.photoDataUrl.isBlank()) "Upload account photo" else "Change account photo", color = Forest, fontSize = 12.sp)
                     }
@@ -4236,7 +4196,7 @@ private fun AccountsScreen(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Surface(color = ForestContainer, shape = RoundedCornerShape(12.dp), modifier = Modifier.size(38.dp)) {
                                     Box(contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Outlined.ManageAccounts, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp))
+                                        Icon(SproutIcons.ManageAccounts, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp))
                                     }
                                 }
                                 Column(Modifier.weight(1f).padding(start = 10.dp)) {
@@ -4255,12 +4215,12 @@ private fun AccountsScreen(
                                 Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     toolLabels.forEachIndexed { index, (key, label) ->
                                         val icon = when (key) {
-                                            "home" -> Icons.Outlined.Home
-                                            "workbook" -> Icons.Outlined.CalendarMonth
-                                            "assignments" -> Icons.Outlined.Assignment
-                                            "preview" -> Icons.Outlined.Preview
-                                            "participants" -> Icons.Outlined.Groups
-                                            else -> Icons.Outlined.History
+                                            "home" -> SproutIcons.Home
+                                            "workbook" -> SproutIcons.CalendarMonth
+                                            "assignments" -> SproutIcons.Assignment
+                                            "preview" -> SproutIcons.Preview
+                                            "participants" -> SproutIcons.Groups
+                                            else -> SproutIcons.History
                                         }
                                         val selectedMode = toolAccessDraft[key]
                                         Surface(
@@ -4289,7 +4249,7 @@ private fun AccountsScreen(
                                                             modifier = Modifier.weight(1f).heightIn(min = 36.dp),
                                                             shape = RoundedCornerShape(12.dp),
                                                             leadingIcon = if (selectedMode == mode) ({
-                                                                Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                                Icon(SproutIcons.Check, contentDescription = null, modifier = Modifier.size(14.dp))
                                                             }) else null
                                                         )
                                                     }
@@ -4307,7 +4267,7 @@ private fun AccountsScreen(
                                 shape = MaterialTheme.shapes.medium,
                                 colors = ButtonDefaults.buttonColors(containerColor = Forest)
                             ) {
-                                Icon(Icons.Outlined.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Icon(SproutIcons.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Text("Save access settings", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             }
@@ -4317,22 +4277,22 @@ private fun AccountsScreen(
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         when (account.status) {
                             "requested" -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                AccountActionButton("Approve", Icons.Outlined.CheckCircle, Forest, Modifier.weight(1f)) { beginAction(account, "approve") }
-                                AccountActionButton("Decline", Icons.Outlined.Close, MaterialTheme.colorScheme.error, Modifier.weight(1f)) { beginAction(account, "decline") }
+                                AccountActionButton("Approve", SproutIcons.CheckCircle, Forest, Modifier.weight(1f)) { beginAction(account, "approve") }
+                                AccountActionButton("Decline", SproutIcons.Close, MaterialTheme.colorScheme.error, Modifier.weight(1f)) { beginAction(account, "decline") }
                             }
                             "active" -> {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    AccountActionButton("Change role", Icons.Outlined.ManageAccounts, Forest, Modifier.weight(1f)) { beginAction(account, "change_role") }
-                                    AccountActionButton("Reset password", Icons.Outlined.Lock, Forest, Modifier.weight(1f)) { beginAction(account, "reset") }
+                                    AccountActionButton("Change role", SproutIcons.ManageAccounts, Forest, Modifier.weight(1f)) { beginAction(account, "change_role") }
+                                    AccountActionButton("Reset password", SproutIcons.Lock, Forest, Modifier.weight(1f)) { beginAction(account, "reset") }
                                 }
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    AccountActionButton("Disable", Icons.Outlined.Warning, Color(0xFFFFA726), Modifier.weight(1f)) { beginAction(account, "disable") }
-                                    AccountActionButton("Delete", Icons.Outlined.Delete, MaterialTheme.colorScheme.error, Modifier.weight(1f)) { beginAction(account, "delete") }
+                                    AccountActionButton("Disable", SproutIcons.Warning, Color(0xFFFFA726), Modifier.weight(1f)) { beginAction(account, "disable") }
+                                    AccountActionButton("Delete", SproutIcons.Delete, MaterialTheme.colorScheme.error, Modifier.weight(1f)) { beginAction(account, "delete") }
                                 }
                             }
                             "disabled" -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                AccountActionButton("Enable", Icons.Outlined.CheckCircle, Forest, Modifier.weight(1f)) { beginAction(account, "enable") }
-                                AccountActionButton("Delete", Icons.Outlined.Delete, MaterialTheme.colorScheme.error, Modifier.weight(1f)) { beginAction(account, "delete") }
+                                AccountActionButton("Enable", SproutIcons.CheckCircle, Forest, Modifier.weight(1f)) { beginAction(account, "enable") }
+                                AccountActionButton("Delete", SproutIcons.Delete, MaterialTheme.colorScheme.error, Modifier.weight(1f)) { beginAction(account, "delete") }
                             }
                         }
                     }
@@ -4392,7 +4352,7 @@ private fun AboutRow(
             Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
             Text(description, style = MaterialTheme.typography.bodySmall, color = Muted)
         }
-        Icon(Icons.Outlined.ArrowForward, contentDescription = null, tint = Muted, modifier = Modifier.size(20.dp))
+        Icon(SproutIcons.ArrowForward, contentDescription = null, tint = Muted, modifier = Modifier.size(20.dp))
     }
 }
 
@@ -4413,7 +4373,7 @@ private fun AboutThisAppDialog(
                     title = { Text("About this App") },
                     navigationIcon = {
                         IconButton(onClick = onDismiss) {
-                            Icon(Icons.Outlined.ArrowBack, contentDescription = "Back", tint = Ink)
+                            Icon(SproutIcons.ArrowBack, contentDescription = "Back", tint = Ink)
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = AppSurface)
@@ -4442,22 +4402,22 @@ private fun AboutThisAppDialog(
                     }
                     M3Card {
                         Text("App", style = MaterialTheme.typography.titleMedium)
-                        AboutRow("Changelog", "Full version history", Icons.Outlined.History) {
+                        AboutRow("Changelog", "Full version history", SproutIcons.History) {
                             onOpenLink("https://github.com/charledave2/meeting-scheduler/blob/main/CHANGELOG.md")
                         }
-                        AboutRow("Contributors", "Everyone who helped build this app", Icons.Outlined.Groups) {
+                        AboutRow("Contributors", "Everyone who helped build this app", SproutIcons.Groups) {
                             onOpenLink("https://github.com/charledave2/meeting-scheduler/graphs/contributors")
                         }
                     }
                     M3Card {
                         Text("Links", style = MaterialTheme.typography.titleMedium)
-                        AboutRow("GitHub Repository", "Source code, issues and documentation", Icons.Outlined.Description) {
+                        AboutRow("GitHub Repository", "Source code, issues and documentation", SproutIcons.Description) {
                             onOpenLink("https://github.com/charledave2/meeting-scheduler")
                         }
-                        AboutRow("Developer", "GitHub Profile: @charledave2", Icons.Outlined.Person) {
+                        AboutRow("Developer", "GitHub Profile: @charledave2", SproutIcons.Person) {
                             onOpenLink("https://github.com/charledave2")
                         }
-                        AboutRow("License", "License information", Icons.Outlined.Lock, onLicenseClick)
+                        AboutRow("License", "License information", SproutIcons.Lock, onLicenseClick)
                     }
                     M3Card {
                         Text("Privacy", style = MaterialTheme.typography.titleMedium)
