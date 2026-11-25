@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.45.41 — 2026-11-25
+
+- Rename the app to JW Meeting Manager across the launcher label and in-app branding.
+- Show the app name only in the Home toolbar; other pages show their own page title.
+
+
 ## v0.45.40 — 2026-11-25
 
 - Replace generic Material icons with a consistent Phosphor Regular icon family throughout the Android app, using palette-aware tinting and rounded line forms inspired by Sprout.

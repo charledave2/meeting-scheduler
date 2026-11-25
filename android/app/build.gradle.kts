@@ -13,9 +13,9 @@ android {
         applicationId = "com.example.meetingscheduler"
         minSdk = 24
         targetSdk = 35
-        versionCode = 103
-        versionName = "0.45.40"
-        resValue("string", "app_name", "JW Meeting Scheduler")
+        versionCode = 104
+        versionName = "0.45.41"
+        resValue("string", "app_name", "JW Meeting Manager")
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
@@ -49,7 +49,7 @@ android {
         getByName("debug") {
             applicationIdSuffix = ".preview"
             versionNameSuffix = "-preview"
-            resValue("string", "app_name", "JW Meeting Scheduler Preview")
+            resValue("string", "app_name", "JW Meeting Manager Preview")
         }
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")

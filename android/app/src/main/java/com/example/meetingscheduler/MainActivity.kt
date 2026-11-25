@@ -699,7 +699,7 @@ private fun AppUpdatePrompt() {
             title = { Text("May bagong update", fontWeight = FontWeight.SemiBold) },
             text = {
                 Column(Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.48f).dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("JW Meeting Scheduler ${available.version} ay handa nang i-update.", color = Ink)
+                    Text("JW Meeting Manager ${available.version} ay handa nang i-update.", color = Ink)
                     if (notes.isNotEmpty()) {
                         Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                             Text("Mga bagong pagbabago", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -1638,12 +1638,13 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text("JW Meeting Scheduler", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                    }
-                },
-                navigationIcon = {
-                    MeetingSchedulerBrandIcon(Modifier.padding(start = 14.dp, end = 8.dp).size(34.dp))
+                    Text(
+                        if (current == Screen.HOME) "JW Meeting Manager" else current.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = AppSurface)
             )
@@ -2217,7 +2218,7 @@ private fun MeetingSplashScreen() {
                     shadowElevation = 18.dp
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        MeetingSchedulerBrandIcon(Modifier.size(if (compact) 82.dp else 100.dp), "JW Meeting Scheduler")
+                        MeetingSchedulerBrandIcon(Modifier.size(if (compact) 82.dp else 100.dp), "JW Meeting Manager")
                     }
                 }
                 if (reveal) {
@@ -2244,7 +2245,7 @@ private fun MeetingSplashScreen() {
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        "JW Meeting Scheduler",
+                        "JW Meeting Manager",
                         color = colors.onSurface,
                         fontSize = if (compact) 20.sp else 24.sp,
                         fontWeight = FontWeight.Bold,
@@ -2320,9 +2321,9 @@ private fun LoginScreen(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                MeetingSchedulerBrandIcon(Modifier.size(if (compact) 62.dp else 72.dp), "JW Meeting Scheduler")
+                MeetingSchedulerBrandIcon(Modifier.size(if (compact) 62.dp else 72.dp), "JW Meeting Manager")
                 Spacer(Modifier.height(13.dp))
-                Text("JW Meeting Scheduler", fontWeight = FontWeight.Bold, fontSize = 23.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                Text("JW Meeting Manager", fontWeight = FontWeight.Bold, fontSize = 23.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 Text("Midweek meeting workspace", color = Muted, fontSize = 13.sp)
                 Spacer(Modifier.height(if (compact) 22.dp else 30.dp))
                 AnimatedVisibility(visible = true, enter = fadeIn(tween(520)) + slideInVertically(tween(520)) { it / 10 }) {
@@ -4393,8 +4394,8 @@ private fun AboutThisAppDialog(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            MeetingSchedulerBrandIcon(Modifier.size(58.dp), "JW Meeting Scheduler")
-                            Text("JW Meeting Scheduler", style = MaterialTheme.typography.headlineSmall,
+                            MeetingSchedulerBrandIcon(Modifier.size(58.dp), "JW Meeting Manager")
+                            Text("JW Meeting Manager", style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
                             Text("Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
