@@ -6,6 +6,10 @@ import android.content.Context
 import android.content.ComponentName
 import android.content.Intent
 import android.content.BroadcastReceiver
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
 import android.app.PendingIntent
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -44,6 +48,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
@@ -94,6 +100,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -1259,7 +1268,9 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
         if (suppressWeekLookup) { suppressWeekLookup=false; return@LaunchedEffect }
         if (remoteScheduleLoadedWeek==weekStart) return@LaunchedEffect
         if (signedIn) {
-            workbookBusy=true; workbookStatus="Sinusuri kung may saved schedule sa napiling petsa…"
+            workbookBusy = true
+            workbookStatus = "Sinusuri kung may saved schedule sa napiling petsa…"
+            workbookCaptureLog = emptyList()
             val selectedDate=runCatching { LocalDate.parse(weekStart) }.getOrDefault(week)
             val saved=runCatching { api.schedules().firstOrNull { scheduleStartDate(it.weekLabel,it.updatedAt)==selectedDate } }.getOrNull()
             if(saved!=null) runCatching { applyRemoteSchedule(saved) }.onFailure { workbookStatus="Hindi ma-load ang saved schedule: ${it.message ?: "server error"}"; workbookBusy=false }
@@ -1688,6 +1699,8 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
                 workbookStatus = workbookStatus,
                 workbookBusy = workbookBusy, workbookCaptureLog = workbookCaptureLog,
                 canContinue = !workbookBusy && participantsLoaded && !participantsBusy,
+                participantsLoadFailed = participantsLoadError != null,
+                onRetryParticipants = { participantsLoadError = null; participantsLoaded = false },
                 canContinueToAssignments = canAccess(Screen.ASSIGNMENTS),
                 readOnly = !canEdit(Screen.DETAILS),
                 isCurrentWeek = weekStart == currentWorkbookWeekStart.toString(),
@@ -2510,6 +2523,38 @@ private fun PageColumn(modifier: Modifier, content: @Composable ColumnScope.() -
 }
 
 @Composable
+private fun WorkflowPage(
+    modifier: Modifier,
+    actions: (@Composable ColumnScope.() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val scrollState = rememberScrollState()
+    PageFrame(modifier) { page ->
+        BoxWithConstraints(page) {
+            // Keep the full page scrollable when a fixed footer would crowd out its content.
+            val pinActions = actions != null && maxHeight >= 450.dp * LocalDensity.current.fontScale.coerceAtLeast(1f)
+            Column(Modifier.fillMaxSize()) {
+                Column(
+                    Modifier.fillMaxWidth().weight(1f).verticalScroll(scrollState).padding(bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    content()
+                    if (!pinActions) actions?.invoke(this)
+                }
+                if (pinActions && actions != null) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Column(
+                        Modifier.fillMaxWidth().padding(top = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        content = actions
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun PageHeading(title: String, subtitle: String? = null, trailing: (@Composable () -> Unit)? = null) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -2538,6 +2583,24 @@ private fun Label(text: String) {
 }
 
 @Composable
+private fun rememberMascotAnimationsEnabled(): Boolean {
+    val resolver = LocalContext.current.contentResolver
+    val setting = Settings.Global.ANIMATOR_DURATION_SCALE
+    var enabled by remember(resolver) { mutableStateOf(Settings.Global.getFloat(resolver, setting, 1f) > 0f) }
+    DisposableEffect(resolver) {
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                enabled = Settings.Global.getFloat(resolver, setting, 1f) > 0f
+            }
+        }
+        resolver.registerContentObserver(Settings.Global.getUriFor(setting), false, observer)
+        observer.onChange(false)
+        onDispose { resolver.unregisterContentObserver(observer) }
+    }
+    return enabled
+}
+
+@Composable
 private fun HomeScreen(
     modifier: Modifier,
     accountName: String,
@@ -2558,42 +2621,36 @@ private fun HomeScreen(
             // Workbook weeks are normalized to Monday; this congregation meets midweek on Thursday.
             val meetingDate = weekStart.plusDays(3)
             if (meetingDate.isBefore(today)) null else meetingDate to remote
-        }.sortedBy { it.first }.take(6)
+        }.sortedBy { it.first }
     }
     var mascotTipVisible by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(mascotTipVisible) {
-        if (mascotTipVisible) {
-            delay(4_500)
-            mascotTipVisible = false
-        }
-    }
-    val mascotMotion = rememberInfiniteTransition(label = "home mascot idle")
-    val mascotBob by mascotMotion.animateFloat(
-        initialValue = 0f,
-        targetValue = 3f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1_800, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "home mascot bob"
-    )
+    var showAllMeetings by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = mascotTipVisible) { mascotTipVisible = false }
+    val animationsEnabled = rememberMascotAnimationsEnabled()
+    val mascotBob = if (animationsEnabled) {
+        val motion = rememberInfiniteTransition(label = "home mascot idle")
+        val bob by motion.animateFloat(
+            initialValue = 0f,
+            targetValue = 3f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1_800, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "home mascot bob"
+        )
+        bob
+    } else 0f
     val nextMeetingDate = upcoming.firstOrNull()?.first
     val mascotTip = nextMeetingDate?.let {
         "May susunod kang meeting sa ${it.format(DateTimeFormatter.ofPattern("MMM d", Locale.ENGLISH))}. I-tap ang card para makita ang schedule."
     } ?: "Wala pang paparating na meeting. Lalabas dito ang susunod mong schedule."
     PageColumn(modifier) {
-        Row(
-            Modifier.fillMaxWidth().offset(y = (-4).dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "JW Meeting Manager",
-                style = MaterialTheme.typography.headlineSmall.copy(fontSize = 30.sp),
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+        Text(
+            "JW Meeting Manager",
+            modifier = Modifier.fillMaxWidth().offset(y = (-4).dp).semantics { heading() },
+            style = MaterialTheme.typography.headlineSmall.copy(fontSize = 30.sp, lineHeight = 35.sp),
+            fontWeight = FontWeight.SemiBold
+        )
         val greetingShape = RoundedCornerShape(26.dp)
         val abstractAccent = MaterialTheme.colorScheme.onPrimaryContainer
         Card(shape = greetingShape, colors = CardDefaults.cardColors(containerColor = ForestContainer)) {
@@ -2652,7 +2709,9 @@ private fun HomeScreen(
                         AnimatedContent(
                             targetState = mascotTipVisible,
                             transitionSpec = {
-                                (fadeIn(animationSpec = tween(220)) +
+                                if (!animationsEnabled) {
+                                    EnterTransition.None togetherWith ExitTransition.None
+                                } else (fadeIn(animationSpec = tween(220)) +
                                     scaleIn(
                                         initialScale = 0.92f,
                                         animationSpec = tween(220, easing = FastOutSlowInEasing)
@@ -2686,10 +2745,10 @@ private fun HomeScreen(
                     }
                     AnimatedVisibility(
                         visible = mascotTipVisible,
-                        enter = fadeIn(animationSpec = tween(220)) +
+                        enter = if (!animationsEnabled) EnterTransition.None else fadeIn(animationSpec = tween(220)) +
                             scaleIn(initialScale = 0.94f, animationSpec = tween(220, easing = FastOutSlowInEasing)) +
                             slideInVertically(animationSpec = tween(220, easing = FastOutSlowInEasing)) { -it / 5 },
-                        exit = fadeOut(animationSpec = tween(160)) +
+                        exit = if (!animationsEnabled) ExitTransition.None else fadeOut(animationSpec = tween(160)) +
                             slideOutVertically(animationSpec = tween(160)) { -it / 6 }
                     ) {
                         Surface(
@@ -2698,17 +2757,20 @@ private fun HomeScreen(
                             shape = RoundedCornerShape(16.dp)
                         ) {
                             Row(
-                                Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.Top
                             ) {
-                                Icon(SproutIcons.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(18.dp))
                                 Text(
                                     mascotTip,
+                                    modifier = Modifier.weight(1f).padding(vertical = 10.dp)
+                                        .semantics { liveRegion = LiveRegionMode.Polite },
                                     color = MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 12.sp,
-                                    lineHeight = 17.sp
+                                    style = MaterialTheme.typography.bodyMedium
                                 )
+                                IconButton(onClick = { mascotTipVisible = false }) {
+                                    Icon(SproutIcons.Close, contentDescription = "Dismiss meeting tip")
+                                }
                             }
                         }
                     }
@@ -2766,42 +2828,75 @@ private fun HomeScreen(
                         }
                         Column(Modifier.weight(1f).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text("NEXT MEETING", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
-                            Text(nextSchedule.weekLabel, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
-                            Text("${nextSchedule.reading} · ${nextDate.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH))}", color = Muted, fontSize = 12.sp, maxLines = 1)
+                            Text(nextSchedule.weekLabel, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text("${nextSchedule.reading} · ${nextDate.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH))}", color = Muted, fontSize = 12.sp)
                         }
                         Icon(SproutIcons.Preview, contentDescription = "Preview next meeting schedule", tint = Forest)
                     }
                 }
                 if (upcoming.size > 1) Text("MORE UPCOMING", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(top = 2.dp))
-                upcoming.drop(1).forEach { (date, remote) ->
-                Card(
-                    modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "Preview ${remote.weekLabel}") { onOpenSchedule(remote) },
-                    shape = MaterialTheme.shapes.medium,
-                    colors = CardDefaults.cardColors(containerColor = SurfaceContainer),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                ) {
-                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(44.dp).background(ForestContainer, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
-                            Icon(SproutIcons.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(23.dp))
+                (if (showAllMeetings) upcoming else upcoming.take(3)).drop(1).forEach { (date, remote) ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "Preview ${remote.weekLabel}") { onOpenSchedule(remote) },
+                        shape = MaterialTheme.shapes.medium,
+                        colors = CardDefaults.cardColors(containerColor = SurfaceContainer),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(44.dp).background(ForestContainer, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                                Icon(SproutIcons.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(23.dp))
+                            }
+                            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                                Text(remote.weekLabel, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                Text(remote.reading, color = Muted, fontSize = 12.sp)
+                                Text(date.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH)), color = Forest, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            }
+                            Icon(SproutIcons.Preview, contentDescription = "Preview schedule", tint = Forest)
                         }
-                        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                            Text(remote.weekLabel, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                            Text(remote.reading, color = Muted, fontSize = 12.sp)
-                            Text(date.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH)), color = Forest, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                        }
-                        Icon(SproutIcons.Preview, contentDescription = "Preview schedule", tint = Forest)
                     }
                 }
-            }
+                if (upcoming.size > 3) {
+                    TextButton(
+                        onClick = { showAllMeetings = !showAllMeetings },
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                        shape = MaterialTheme.shapes.medium
+                    ) {
+                        Text(if (showAllMeetings) "Show fewer meetings" else "Show all ${upcoming.size} upcoming meetings")
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, canContinueToAssignments:Boolean, readOnly:Boolean, isCurrentWeek:Boolean, onThisWeek: () -> Unit, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
-    PageColumn(modifier) {
-        PageHeading("Workbook", "Select a week to load its meeting program.")
+private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, participantsLoadFailed: Boolean, onRetryParticipants: () -> Unit, canContinueToAssignments:Boolean, readOnly:Boolean, isCurrentWeek:Boolean, onThisWeek: () -> Unit, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
+    var showCaptureLog by rememberSaveable(weekLabel) { mutableStateOf(false) }
+    val workbookActions: (@Composable ColumnScope.() -> Unit)? = if (canContinueToAssignments) {
+        {
+            Button(
+                onClick = onNext,
+                enabled = canContinue,
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                colors = ButtonDefaults.buttonColors(containerColor = Forest),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                Text(
+                    when {
+                        workbookBusy -> "Loading weekly program…"
+                        !canContinue -> "Loading participants…"
+                        else -> "Continue to assignments"
+                    },
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                Spacer(Modifier.width(9.dp))
+                Icon(SproutIcons.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
+            }
+        }
+    } else null
+    WorkflowPage(modifier, actions = workbookActions) {
+        PageHeading("Workbook", if (canContinueToAssignments) "Step 1 of 3 · Choose a meeting week" else "Select a week to load its meeting program.")
         M3Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(38.dp).background(ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) { Icon(SproutIcons.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp)) }
@@ -2827,7 +2922,7 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
                     label = { Text("Closing song") }, singleLine = true, modifier = field) }
             )
         }
-        val fetchError = workbookStatus.contains("hindi", ignoreCase = true) || workbookStatus.contains("wala", ignoreCase = true) || workbookStatus.contains("permission", ignoreCase = true)
+        val fetchError = !workbookBusy && (workbookCaptureLog.lastOrNull()?.startsWith("ERROR") == true || workbookStatus.contains("hindi", ignoreCase = true) || workbookStatus.contains("wala", ignoreCase = true) || workbookStatus.contains("permission", ignoreCase = true))
         M3Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(38.dp).background(if (fetchError) MaterialTheme.colorScheme.error.copy(alpha = .12f) else ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
@@ -2845,9 +2940,19 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
                     color = Forest,
                     trackColor = ForestContainer
                 )
-                Text(workbookStatus, color = Muted, fontSize = 12.sp, lineHeight = 15.sp)
             }
-            Surface(
+            Text(
+                workbookStatus.removePrefix("✓ "),
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (fetchError) MaterialTheme.colorScheme.error else Muted
+            )
+            if (workbookCaptureLog.isNotEmpty()) {
+                TextButton(onClick = { showCaptureLog = !showCaptureLog }) {
+                    Text(if (showCaptureLog) "Hide capture log" else "Show capture log")
+                }
+            }
+            if (showCaptureLog && workbookCaptureLog.isNotEmpty()) Surface(
                 color = if (IsDarkPalette) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerLow,
                 shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
@@ -2866,14 +2971,15 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
                             maxLines = 2
                         )
                     }
-                    if (!workbookBusy) Text(workbookStatus.removePrefix("✓ "), color = if (fetchError) MaterialTheme.colorScheme.error else Muted, fontSize = 12.sp, lineHeight = 16.sp)
                 }
             }
         }
-        if (canContinueToAssignments) Button(onClick = onNext, enabled=canContinue, modifier=Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, colors=ButtonDefaults.buttonColors(containerColor=Forest), contentPadding=PaddingValues(vertical=15.dp)) {
-            Text(if(workbookBusy) "Checking saved schedule…" else if(!canContinue) "Loading participants…" else "Continue to assignments")
-            Spacer(Modifier.width(9.dp))
-            Icon(SproutIcons.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
+        if (canContinueToAssignments && participantsLoadFailed) {
+            M3Card {
+                Text("Couldn’t refresh participants. You can continue with the list available on this device.",
+                    style = MaterialTheme.typography.bodyMedium)
+                TextButton(onClick = onRetryParticipants) { Text("Retry participant sync") }
+            }
         }
     }
 }
@@ -2895,8 +3001,60 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, parti
             }
         }
     }
-    PageColumn(modifier) {
-        PageHeading("Assignments")
+    var showAllMissing by rememberSaveable { mutableStateOf(false) }
+    val assignmentActions: (@Composable ColumnScope.() -> Unit)? = if ((isAdmin && !readOnly) || canContinueExport) {
+        {
+            if (isAdmin && !readOnly) {
+                OutlinedButton(
+                    onClick = onSaveCloud,
+                    enabled = !cloudSaveBusy && missingSlots.isEmpty(),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    if (cloudSaveBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest)
+                    else Icon(SproutIcons.CloudUpload, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(9.dp))
+                    Text(
+                        if (cloudSaveBusy) "Saving to Cloud…" else "Save to Cloud",
+                        modifier = Modifier.weight(1f, fill = false),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                cloudSaveFeedback?.let { (message, success) ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Icon(
+                            if (success) SproutIcons.CheckCircle else SproutIcons.ErrorOutline,
+                            contentDescription = null,
+                            tint = if (success) Forest else MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(17.dp)
+                        )
+                        Text(
+                            message,
+                            modifier = Modifier.weight(1f).heightIn(max = 60.dp)
+                                .verticalScroll(rememberScrollState())
+                                .semantics { liveRegion = LiveRegionMode.Polite },
+                            color = if (success) Forest else MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+            if (canContinueExport) Button(
+                onClick = onContinueExport,
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Forest)
+            ) {
+                Text("Continue to Export", modifier = Modifier.weight(1f, fill = false), fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.width(9.dp))
+                Icon(SproutIcons.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
+            }
+        }
+    } else null
+    WorkflowPage(modifier, actions = assignmentActions) {
+        PageHeading("Assignments", if (canContinueExport) "Step 2 of 3 · Review meeting roles and parts" else null)
         Card(
             shape = MaterialTheme.shapes.medium,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -2934,11 +3092,21 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, parti
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                            Text("Still needed", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                            missingSlots.forEach { slot ->
+                            Text(
+                                if (showAllMissing) "Still needed" else "Next unfilled slot",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            (if (showAllMissing) missingSlots else missingSlots.take(1)).forEach { slot ->
                                 Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Icon(SproutIcons.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(15.dp).padding(top = 1.dp))
                                     Text(slot, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, lineHeight = 16.sp)
+                                }
+                            }
+                            if (missingSlots.size > 1) {
+                                TextButton(onClick = { showAllMissing = !showAllMissing }) {
+                                    Text(if (showAllMissing) "Show fewer slots" else "Show all ${missingSlots.size} unfilled slots")
                                 }
                             }
                         }
@@ -2980,50 +3148,6 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, parti
                     }
                 }
             }
-        }
-        if (isAdmin && !readOnly) {
-            OutlinedButton(
-                onClick = onSaveCloud,
-                enabled = !cloudSaveBusy && missingSlots.isEmpty(),
-                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                shape = MaterialTheme.shapes.medium,
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 13.dp)
-            ) {
-                if (cloudSaveBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest)
-                else Icon(SproutIcons.CloudUpload, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(9.dp))
-                Text(if (cloudSaveBusy) "Saving to Cloud…" else "Save to Cloud", fontWeight = FontWeight.SemiBold)
-            }
-            if (cloudSaveBusy) {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                    color = Forest,
-                    trackColor = ForestContainer
-                )
-                Text("Saving the schedule and assignment history…", color = Muted, fontSize = 12.sp)
-            }
-            cloudSaveFeedback?.let { (message, success) ->
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Icon(
-                        if (success) SproutIcons.CheckCircle else SproutIcons.ErrorOutline,
-                        contentDescription = null,
-                        tint = if (success) Forest else MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(17.dp)
-                    )
-                    Text(message, color = if (success) Forest else MaterialTheme.colorScheme.error, fontSize = 12.sp, lineHeight = 15.sp)
-                }
-            }
-        }
-        if (canContinueExport) Button(
-            onClick = onContinueExport,
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium,
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Forest)
-        ) {
-            Text("Continue to Export", fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.width(9.dp))
-            Icon(SproutIcons.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
         }
     }
 }
@@ -3287,7 +3411,7 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
     var previewReady by remember(html){mutableStateOf(false)}
     val pageAspect = SCHEDULE_EXPORT_WIDTH_PX.toFloat() / SCHEDULE_EXPORT_HEIGHT_PX
     PageColumn(modifier) {
-        PageHeading("Preview & Export")
+        PageHeading("Preview & Export", if (allowExport) "Step 3 of 3 · Review and share the schedule" else null)
         if (allowExport) AdaptivePair(
             first = { button ->
                 FilledTonalButton(

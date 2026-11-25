@@ -2,6 +2,7 @@ package com.example.meetingscheduler
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -15,8 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -83,16 +82,18 @@ internal fun PreviewBottomNavigation(
                         }
                     }
                 }
-                Column(Modifier.align(Alignment.TopCenter).width(76.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    Modifier.align(Alignment.TopCenter).width(centerSlotWidth.coerceIn(64.dp, 76.dp))
+                        .clickable(role = Role.Button, onClickLabel = "Open schedule tools", onClick = onCenterClick),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     Surface(
-                        onClick = onCenterClick,
-                        modifier = Modifier.size(64.dp).semantics { contentDescription = "Open schedule tools" },
+                        modifier = Modifier.size(64.dp),
                         shape = CircleShape, color = colors.primary, contentColor = colors.onPrimary,
                         shadowElevation = 6.dp, border = BorderStroke(4.dp, colors.primaryContainer)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(SproutIcons.Add, contentDescription = null, modifier = Modifier.size(30.dp))
+                            Icon(SproutIcons.ScheduleTools, contentDescription = null, modifier = Modifier.size(30.dp))
                         }
                     }
                     Spacer(Modifier.height(6.dp))

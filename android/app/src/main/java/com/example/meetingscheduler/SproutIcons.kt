@@ -43,6 +43,7 @@ internal object SproutIcons {
     val PersonAdd: ImageVector get() = PhosphorIcons.Regular.UserPlus
     val Preview: ImageVector get() = PhosphorIcons.Regular.Eye
     val Refresh: ImageVector get() = PhosphorIcons.Regular.ArrowClockwise
+    val ScheduleTools: ImageVector get() = PhosphorIcons.Regular.SquaresFour
     val Search: ImageVector get() = PhosphorIcons.Regular.MagnifyingGlass
     val Settings: ImageVector get() = PhosphorIcons.Regular.Gear
     val Share: ImageVector get() = PhosphorIcons.Regular.ShareNetwork

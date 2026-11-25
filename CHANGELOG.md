@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.45.47 — 2026-11-26
+
+- Let the Home title wrap and show the next three meetings first, with the option to expand the list.
+- Keep the mascot tip open until dismissed and respect the Android animation setting.
+- Clarify the Tools shortcut and keep the main Workbook and Assignments actions visible while scrolling when screen space permits.
+- Show the next unfilled assignment and put detailed workbook capture logs behind a toggle.
+
 ## v0.45.46 — 2026-11-25
 
 - Raise the Home brand heading slightly and increase it to 30sp semibold using the app's bundled Google Sans font.
