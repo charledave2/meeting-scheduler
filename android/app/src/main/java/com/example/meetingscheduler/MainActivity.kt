@@ -1638,22 +1638,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
 
     Scaffold(
         containerColor = AppSurface,
-        topBar = {
-            if (current == Screen.HOME) {
-                TopAppBar(
-                    title = {
-                        Text(
-                            "JW Meeting Manager",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                        )
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = AppSurface)
-                )
-            }
-        },
+        topBar = {},
         bottomBar = {
             PreviewBottomNavigation(
                 current = current,
@@ -2597,7 +2582,7 @@ private fun HomeScreen(
         "May susunod kang meeting sa ${it.format(DateTimeFormatter.ofPattern("MMM d", Locale.ENGLISH))}. I-tap ang card para makita ang schedule."
     } ?: "Wala pang paparating na meeting. Lalabas dito ang susunod mong schedule."
     PageColumn(modifier) {
-        PageHeading("Home")
+        PageHeading("JW Meeting Manager")
         val greetingShape = RoundedCornerShape(26.dp)
         val abstractAccent = MaterialTheme.colorScheme.onPrimaryContainer
         Card(shape = greetingShape, colors = CardDefaults.cardColors(containerColor = ForestContainer)) {

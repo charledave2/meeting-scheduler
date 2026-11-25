@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.45 — 2026-11-25
+
+- Remove the redundant Home heading and emphasize JW Meeting Manager as the single Home page title.
+
+
 ## v0.45.44 — 2026-11-25
 
 - Make the otter visibly react to taps by smoothly crossfading into a friendly waving pose, then returning to idle with the tip bubble.
