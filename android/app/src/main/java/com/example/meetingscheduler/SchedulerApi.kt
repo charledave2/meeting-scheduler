@@ -63,6 +63,8 @@ internal class SchedulerApi(context: Context) {
         }
     }
 
+    fun hasStoredSession(): Boolean = vault.read() != null
+
     suspend fun currentUser(): ApiIdentity = withContext(Dispatchers.IO) { meBlocking() }
     suspend fun registerPushToken(token: String) = withContext(Dispatchers.IO) {
         request("/api/push-token", "POST", JSONObject().put("token", token).put("provider", "fcm").put("platform", "android"))
@@ -242,6 +244,91 @@ internal class SchedulerApi(context: Context) {
             }
         }
         throw IllegalStateException(lastError?.message ?: "Hindi makuha ang tamang workbook.")
+    }
+
+
+    suspend fun downloadPublicWorkbook(weekStart: String): WorkbookImport = withContext(Dispatchers.IO) {
+        val date = LocalDate.parse(weekStart)
+        val basePath = "https://wol.jw.org/tl/wol"
+        val page = fetchText("$basePath/dt/r27/lp-tg/${date.year}/${date.monthValue}/${date.dayOfMonth}")
+        for (document in workbookDocumentIds(page, date)) {
+            val url = "$basePath/d/r27/lp-tg/$document"
+            val html = try { fetchText(url) } catch (_: java.io.IOException) { continue }
+            parsePublicWorkbook(url, html, date)?.let { return@withContext it }
+        }
+        error("No matching workbook found for this week. You can enter the meeting parts manually.")
+    }
+
+    private fun parsePublicWorkbook(url: String, html: String, date: LocalDate): WorkbookImport? {
+        fun clean(value: String): String = android.text.Html.fromHtml(value, android.text.Html.FROM_HTML_MODE_COMPACT)
+            .toString().replace(Regex("""[\s\u00a0]+"""), " ").trim()
+        fun section(heading: String): String? = when {
+            heading.contains("KAYAMANAN MULA", true) -> "treasures"
+            heading.contains("MAGING MAHUSAY", true) -> "ministry"
+            heading.contains("PAMUMUHAY BILANG", true) -> "living"
+            else -> null
+        }
+        val title = Regex("""<h1\b[^>]*>([\s\S]*?)</h1>""", RegexOption.IGNORE_CASE)
+            .find(html)?.groupValues?.get(1)?.let(::clean) ?: return null
+        val last = date.plusDays(6)
+        val months = listOf("enero", "pebrero", "marso", "abril", "mayo", "hunyo", "hulyo",
+            "agosto", "setyembre", "oktubre", "nobyembre", "disyembre")
+        val firstMonth = months[date.monthValue - 1]
+        val lastMonth = months[last.monthValue - 1]
+        val range = if (firstMonth == lastMonth) {
+            """\b$firstMonth\s+${date.dayOfMonth}\s*[-–—]\s*${last.dayOfMonth}\b"""
+        } else {
+            """\b$firstMonth\s+${date.dayOfMonth}\s*[-–—]\s*$lastMonth\s+${last.dayOfMonth}\b"""
+        }
+        if (!Regex(range, RegexOption.IGNORE_CASE).containsMatchIn(title)) return null
+
+        val headers = Regex("""<h([23])\b[^>]*>([\s\S]*?)</h\1>""", RegexOption.IGNORE_CASE)
+            .findAll(html).toList()
+        val numberPattern = Regex("""^(\d+)\.\s*(.+)$""")
+        val paragraphPattern = Regex("""<p\b[^>]*>([\s\S]*?)</p>""", RegexOption.IGNORE_CASE)
+        val durationPattern = Regex("""^\((\d+)\s*min\.?\)\s*(.*)$""", RegexOption.IGNORE_CASE)
+        val reading = headers.firstNotNullOfOrNull { match ->
+            val heading = clean(match.groupValues[2])
+            heading.takeIf { match.groupValues[1] == "2" && section(it) == null && it.isNotBlank() }
+        } ?: return null
+        var currentSection: String? = null
+        val entries = mutableListOf<Pair<JSONObject, Int>>()
+        for ((index, match) in headers.withIndex()) {
+            val heading = clean(match.groupValues[2])
+            if (match.groupValues[1] == "2") {
+                currentSection = section(heading) ?: currentSection
+                continue
+            }
+            val group = currentSection ?: continue
+            val number = numberPattern.matchEntire(heading)?.groupValues?.get(1)?.toIntOrNull() ?: continue
+            val until = headers.getOrNull(index + 1)?.range?.first ?: html.length
+            val paragraph = paragraphPattern.find(html.substring(match.range.last + 1, until))
+                ?.groupValues?.get(1)?.let(::clean).orEmpty()
+            val details = durationPattern.matchEntire(paragraph)
+            val minutes = details?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(0, 180) ?: 0
+            val ministry = group == "ministry" && !heading.contains("ano ang sasabihin mo", true)
+            val bibleReading = heading.contains("pagbabasa ng bibliya", true)
+            val bibleStudy = heading.contains("pag-aaral ng kongregasyon sa bibliya", true)
+            entries += JSONObject().put("id", number).put("title", heading).put("section", group)
+                .put("detail", details?.groupValues?.get(2).orEmpty())
+                .put("duration", if (minutes > 0) "$minutes min." else "")
+                .put("hasAssistant", ministry || bibleStudy).put("hasSecondary", ministry || bibleReading)
+                .put("hasSecondaryAssistant", ministry) to minutes
+        }
+        if (entries.isEmpty()) return null
+
+        val lastMinistry = entries.indexOfLast { (part, _) -> part.optString("section") == "ministry" }
+        var minute = 18 * 60 + 6
+        val parts = entries.mapIndexed { index, (part, duration) ->
+            part.put("time", "%02d:%02d".format(Locale.ROOT, minute / 60 % 24, minute % 60))
+            minute += duration + (if (part.optInt("id") >= 3) 1 else 0) + (if (index == lastMinistry) 5 else 0)
+            part
+        }
+        val songs = Regex("""Awit(?:\s+Blg\.)?\s*(\d+)""", RegexOption.IGNORE_CASE)
+            .findAll(clean(html)).map { it.groupValues[1] }.toList()
+        val meta = JSONObject().put("reading", reading.uppercase(Locale.ROOT))
+            .put("openingSong", songs.firstOrNull().orEmpty()).put("closingSong", songs.lastOrNull().orEmpty())
+        return WorkbookImport(url, meta, parts)
     }
 
     private fun workbookDocumentIds(html: String, date: LocalDate): List<String> {
