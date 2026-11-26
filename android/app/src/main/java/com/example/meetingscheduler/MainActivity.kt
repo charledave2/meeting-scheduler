@@ -4852,7 +4852,10 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
     val page = Screen.valueOf(pageName)
     var toolsOpen by remember { mutableStateOf(false) }
     var profileOpen by remember { mutableStateOf(false) }
-    var downloadBusy by remember { mutableStateOf(false) }
+    var captureWeek by remember { mutableStateOf<String?>(null) }
+    var captureBusy by remember { mutableStateOf(false) }
+    var captureLog by remember { mutableStateOf(emptyList<String>()) }
+    var captureResult by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     var fileBusy by remember { mutableStateOf(false) }
     var pngBusy by remember { mutableStateOf(false) }
     var pendingRestore by remember { mutableStateOf<DeviceWorkspace?>(null) }
@@ -4888,7 +4891,7 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
         }
     }
     val restore = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null && !downloadBusy) scope.launch {
+        if (uri != null && !captureBusy) scope.launch {
             fileBusy = true
             try {
                 val restored = withContext(Dispatchers.IO) {
@@ -5012,31 +5015,49 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
                 }
             }
             Screen.DETAILS -> DeviceWorkbook(
-                modifier, draft, data.downloads, downloadBusy,
+                modifier, draft, data.downloads,
+                captureBusy = captureBusy,
+                captureLog = if (captureWeek == selected) captureLog else emptyList(),
+                captureResult = if (captureWeek == selected) captureResult else null,
+                capturingSelectedWeek = captureBusy && captureWeek == selected,
                 onSelectWeek = { week -> update(data.copy(selectedWeek = week.toString())) },
                 onEdit = ::edit,
-                onDownload = {
-                    scope.launch {
-                        downloadBusy = true
-                        try {
-                            val result = SchedulerApi(context).downloadPublicWorkbook(draft.weekStart)
-                            val parts = result.parts.map { it.toAssignment().copy(
-                                person = "", assistant = "", secondaryAssignee = "", secondaryAssistant = ""
-                            ) }
-                            val template = blankLocalSchedule(LocalDate.parse(draft.weekStart)).copy(
-                                reading = result.meta.optString("reading"),
-                                openingSong = result.meta.optString("openingSong"),
-                                closingSong = result.meta.optString("closingSong"),
-                                assignments = parts
-                            )
-                            workspace?.let { latest ->
-                                update(latest.copy(downloads = latest.downloads.withLocalSchedule(template)))
-                            }
-                            message("Workbook downloaded. You can use it offline.")
-                        } catch (error: Exception) {
-                            if (error is kotlinx.coroutines.CancellationException) throw error
-                            message(error.message ?: "Couldn’t download this workbook.")
-                        } finally { downloadBusy = false }
+                onCapture = {
+                    if (!captureBusy && !fileBusy) {
+                        val week = draft.weekStart
+                        captureWeek = week
+                        captureBusy = true
+                        captureLog = emptyList()
+                        captureResult = null
+                        scope.launch {
+                            try {
+                                val result = SchedulerApi(context).capturePublicWorkbook(week) { line ->
+                                    withContext(Dispatchers.Main.immediate) {
+                                        captureLog = (captureLog + line).takeLast(10)
+                                    }
+                                }
+                                val template = blankLocalSchedule(LocalDate.parse(week)).copy(
+                                    reading = result.meta.optString("reading"),
+                                    openingSong = result.meta.optString("openingSong"),
+                                    closingSong = result.meta.optString("closingSong"),
+                                    assignments = result.parts.map { it.toAssignment() }
+                                )
+                                val latest = workspace ?: return@launch
+                                val existingDraft = latest.drafts.firstOrNull { it.weekStart == week }
+                                val applyNow = existingDraft == null || !existingDraft.hasLocalWorkbookContent()
+                                update(latest.copy(
+                                    drafts = if (applyNow) latest.drafts.withLocalSchedule(template.withLocalRoles(existingDraft)) else latest.drafts,
+                                    downloads = latest.downloads.withLocalSchedule(template)
+                                ))
+                                captureResult = (if (applyNow) "Workbook captured and applied to the draft. Available offline."
+                                    else "Workbook captured and saved offline. Apply it when you’re ready.") to true
+                            } catch (error: Exception) {
+                                if (error is kotlinx.coroutines.CancellationException) throw error
+                                val detail = error.message ?: "Check your connection and try again."
+                                captureLog = (captureLog + detail).takeLast(10)
+                                captureResult = "Couldn’t capture this workbook. Check your connection or enter the parts manually." to false
+                            } finally { captureBusy = false }
+                        }
                     }
                 },
                 onNext = { navigate(Screen.ASSIGNMENTS) }
@@ -5146,7 +5167,7 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
                     message("Workspace settings saved.")
                 }
                 OutlinedButton(enabled = !fileBusy, onClick = { backup.launch("jw-meeting-workspace.json") }) { Text("Create backup") }
-                OutlinedButton(enabled = !fileBusy && !downloadBusy, onClick = { restore.launch(arrayOf("application/json", "application/octet-stream")) }) { Text("Restore backup") }
+                OutlinedButton(enabled = !fileBusy && !captureBusy, onClick = { restore.launch(arrayOf("application/json", "application/octet-stream")) }) { Text("Restore backup") }
                 TextButton(enabled = !pngBusy, onClick = onOpenShared) { Text("Open Shared Workspace") }
             }
         }
@@ -5204,22 +5225,34 @@ private fun DeviceWorkspaceFields(data: DeviceWorkspace?, action: String, onSave
 }
  
 
+private fun SavedSchedule.hasLocalWorkbookContent() =
+    assignments.isNotEmpty() || reading.isNotBlank() || openingSong.isNotBlank() || closingSong.isNotBlank()
+
+private fun SavedSchedule.withLocalRoles(draft: SavedSchedule?) = if (draft == null) this else copy(
+    chairman = draft.chairman, openingPrayer = draft.openingPrayer,
+    adviser = draft.adviser, audienceGroup = draft.audienceGroup
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DeviceWorkbook(
     modifier: Modifier,
     draft: SavedSchedule,
     downloads: List<SavedSchedule>,
-    downloading: Boolean,
+    captureBusy: Boolean,
+    captureLog: List<String>,
+    captureResult: Pair<String, Boolean>?,
+    capturingSelectedWeek: Boolean,
     onSelectWeek: (LocalDate) -> Unit,
     onEdit: (SavedSchedule) -> Unit,
-    onDownload: () -> Unit,
+    onCapture: () -> Unit,
     onNext: () -> Unit
 ) {
     val date = LocalDate.parse(draft.weekStart)
     val template = downloads.firstOrNull { it.weekStart == draft.weekStart }
     var pickDate by remember { mutableStateOf(false) }
     var useDownload by remember(draft.weekStart) { mutableStateOf(false) }
+    var showCaptureLog by rememberSaveable(draft.weekStart) { mutableStateOf(false) }
     var partIndex by remember(draft.weekStart) { mutableStateOf<Int?>(null) }
     WorkflowPage(modifier, actions = {
         Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) { Text("Continue to assignments") }
@@ -5239,18 +5272,38 @@ private fun DeviceWorkbook(
             )
         }
         M3Card {
-            Text("Workbook download", style = MaterialTheme.typography.titleMedium)
-            Text(if (template == null) "Download this week while online, or enter the meeting parts below."
-                else "This week is available offline.", color = Muted)
-            OutlinedButton(onClick = onDownload, enabled = !downloading) {
-                Text(if (downloading) "Downloading…" else if (template != null) "Download again" else "Download workbook")
+            Label("JW.ORG WORKBOOK")
+            Text("Weekly program", style = MaterialTheme.typography.titleMedium)
+            if (capturingSelectedWeek) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            val status = when {
+                capturingSelectedWeek -> captureLog.lastOrNull() ?: "Starting workbook capture…"
+                captureResult != null -> captureResult.first
+                captureBusy -> "Capture is running for another week."
+                template != null -> "A captured workbook is available offline for this week."
+                else -> "Capture this week while online, or enter the meeting parts manually."
+            }
+            Text(
+                status,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                color = if (captureResult?.second == false) MaterialTheme.colorScheme.error else Muted
+            )
+            FilledTonalButton(onClick = onCapture, enabled = !captureBusy) {
+                Icon(SproutIcons.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (capturingSelectedWeek) "Capturing workbook…" else "Capture workbook")
             }
             if (template != null) TextButton(onClick = {
-                if (draft.assignments.isEmpty() && draft.reading.isBlank() && draft.openingSong.isBlank() && draft.closingSong.isBlank()) {
-                    onEdit(template.copy(chairman = draft.chairman, openingPrayer = draft.openingPrayer,
-                        adviser = draft.adviser, audienceGroup = draft.audienceGroup))
-                } else useDownload = true
-            }) { Text("Use downloaded workbook") }
+                if (draft.hasLocalWorkbookContent()) useDownload = true
+                else onEdit(template.withLocalRoles(draft))
+            }) { Text("Apply captured workbook") }
+            if (captureLog.isNotEmpty()) {
+                TextButton(onClick = { showCaptureLog = !showCaptureLog }) {
+                    Text(if (showCaptureLog) "Hide capture log" else "Show capture log")
+                }
+                if (showCaptureLog) captureLog.forEach { line ->
+                    Text(line, color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
         }
         M3Card {
             Text("Meeting parts", style = MaterialTheme.typography.titleMedium)
@@ -5279,13 +5332,12 @@ private fun DeviceWorkbook(
     }
     if (useDownload && template != null) AlertDialog(
         onDismissRequest = { useDownload = false },
-        title = { Text("Use downloaded workbook?") },
+        title = { Text("Apply captured workbook?") },
         text = { Text("This replaces the reading, songs, and meeting parts in this draft, including the names assigned to those parts.") },
         confirmButton = { TextButton(onClick = {
-            onEdit(template.copy(chairman = draft.chairman, openingPrayer = draft.openingPrayer,
-                adviser = draft.adviser, audienceGroup = draft.audienceGroup))
+            onEdit(template.withLocalRoles(draft))
             useDownload = false
-        }) { Text("Use workbook") } },
+        }) { Text("Apply workbook") } },
         dismissButton = { TextButton(onClick = { useDownload = false }) { Text("Cancel") } }
     )
     partIndex?.let { index ->

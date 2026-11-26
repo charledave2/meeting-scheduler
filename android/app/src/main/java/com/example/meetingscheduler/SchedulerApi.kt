@@ -247,14 +247,23 @@ internal class SchedulerApi(context: Context) {
     }
 
 
-    suspend fun downloadPublicWorkbook(weekStart: String): WorkbookImport = withContext(Dispatchers.IO) {
+    suspend fun capturePublicWorkbook(
+        weekStart: String,
+        onProgress: suspend (String) -> Unit
+    ): WorkbookImport = withContext(Dispatchers.IO) {
         val date = LocalDate.parse(weekStart)
         val basePath = "https://wol.jw.org/tl/wol"
+        onProgress("Opening the JW.ORG meeting page…")
         val page = fetchText("$basePath/dt/r27/lp-tg/${date.year}/${date.monthValue}/${date.dayOfMonth}")
-        for (document in workbookDocumentIds(page, date)) {
+        val candidates = workbookDocumentIds(page, date)
+        onProgress("Found ${candidates.size} workbook candidates for this week.")
+        for (document in candidates) {
+            onProgress("Checking workbook $document…")
             val url = "$basePath/d/r27/lp-tg/$document"
             val html = try { fetchText(url) } catch (_: java.io.IOException) { continue }
-            parsePublicWorkbook(url, html, date)?.let { return@withContext it }
+            val workbook = parsePublicWorkbook(url, html, date) ?: continue
+            onProgress("Captured ${workbook.parts.size} meeting parts.")
+            return@withContext workbook
         }
         error("No matching workbook found for this week. You can enter the meeting parts manually.")
     }
