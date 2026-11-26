@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.45.49 — 2026-11-27
+
+- Show the next meeting and its available actions on Local Workspace Home, with access to upcoming schedules and history.
+- Simplify the local Workbook around captured meeting parts and show local meeting times in 12-hour format across Workbook, Assignments, preview, and PNG export.
+- Label the congregation name in local setup and settings, and group backup and restore controls together.
+
 ## v0.45.48 — 2026-11-27
 
 - Add a Local Workspace that can be set up and used without an account or internet connection.
