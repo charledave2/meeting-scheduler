@@ -3071,7 +3071,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, parti
                 Column(Modifier.fillMaxWidth().padding(top=6.dp)) {
                     parts.forEachIndexed { index, part ->
                         if(index>0) HorizontalDivider(Modifier.padding(vertical=6.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                        AssignmentPicker(index, part, participants, rotation, readOnly, selectedNames) { slot, name -> onAssign(index,slot,name) }
+                        AssignmentPicker(index, part, participants, rotation, readOnly, selectedNames, useLocalClock = saveToDevice) { slot, name -> onAssign(index,slot,name) }
                     }
                 }
             }
@@ -3080,7 +3080,7 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, parti
 }
 
 @Composable
-private fun AssignmentPicker(index: Int, part: Assignment, participants: List<Participant>, rotation: Map<Int, ParticipantRotation>, readOnly:Boolean, excludedNames: Set<String> = emptySet(), onAssign: (String,String) -> Unit) {
+private fun AssignmentPicker(index: Int, part: Assignment, participants: List<Participant>, rotation: Map<Int, ParticipantRotation>, readOnly:Boolean, excludedNames: Set<String> = emptySet(), useLocalClock: Boolean = false, onAssign: (String,String) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             val darkBadges = IsDarkPalette
@@ -3093,7 +3093,7 @@ private fun AssignmentPicker(index: Int, part: Assignment, participants: List<Pa
                 Text("${part.id.takeIf { it>0 } ?: index+1}", color = badgeColors.second, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
             }
             Spacer(Modifier.width(9.dp))
-            Column(Modifier.weight(1f)) { Text(part.title.substringAfter(". ",part.title), fontWeight = FontWeight.Bold, fontSize = 14.sp, lineHeight = 20.sp); Text(listOf(part.time,part.duration,part.detail).filter{it.isNotBlank()}.joinToString(" · "), color = Muted, fontSize = 12.sp, lineHeight = 16.sp) }
+            Column(Modifier.weight(1f)) { Text(part.title.substringAfter(". ",part.title), fontWeight = FontWeight.Bold, fontSize = 14.sp, lineHeight = 20.sp); Text(listOf(if (useLocalClock) formatLocalMeetingTime(part.time) else part.time, part.duration, part.detail).filter{it.isNotBlank()}.joinToString(" · "), color = Muted, fontSize = 12.sp, lineHeight = 16.sp) }
         }
         val title=part.title.lowercase(Locale.ROOT); val bibleReading=title.contains("pagbabasa ng bibliya"); val bibleStudy=title.contains("pag-aaral ng kongregasyon sa bibliya"); val what=title.contains("ano ang sasabihin mo")
         val qualified=!what && (part.section=="living" || (part.section=="treasures" && !bibleReading))
@@ -3330,10 +3330,10 @@ private fun rotationShortDate(value: String): String = runCatching {
 }.getOrDefault(value)
 
 @Composable
-private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, openingSong:String, closingSong:String, parts:List<Assignment>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, previewWebView:MutableState<WebView?>, allowExport:Boolean, exportBusyType:String?, onExportText:()->Unit, onPng:()->Unit, onAssignmentSlipImages:()->Unit, showAssignmentSlips: Boolean = true) {
+private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, openingSong:String, closingSong:String, parts:List<Assignment>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, previewWebView:MutableState<WebView?>, allowExport:Boolean, exportBusyType:String?, onExportText:()->Unit, onPng:()->Unit, onAssignmentSlipImages:()->Unit, showAssignmentSlips: Boolean = true, useLocalClock: Boolean = false) {
     val context = LocalContext.current
-    val html=remember(weekStart,bible,openingSong,closingSong,parts.toList(),chairman,openingPrayer,adviser,audienceGroup) {
-        buildOfficialScheduleHtml(context, weekStart,bible,openingSong,closingSong,parts,chairman,openingPrayer,adviser,audienceGroup,exportMode=true)
+    val html=remember(weekStart,bible,openingSong,closingSong,parts.toList(),chairman,openingPrayer,adviser,audienceGroup,useLocalClock) {
+        buildOfficialScheduleHtml(context, weekStart,bible,openingSong,closingSong,parts,chairman,openingPrayer,adviser,audienceGroup,exportMode=true,useLocalClock=useLocalClock)
     }
     var previewReady by remember(html){mutableStateOf(false)}
     val pageAspect = SCHEDULE_EXPORT_WIDTH_PX.toFloat() / SCHEDULE_EXPORT_HEIGHT_PX
@@ -3556,13 +3556,20 @@ private const val SCHEDULE_EXPORT_DPI = 300
 private const val SCHEDULE_EXPORT_CSS_WIDTH = 397
 private const val SCHEDULE_EXPORT_CSS_HEIGHT = 562
 
-private fun buildOfficialScheduleHtml(context: Context, weekStart:String,bible:String,openingSong:String,closingSong:String,parts:List<Assignment>,chairman:String,openingPrayer:String,adviser:String,audienceGroup:String,exportMode:Boolean=false):String {
+private fun buildOfficialScheduleHtml(context: Context, weekStart:String,bible:String,openingSong:String,closingSong:String,parts:List<Assignment>,chairman:String,openingPrayer:String,adviser:String,audienceGroup:String,exportMode:Boolean=false,useLocalClock:Boolean=false):String {
     val start=runCatching{LocalDate.parse(weekStart)}.getOrDefault(LocalDate.now())
     val end=start.plusDays(6)
     val months=listOf("Enero","Pebrero","Marso","Abril","Mayo","Hunyo","Hulyo","Agosto","Setyembre","Oktubre","Nobyembre","Disyembre")
     val weekText=if(start.month==end.month) "${months[start.monthValue-1]} ${start.dayOfMonth}-${end.dayOfMonth}" else "${months[start.monthValue-1]} ${start.dayOfMonth}–${months[end.monthValue-1]} ${end.dayOfMonth}"
     fun minutes(time:String):Int { val p=time.split(":");return if(p.size==2) (p[0].toIntOrNull()?:0)*60+(p[1].toIntOrNull()?:0) else 0 }
-    fun clock(value:Int):String { val hour=(value/60)%12; return "${if(hour==0)12 else hour}:${(value%60).toString().padStart(2,'0')}" }
+    fun clock(value:Int):String {
+        if (useLocalClock) {
+            val minuteOfDay = Math.floorMod(value, 24 * 60)
+            return java.time.LocalTime.of(minuteOfDay / 60, minuteOfDay % 60).format(localMeetingClock)
+        }
+        val hour = (value / 60) % 12
+        return "${if(hour==0)12 else hour}:${(value%60).toString().padStart(2,'0')}"
+    }
     fun isBibleReading(p:Assignment)=p.title.contains("pagbabasa ng bibliya",true)
     fun isBibleStudy(p:Assignment)=p.title.contains("pag-aaral ng kongregasyon sa bibliya",true)
     fun isWhat(p:Assignment)=p.title.contains("ano ang sasabihin mo",true)
@@ -3595,7 +3602,7 @@ private fun buildOfficialScheduleHtml(context: Context, weekStart:String,bible:S
             rows.forEach { p ->
                 val bulletColor=meta.second
                 val partNumber = p.id.takeIf { it > 0 } ?: (parts.indexOf(p) + 1)
-                append("<div class=\"program\"><div class=\"time\">").append(p.time.ifBlank{"—"}.htmlSafe()).append("</div><div class=\"part\"><span class=\"part-dot\" style=\"color:").append(bulletColor).append("\">●</span><span class=\"part-number\">").append(partNumber).append(".</span>").append(p.title.replaceFirst(Regex("^\\s*\\d+\\.\\s*"),"").htmlSafe())
+                append("<div class=\"program\"><div class=\"time\">").append((if (useLocalClock) formatLocalMeetingTime(p.time) else p.time).ifBlank { "—" }.htmlSafe()).append("</div><div class=\"part\"><span class=\"part-dot\" style=\"color:").append(bulletColor).append("\">●</span><span class=\"part-number\">").append(partNumber).append(".</span>").append(p.title.replaceFirst(Regex("^\\s*\\d+\\.\\s*"),"").htmlSafe())
                 if(p.duration.isNotBlank()) append(" (").append(p.duration.htmlSafe()).append(")")
                 if(p.detail.isNotBlank()) append(" ").append(p.detail.htmlSafe())
                 append("</div>")
@@ -4986,20 +4993,24 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
         }
         fun viewSaved(schedule: SavedSchedule) { previewSnapshot = schedule; pageName = Screen.PREVIEW.name }
         when (page) {
-            Screen.HOME, Screen.HISTORY -> PageColumn(modifier) {
-                val home = page == Screen.HOME
-                PageHeading(if (home) "JW Meeting Manager" else "Local History", "${data.name} · Local Workspace")
-                if (home) Button(onClick = { navigate(Screen.DETAILS) }, modifier = Modifier.fillMaxWidth()) { Text("Open Workbook") }
-                val today = LocalDate.now()
-                fun meetingDate(schedule: SavedSchedule) =
-                    LocalDate.parse(schedule.weekStart).plusDays((data.meetingDay.value - 1).toLong())
-                val schedules = if (home) data.history.filter { !meetingDate(it).isBefore(today) }
-                    .sortedBy(::meetingDate) else data.history.sortedByDescending(::meetingDate)
-                if (home) Text("Upcoming meetings", style = MaterialTheme.typography.titleLarge)
-                if (schedules.isEmpty()) Text(if (home) "No upcoming meetings saved on this device." else "No schedules saved on this device.")
+            Screen.HOME -> LocalWorkspaceHome(
+                modifier = modifier,
+                workspace = data,
+                onOpenWeek = { week ->
+                    update(data.copy(selectedWeek = week))
+                    navigate(Screen.DETAILS)
+                },
+                onPreview = ::viewSaved,
+                onHistory = { navigate(Screen.HISTORY) }
+            )
+            Screen.HISTORY -> PageColumn(modifier) {
+                PageHeading("Local History", "${data.name} · Local Workspace")
+                val schedules = data.history.sortedByDescending { it.weekStart }
+                if (schedules.isEmpty()) Text("No schedules saved on this device.")
                 schedules.forEach { item ->
+                    val meetingDate = LocalDate.parse(item.weekStart).plusDays((data.meetingDay.value - 1).toLong())
                     M3Card {
-                        Text(meetingDate(item).format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH)),
+                        Text(meetingDate.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH)),
                             style = MaterialTheme.typography.titleMedium)
                         if (item.reading.isNotBlank()) Text(item.reading, color = Muted)
                         AdaptivePair(
@@ -5010,7 +5021,7 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
                                 navigate(Screen.DETAILS)
                             }, modifier = field) { Text("Open editor") } }
                         )
-                        if (!home) TextButton(onClick = { removeSchedule = item }) { Text("Delete saved schedule") }
+                        TextButton(onClick = { removeSchedule = item }) { Text("Delete saved schedule") }
                     }
                 }
             }
@@ -5055,7 +5066,7 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
                                 if (error is kotlinx.coroutines.CancellationException) throw error
                                 val detail = error.message ?: "Check your connection and try again."
                                 captureLog = (captureLog + detail).takeLast(10)
-                                captureResult = "Couldn’t capture this workbook. Check your connection or enter the parts manually." to false
+                                captureResult = "Couldn’t capture this workbook. Check your connection and try again." to false
                             } finally { captureBusy = false }
                         }
                     }
@@ -5111,7 +5122,7 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
                         renderSchedulePng(context, buildOfficialScheduleHtml(
                             context, item.weekStart, item.reading, item.openingSong, item.closingSong,
                             item.assignments, item.chairman, item.openingPrayer, item.adviser, item.audienceGroup,
-                            exportMode = true
+                            exportMode = true, useLocalClock = true
                         ), onSuccess = { intent ->
                             pngBusy = false
                             context.startActivity(Intent.createChooser(intent, "Share schedule image"))
@@ -5121,7 +5132,8 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
                         })
                     },
                     onAssignmentSlipImages = {},
-                    showAssignmentSlips = false
+                    showAssignmentSlips = false,
+                    useLocalClock = true
                 )
             }
             Screen.PARTICIPANTS -> {
@@ -5166,9 +5178,21 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
                     update(data.copy(name = name, meetingDay = day))
                     message("Workspace settings saved.")
                 }
-                OutlinedButton(enabled = !fileBusy, onClick = { backup.launch("jw-meeting-workspace.json") }) { Text("Create backup") }
-                OutlinedButton(enabled = !fileBusy && !captureBusy, onClick = { restore.launch(arrayOf("application/json", "application/octet-stream")) }) { Text("Restore backup") }
-                TextButton(enabled = !pngBusy, onClick = onOpenShared) { Text("Open Shared Workspace") }
+                M3Card {
+                    Text("Backup & restore", style = MaterialTheme.typography.titleMedium)
+                    Text("Move your local participants, drafts, and schedules to another device.", color = Muted, style = MaterialTheme.typography.bodyMedium)
+                    AdaptivePair(
+                        { field -> OutlinedButton(modifier = field, enabled = !fileBusy,
+                            onClick = { backup.launch("jw-meeting-workspace.json") }) { Text("Create backup") } },
+                        { field -> OutlinedButton(modifier = field, enabled = !fileBusy && !captureBusy,
+                            onClick = { restore.launch(arrayOf("application/json", "application/octet-stream")) }) { Text("Restore backup") } }
+                    )
+                }
+                M3Card {
+                    Text("Shared Workspace", style = MaterialTheme.typography.titleMedium)
+                    Text("Open your cloud workspace and shared schedules.", color = Muted, style = MaterialTheme.typography.bodyMedium)
+                    TextButton(enabled = !pngBusy && !fileBusy, onClick = onOpenShared) { Text("Open Shared Workspace") }
+                }
             }
         }
     }
@@ -5206,7 +5230,7 @@ private fun DeviceWorkspaceFields(data: DeviceWorkspace?, action: String, onSave
     var day by rememberSaveable(data?.meetingDay) { mutableStateOf(data?.meetingDay?.name ?: "THURSDAY") }
     var chooseDay by remember { mutableStateOf(false) }
     M3Card {
-        OutlinedTextField(name, { if (it.length <= 80) name = it }, label = { Text("Workspace name") },
+        OutlinedTextField(name, { if (it.length <= 80) name = it }, label = { Text("Congregation name") },
             singleLine = true, modifier = Modifier.fillMaxWidth())
         Box {
             val selected = java.time.DayOfWeek.valueOf(day)
@@ -5225,6 +5249,18 @@ private fun DeviceWorkspaceFields(data: DeviceWorkspace?, action: String, onSave
 }
  
 
+private val localMeetingClock = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)
+
+private fun formatLocalMeetingTime(value: String): String = runCatching {
+    java.time.LocalTime.parse(value.trim()).format(localMeetingClock)
+}.getOrDefault(value)
+
+private fun SavedSchedule.matchesWorkbook(template: SavedSchedule): Boolean {
+    fun Assignment.programPart() = copy(person = "", assistant = "", secondaryAssignee = "", secondaryAssistant = "")
+    return reading == template.reading && openingSong == template.openingSong &&
+        closingSong == template.closingSong && assignments.map { it.programPart() } == template.assignments
+}
+
 private fun SavedSchedule.hasLocalWorkbookContent() =
     assignments.isNotEmpty() || reading.isNotBlank() || openingSong.isNotBlank() || closingSong.isNotBlank()
 
@@ -5232,6 +5268,101 @@ private fun SavedSchedule.withLocalRoles(draft: SavedSchedule?) = if (draft == n
     chairman = draft.chairman, openingPrayer = draft.openingPrayer,
     adviser = draft.adviser, audienceGroup = draft.audienceGroup
 )
+
+@Composable
+private fun LocalWorkspaceHome(
+    modifier: Modifier,
+    workspace: DeviceWorkspace,
+    onOpenWeek: (String) -> Unit,
+    onPreview: (SavedSchedule) -> Unit,
+    onHistory: () -> Unit
+) {
+    val today = LocalDate.now()
+    val dateFormat = remember { DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH) }
+    val offset = (workspace.meetingDay.value - 1).toLong()
+    val thisWeek = localWeek(today)
+    val nextWeek = if (thisWeek.plusDays(offset).isBefore(today)) thisWeek.plusWeeks(1) else thisWeek
+    val nextWeekKey = nextWeek.toString()
+    fun meetingDate(week: String) = LocalDate.parse(week).plusDays(offset)
+    val savedByWeek = workspace.history.associateBy { it.weekStart }
+    val nextSaved = savedByWeek[nextWeekKey]
+    val activeDraft = workspace.drafts.firstOrNull { draft ->
+        draft.weekStart == workspace.selectedWeek && draft.hasLocalWorkbookContent() &&
+            savedByWeek[draft.weekStart]?.copy(saved = draft.saved) != draft
+    }
+    val nextDraft = workspace.drafts.firstOrNull { it.weekStart == nextWeekKey && it.hasLocalWorkbookContent() }
+    val cachedNext = workspace.downloads.firstOrNull { it.weekStart == nextWeekKey }
+    val upcoming = workspace.history.filter { it.weekStart != nextWeekKey && !meetingDate(it.weekStart).isBefore(today) }
+        .sortedBy { it.weekStart }
+
+    PageColumn(modifier) {
+        PageHeading("JW Meeting Manager", "${workspace.name} · Local Workspace")
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(SproutIcons.CalendarMonth, contentDescription = null, modifier = Modifier.size(24.dp))
+                    Text("Next meeting", style = MaterialTheme.typography.titleMedium)
+                }
+                Text(nextWeek.plusDays(offset).format(dateFormat), style = MaterialTheme.typography.headlineSmall)
+                val reading = nextSaved?.reading ?: nextDraft?.reading ?: cachedNext?.reading
+                if (!reading.isNullOrBlank()) Text(reading, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    when {
+                        nextSaved != null -> "Schedule saved on this device."
+                        nextDraft != null -> "Draft in progress."
+                        cachedNext != null -> "Workbook available offline."
+                        else -> "Open Workbook to capture the weekly program and start your schedule."
+                    },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Button(
+                    onClick = { if (nextSaved != null) onPreview(nextSaved) else onOpenWeek(nextWeekKey) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(when {
+                        nextSaved != null -> "Preview schedule"
+                        nextDraft != null -> "Continue draft"
+                        else -> "Open Workbook"
+                    })
+                }
+            }
+        }
+
+        if (activeDraft != null && (activeDraft.weekStart != nextWeekKey || nextSaved != null)) {
+            M3Card {
+                Text("Continue your draft", style = MaterialTheme.typography.titleMedium)
+                Text(meetingDate(activeDraft.weekStart).format(dateFormat), color = Muted)
+                TextButton(onClick = { onOpenWeek(activeDraft.weekStart) }) { Text("Resume draft") }
+            }
+        }
+
+        if (upcoming.isNotEmpty()) {
+            Text("Other upcoming schedules", style = MaterialTheme.typography.titleLarge)
+            upcoming.take(3).forEach { item ->
+                M3Card {
+                    Text(meetingDate(item.weekStart).format(dateFormat), style = MaterialTheme.typography.titleMedium)
+                    if (item.reading.isNotBlank()) Text(item.reading, color = Muted)
+                    TextButton(onClick = { onPreview(item) }) { Text("Preview schedule") }
+                }
+            }
+        }
+        if (workspace.history.isNotEmpty()) {
+            OutlinedButton(onClick = onHistory, modifier = Modifier.fillMaxWidth()) {
+                Icon(SproutIcons.History, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("View schedule history")
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -5253,9 +5384,9 @@ private fun DeviceWorkbook(
     var pickDate by remember { mutableStateOf(false) }
     var useDownload by remember(draft.weekStart) { mutableStateOf(false) }
     var showCaptureLog by rememberSaveable(draft.weekStart) { mutableStateOf(false) }
-    var partIndex by remember(draft.weekStart) { mutableStateOf<Int?>(null) }
+    var showParts by rememberSaveable(draft.weekStart) { mutableStateOf(false) }
     WorkflowPage(modifier, actions = {
-        Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) { Text("Continue to assignments") }
+        Button(onClick = onNext, enabled = draft.assignments.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("Continue to assignments") }
     }) {
         PageHeading("Workbook", "Step 1 of 3 · Local Workspace")
         M3Card {
@@ -5280,7 +5411,7 @@ private fun DeviceWorkbook(
                 captureResult != null -> captureResult.first
                 captureBusy -> "Capture is running for another week."
                 template != null -> "A captured workbook is available offline for this week."
-                else -> "Capture this week while online, or enter the meeting parts manually."
+                else -> "Capture this week while online to load its meeting parts."
             }
             Text(
                 status,
@@ -5292,7 +5423,7 @@ private fun DeviceWorkbook(
                 Spacer(Modifier.width(8.dp))
                 Text(if (capturingSelectedWeek) "Capturing workbook…" else "Capture workbook")
             }
-            if (template != null) TextButton(onClick = {
+            if (template != null && !draft.matchesWorkbook(template)) TextButton(onClick = {
                 if (draft.hasLocalWorkbookContent()) useDownload = true
                 else onEdit(template.withLocalRoles(draft))
             }) { Text("Apply captured workbook") }
@@ -5305,14 +5436,18 @@ private fun DeviceWorkbook(
                 }
             }
         }
-        M3Card {
+        if (draft.assignments.isNotEmpty()) M3Card {
             Text("Meeting parts", style = MaterialTheme.typography.titleMedium)
-            draft.assignments.forEachIndexed { index, part ->
-                OutlinedButton(onClick = { partIndex = index }, modifier = Modifier.fillMaxWidth()) {
-                    Text(part.title)
+            TextButton(onClick = { showParts = !showParts }) {
+                Text(if (showParts) "Hide meeting parts" else "Show ${draft.assignments.size} meeting parts")
+            }
+            if (showParts) draft.assignments.forEach { part ->
+                Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Text(part.title, style = MaterialTheme.typography.bodyMedium)
+                    val details = listOf(formatLocalMeetingTime(part.time), part.duration).filter { it.isNotBlank() }
+                    if (details.isNotEmpty()) Text(details.joinToString(" · "), color = Muted, style = MaterialTheme.typography.bodySmall)
                 }
             }
-            TextButton(onClick = { partIndex = -1 }) { Text("Add meeting part") }
         }
     }
     if (pickDate) {
@@ -5340,89 +5475,4 @@ private fun DeviceWorkbook(
         }) { Text("Apply workbook") } },
         dismissButton = { TextButton(onClick = { useDownload = false }) { Text("Cancel") } }
     )
-    partIndex?.let { index ->
-        DevicePartEditor(
-            part = draft.assignments.getOrNull(index),
-            onDismiss = { partIndex = null },
-            onSave = { part ->
-                val parts = draft.assignments.toMutableList()
-                if (index in parts.indices) parts[index] = part else parts.add(part)
-                onEdit(draft.copy(assignments = parts))
-                partIndex = null
-            },
-            onDelete = if (index in draft.assignments.indices) ({
-                onEdit(draft.copy(assignments = draft.assignments.filterIndexed { i, _ -> i != index }))
-                partIndex = null
-            }) else null
-        )
-    }
-}
-
-@Composable
-private fun DevicePartEditor(part: Assignment?, onDismiss: () -> Unit, onSave: (Assignment) -> Unit, onDelete: (() -> Unit)?) {
-    val current = part ?: Assignment(title = "", section = "treasures", time = "19:05", duration = "5")
-    var title by rememberSaveable { mutableStateOf(current.title) }
-    var section by rememberSaveable { mutableStateOf(current.section) }
-    var time by rememberSaveable { mutableStateOf(current.time) }
-    var duration by rememberSaveable { mutableStateOf(Regex("[0-9]+").find(current.duration)?.value.orEmpty()) }
-    var assistant by rememberSaveable { mutableStateOf(current.hasAssistant) }
-    var secondHall by rememberSaveable { mutableStateOf(current.hasSecondary) }
-    var secondAssistant by rememberSaveable { mutableStateOf(current.hasSecondaryAssistant) }
-    var sectionsOpen by remember { mutableStateOf(false) }
-    var confirmDelete by remember { mutableStateOf(false) }
-    val sections = mapOf("treasures" to "Treasures", "ministry" to "Apply Yourself to the Field Ministry", "living" to "Living as Christians")
-    val validTime = runCatching { java.time.LocalTime.parse(time.trim()) }.isSuccess && time.trim().length == 5
-    val validDuration = (duration.toIntOrNull() ?: 0) in 1..180
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (part == null) "Add meeting part" else "Edit meeting part") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(title, { title = it }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth())
-                Box {
-                    OutlinedButton(onClick = { sectionsOpen = true }) { Text(sections[section] ?: "Select section") }
-                    DropdownMenu(expanded = sectionsOpen, onDismissRequest = { sectionsOpen = false }) {
-                        sections.forEach { (key, label) ->
-                            DropdownMenuItem(text = { Text(label) }, onClick = { section = key; sectionsOpen = false })
-                        }
-                    }
-                }
-                OutlinedTextField(time, { if (it.length <= 5) time = it }, label = { Text("Start time (HH:MM, 24-hour)") },
-                    singleLine = true, isError = !validTime, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(duration, { if (it.length <= 3) duration = it }, label = { Text("Duration in minutes") },
-                    singleLine = true, isError = !validDuration, modifier = Modifier.fillMaxWidth())
-                DevicePartOption("Include assistant or reader", assistant) { assistant = it }
-                DevicePartOption("Include Second Hall", secondHall) { secondHall = it }
-                if (secondHall) DevicePartOption("Include Second Hall assistant", secondAssistant) { secondAssistant = it }
-                if (onDelete != null) TextButton(onClick = { confirmDelete = true }) { Text("Remove this part") }
-            }
-        },
-        confirmButton = {
-            TextButton(enabled = title.isNotBlank() && validTime && validDuration, onClick = {
-                onSave(current.copy(
-                    title = title.trim(), section = section, time = time.trim(), duration = duration,
-                    hasAssistant = assistant, hasSecondary = secondHall, hasSecondaryAssistant = secondHall && secondAssistant,
-                    assistant = current.assistant.takeIf { assistant }.orEmpty(),
-                    secondaryAssignee = current.secondaryAssignee.takeIf { secondHall }.orEmpty(),
-                    secondaryAssistant = current.secondaryAssistant.takeIf { secondHall && secondAssistant }.orEmpty()
-                ))
-            }) { Text("Save part") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
-    if (confirmDelete && onDelete != null) AlertDialog(
-        onDismissRequest = { confirmDelete = false },
-        title = { Text("Remove this part?") },
-        text = { Text("Its assignments will also be removed from this draft.") },
-        confirmButton = { TextButton(onClick = onDelete) { Text("Remove part") } },
-        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } }
-    )
-}
-
-@Composable
-private fun DevicePartOption(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked, onChange)
-        Text(label, modifier = Modifier.weight(1f))
-    }
 }

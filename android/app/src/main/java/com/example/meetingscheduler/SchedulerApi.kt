@@ -265,7 +265,7 @@ internal class SchedulerApi(context: Context) {
             onProgress("Captured ${workbook.parts.size} meeting parts.")
             return@withContext workbook
         }
-        error("No matching workbook found for this week. You can enter the meeting parts manually.")
+        error("No matching workbook found for this week.")
     }
 
     private fun parsePublicWorkbook(url: String, html: String, date: LocalDate): WorkbookImport? {
