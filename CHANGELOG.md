@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.45.48 — 2026-11-27
+
+- Add a Local Workspace that can be set up and used without an account or internet connection.
+- Manage local participants, weekly drafts, and saved meeting schedules, with offline preview and PNG/text export.
+- Capture weekly Tagalog workbooks from JW.ORG while online and reuse them offline. Confirm before replacing existing workbook entries.
+- Back up and restore local workspace data, with a separate Shared Workspace for cloud use.
+
 ## v0.45.47 — 2026-11-26
 
 - Let the Home title wrap and show the next three meetings first, with the option to expand the list.

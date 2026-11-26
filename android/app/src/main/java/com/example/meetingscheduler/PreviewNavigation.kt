@@ -36,7 +36,8 @@ internal fun PreviewBottomNavigation(
     onProfileMenuToggle: () -> Unit,
     onProfileMenuDismiss: () -> Unit,
     onProfileSettings: () -> Unit,
-    onProfileSignOut: () -> Unit
+    onProfileSignOut: (() -> Unit)?,
+    onProfileWorkspace: (() -> Unit)? = null
 ) {
     val colors = MaterialTheme.colorScheme
     val labelGrowth = ((LocalDensity.current.fontScale - 1f).coerceAtLeast(0f) * 32f).dp
@@ -77,7 +78,8 @@ internal fun PreviewBottomNavigation(
                                 onClick = onProfileMenuToggle,
                                 onDismiss = onProfileMenuDismiss,
                                 onSettings = onProfileSettings,
-                                onSignOut = onProfileSignOut
+                                onSignOut = onProfileSignOut,
+                                onWorkspace = onProfileWorkspace
                             )
                         }
                     }
@@ -122,7 +124,8 @@ internal fun PreviewBottomNavigation(
                             onClick = onProfileMenuToggle,
                             onDismiss = onProfileMenuDismiss,
                             onSettings = onProfileSettings,
-                            onSignOut = onProfileSignOut
+                            onSignOut = onProfileSignOut,
+                                onWorkspace = onProfileWorkspace
                         )
                     }
                 }
@@ -142,7 +145,8 @@ private fun ProfileNavItem(
     onClick: () -> Unit,
     onDismiss: () -> Unit,
     onSettings: () -> Unit,
-    onSignOut: () -> Unit
+    onSignOut: (() -> Unit)?,
+    onWorkspace: (() -> Unit)?
 ) {
     val colors = MaterialTheme.colorScheme
     val roleLabel = when (role.lowercase()) {
@@ -195,7 +199,12 @@ private fun ProfileNavItem(
                 leadingIcon = { Icon(SproutIcons.Settings, contentDescription = null, tint = colors.primary) },
                 onClick = onSettings
             )
-            DropdownMenuItem(
+            if (onWorkspace != null) DropdownMenuItem(
+                text = { Text("Workspace") },
+                leadingIcon = { Icon(SproutIcons.ScheduleTools, contentDescription = null, tint = colors.primary) },
+                onClick = onWorkspace
+            )
+            if (onSignOut != null) DropdownMenuItem(
                 text = { Text("Sign out", color = colors.error) },
                 leadingIcon = { Icon(SproutIcons.Logout, contentDescription = null, tint = colors.error) },
                 onClick = onSignOut
