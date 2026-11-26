@@ -4993,20 +4993,24 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
         }
         fun viewSaved(schedule: SavedSchedule) { previewSnapshot = schedule; pageName = Screen.PREVIEW.name }
         when (page) {
-            Screen.HOME, Screen.HISTORY -> PageColumn(modifier) {
-                val home = page == Screen.HOME
-                PageHeading(if (home) "JW Meeting Manager" else "Local History", "${data.name} · Local Workspace")
-                if (home) Button(onClick = { navigate(Screen.DETAILS) }, modifier = Modifier.fillMaxWidth()) { Text("Open Workbook") }
-                val today = LocalDate.now()
-                fun meetingDate(schedule: SavedSchedule) =
-                    LocalDate.parse(schedule.weekStart).plusDays((data.meetingDay.value - 1).toLong())
-                val schedules = if (home) data.history.filter { !meetingDate(it).isBefore(today) }
-                    .sortedBy(::meetingDate) else data.history.sortedByDescending(::meetingDate)
-                if (home) Text("Upcoming meetings", style = MaterialTheme.typography.titleLarge)
-                if (schedules.isEmpty()) Text(if (home) "No upcoming meetings saved on this device." else "No schedules saved on this device.")
+            Screen.HOME -> LocalWorkspaceHome(
+                modifier = modifier,
+                workspace = data,
+                onOpenWeek = { week ->
+                    update(data.copy(selectedWeek = week))
+                    navigate(Screen.DETAILS)
+                },
+                onPreview = ::viewSaved,
+                onHistory = { navigate(Screen.HISTORY) }
+            )
+            Screen.HISTORY -> PageColumn(modifier) {
+                PageHeading("Local History", "${data.name} · Local Workspace")
+                val schedules = data.history.sortedByDescending { it.weekStart }
+                if (schedules.isEmpty()) Text("No schedules saved on this device.")
                 schedules.forEach { item ->
+                    val meetingDate = LocalDate.parse(item.weekStart).plusDays((data.meetingDay.value - 1).toLong())
                     M3Card {
-                        Text(meetingDate(item).format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH)),
+                        Text(meetingDate.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH)),
                             style = MaterialTheme.typography.titleMedium)
                         if (item.reading.isNotBlank()) Text(item.reading, color = Muted)
                         AdaptivePair(
@@ -5017,7 +5021,7 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
                                 navigate(Screen.DETAILS)
                             }, modifier = field) { Text("Open editor") } }
                         )
-                        if (!home) TextButton(onClick = { removeSchedule = item }) { Text("Delete saved schedule") }
+                        TextButton(onClick = { removeSchedule = item }) { Text("Delete saved schedule") }
                     }
                 }
             }
@@ -5264,6 +5268,101 @@ private fun SavedSchedule.withLocalRoles(draft: SavedSchedule?) = if (draft == n
     chairman = draft.chairman, openingPrayer = draft.openingPrayer,
     adviser = draft.adviser, audienceGroup = draft.audienceGroup
 )
+
+@Composable
+private fun LocalWorkspaceHome(
+    modifier: Modifier,
+    workspace: DeviceWorkspace,
+    onOpenWeek: (String) -> Unit,
+    onPreview: (SavedSchedule) -> Unit,
+    onHistory: () -> Unit
+) {
+    val today = LocalDate.now()
+    val dateFormat = remember { DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH) }
+    val offset = (workspace.meetingDay.value - 1).toLong()
+    val thisWeek = localWeek(today)
+    val nextWeek = if (thisWeek.plusDays(offset).isBefore(today)) thisWeek.plusWeeks(1) else thisWeek
+    val nextWeekKey = nextWeek.toString()
+    fun meetingDate(week: String) = LocalDate.parse(week).plusDays(offset)
+    val savedByWeek = workspace.history.associateBy { it.weekStart }
+    val nextSaved = savedByWeek[nextWeekKey]
+    val activeDraft = workspace.drafts.firstOrNull { draft ->
+        draft.weekStart == workspace.selectedWeek && draft.hasLocalWorkbookContent() &&
+            savedByWeek[draft.weekStart]?.copy(saved = draft.saved) != draft
+    }
+    val nextDraft = workspace.drafts.firstOrNull { it.weekStart == nextWeekKey && it.hasLocalWorkbookContent() }
+    val cachedNext = workspace.downloads.firstOrNull { it.weekStart == nextWeekKey }
+    val upcoming = workspace.history.filter { it.weekStart != nextWeekKey && !meetingDate(it.weekStart).isBefore(today) }
+        .sortedBy { it.weekStart }
+
+    PageColumn(modifier) {
+        PageHeading("JW Meeting Manager", "${workspace.name} · Local Workspace")
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(SproutIcons.CalendarMonth, contentDescription = null, modifier = Modifier.size(24.dp))
+                    Text("Next meeting", style = MaterialTheme.typography.titleMedium)
+                }
+                Text(nextWeek.plusDays(offset).format(dateFormat), style = MaterialTheme.typography.headlineSmall)
+                val reading = nextSaved?.reading ?: nextDraft?.reading ?: cachedNext?.reading
+                if (!reading.isNullOrBlank()) Text(reading, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    when {
+                        nextSaved != null -> "Schedule saved on this device."
+                        nextDraft != null -> "Draft in progress."
+                        cachedNext != null -> "Workbook available offline."
+                        else -> "Open Workbook to capture the weekly program and start your schedule."
+                    },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Button(
+                    onClick = { if (nextSaved != null) onPreview(nextSaved) else onOpenWeek(nextWeekKey) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(when {
+                        nextSaved != null -> "Preview schedule"
+                        nextDraft != null -> "Continue draft"
+                        else -> "Open Workbook"
+                    })
+                }
+            }
+        }
+
+        if (activeDraft != null && (activeDraft.weekStart != nextWeekKey || nextSaved != null)) {
+            M3Card {
+                Text("Continue your draft", style = MaterialTheme.typography.titleMedium)
+                Text(meetingDate(activeDraft.weekStart).format(dateFormat), color = Muted)
+                TextButton(onClick = { onOpenWeek(activeDraft.weekStart) }) { Text("Resume draft") }
+            }
+        }
+
+        if (upcoming.isNotEmpty()) {
+            Text("Other upcoming schedules", style = MaterialTheme.typography.titleLarge)
+            upcoming.take(3).forEach { item ->
+                M3Card {
+                    Text(meetingDate(item.weekStart).format(dateFormat), style = MaterialTheme.typography.titleMedium)
+                    if (item.reading.isNotBlank()) Text(item.reading, color = Muted)
+                    TextButton(onClick = { onPreview(item) }) { Text("Preview schedule") }
+                }
+            }
+        }
+        if (workspace.history.isNotEmpty()) {
+            OutlinedButton(onClick = onHistory, modifier = Modifier.fillMaxWidth()) {
+                Icon(SproutIcons.History, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("View schedule history")
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
