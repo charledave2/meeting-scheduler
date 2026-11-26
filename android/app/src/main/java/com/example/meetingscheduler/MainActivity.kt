@@ -5226,7 +5226,7 @@ private fun DeviceWorkspaceFields(data: DeviceWorkspace?, action: String, onSave
     var day by rememberSaveable(data?.meetingDay) { mutableStateOf(data?.meetingDay?.name ?: "THURSDAY") }
     var chooseDay by remember { mutableStateOf(false) }
     M3Card {
-        OutlinedTextField(name, { if (it.length <= 80) name = it }, label = { Text("Workspace name") },
+        OutlinedTextField(name, { if (it.length <= 80) name = it }, label = { Text("Congregation name") },
             singleLine = true, modifier = Modifier.fillMaxWidth())
         Box {
             val selected = java.time.DayOfWeek.valueOf(day)
