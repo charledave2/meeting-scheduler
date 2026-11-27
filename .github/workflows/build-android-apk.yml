@@ -91,7 +91,9 @@ jobs:
           retention-days: 90
       - name: Package Android project source
         if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release:')
-        run: zip -rq ../meeting-scheduler-android-source.zip . -x "*/build/*" ".gradle/*" "*/.gradle/*" "*/release-keystore.jks"
+        run: |
+          zip -rq ../meeting-scheduler-android-source.zip . -x "*/build/*" ".gradle/*" "*/.gradle/*" "*/release-keystore.jks"
+          zip -jq ../meeting-scheduler-android-source.zip ../CHANGELOG.md
       - name: Publish GitHub Release
         if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'Release:')
         env:

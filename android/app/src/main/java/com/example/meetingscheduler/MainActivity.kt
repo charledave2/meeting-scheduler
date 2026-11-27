@@ -4364,15 +4364,12 @@ private fun AccountsScreen(
     onAction: (RemoteAccount, String, String, String) -> Unit,
     onUpdateToolAccess: (RemoteAccount, Map<String, String>) -> Unit
 ) {
-    val context = LocalContext.current
     var selectedAccount by remember { mutableStateOf<RemoteAccount?>(null) }
     var actionTarget by remember { mutableStateOf<RemoteAccount?>(null) }
     var selectedAction by remember { mutableStateOf("") }
     var temporaryPassword by remember { mutableStateOf("") }
     var selectedRole by remember { mutableStateOf("viewer") }
     var editProfileNameOpen by remember { mutableStateOf(false) }
-    var aboutOpen by rememberSaveable { mutableStateOf(false) }
-    var licenseInfoOpen by remember { mutableStateOf(false) }
     var profileNameDraft by rememberSaveable(profileName) { mutableStateOf(profileName) }
     val filtered = accounts.sortedWith(compareBy<RemoteAccount>({ if (it.role == "admin") 0 else 1 }, { when (it.status) { "requested" -> 0; "active" -> 1; else -> 2 } }, { it.displayName.lowercase() }))
     fun beginAction(account: RemoteAccount, action: String) {
@@ -4512,15 +4509,7 @@ private fun AccountsScreen(
             }
             }
         }
-        M3Card {
-            Text("App", style = MaterialTheme.typography.titleMedium)
-            AboutRow(
-                title = "About this App",
-                description = "Version, changelog, links and privacy",
-                icon = SproutIcons.Description,
-                onClick = { aboutOpen = true }
-            )
-        }
+        AppAboutSettingsCard()
     }
     if (editProfileNameOpen) AlertDialog(
         onDismissRequest = { editProfileNameOpen = false },
@@ -4752,20 +4741,28 @@ private fun AccountsScreen(
             dismissButton = { TextButton(onClick = { actionTarget = null }) { Text("Cancel", color = Forest) } }
         )
     }
+}
+
+@Composable
+private fun AppAboutSettingsCard(localWorkspace: Boolean = false) {
+    val context = LocalContext.current
+    var aboutOpen by rememberSaveable { mutableStateOf(false) }
+    M3Card {
+        SettingsCardHeader("App", SproutIcons.Description)
+        AboutRow(
+            title = "About this App",
+            description = "Version, changelog, links and privacy",
+            icon = SproutIcons.Description,
+            onClick = { aboutOpen = true }
+        )
+    }
     if (aboutOpen) AboutThisAppDialog(
+        localWorkspace = localWorkspace,
         onDismiss = { aboutOpen = false },
         onOpenLink = { url ->
             runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
                 .onFailure { Toast.makeText(context, "Walang app na mabubuksan ang link.", Toast.LENGTH_SHORT).show() }
-        },
-        onLicenseClick = { licenseInfoOpen = true }
-    )
-    if (licenseInfoOpen) AlertDialog(
-        onDismissRequest = { licenseInfoOpen = false },
-        title = { Text("License information") },
-        text = { Text("Walang app-level LICENSE file sa repository sa ngayon, kaya hindi nakatalaga rito ang isang open-source license.") },
-        confirmButton = { TextButton(onClick = { licenseInfoOpen = false }) { Text("Okay", color = Forest) } },
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        }
     )
 }
 
@@ -4794,10 +4791,12 @@ private fun AboutRow(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AboutThisAppDialog(
+    localWorkspace: Boolean,
     onDismiss: () -> Unit,
-    onOpenLink: (String) -> Unit,
-    onLicenseClick: () -> Unit
+    onOpenLink: (String) -> Unit
 ) {
+    var changelogOpen by rememberSaveable { mutableStateOf(false) }
+    var licenseInfoOpen by rememberSaveable { mutableStateOf(false) }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -4837,8 +4836,8 @@ private fun AboutThisAppDialog(
                     }
                     M3Card {
                         Text("App", style = MaterialTheme.typography.titleMedium)
-                        AboutRow("Changelog", "Full version history", SproutIcons.History) {
-                            onOpenLink("https://github.com/charledave2/meeting-scheduler/blob/main/CHANGELOG.md")
+                        AboutRow("Changelog", "What changed in this version", SproutIcons.History) {
+                            changelogOpen = true
                         }
                         AboutRow("Contributors", "Everyone who helped build this app", SproutIcons.Groups) {
                             onOpenLink("https://github.com/charledave2/meeting-scheduler/graphs/contributors")
@@ -4852,11 +4851,12 @@ private fun AboutThisAppDialog(
                         AboutRow("Developer", "GitHub Profile: @charledave2", SproutIcons.Person) {
                             onOpenLink("https://github.com/charledave2")
                         }
-                        AboutRow("License", "License information", SproutIcons.Lock, onLicenseClick)
+                        AboutRow("License", "License information", SproutIcons.Lock) { licenseInfoOpen = true }
                     }
                     M3Card {
                         Text("Privacy", style = MaterialTheme.typography.titleMedium)
                         Text(
+                            if (localWorkspace) "Participants and schedules for this workspace are stored on this device. Workbook capture and app updates use the internet." else
                             "The app uses its connected cloud service to sync account, profile, participant and meeting schedule data with authorized users. Theme and font preferences are stored on this device. If notifications are enabled, Firebase Cloud Messaging is used to deliver assignment alerts. The app contains no ads or analytics SDK.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = Muted,
@@ -4867,8 +4867,65 @@ private fun AboutThisAppDialog(
             }
         }
     }
+    if (changelogOpen) InstalledBuildChangelogDialog(onDismiss = { changelogOpen = false })
+    if (licenseInfoOpen) AlertDialog(
+        onDismissRequest = { licenseInfoOpen = false },
+        title = { Text("License information") },
+        text = { Text("Walang app-level LICENSE file sa repository sa ngayon, kaya hindi nakatalaga rito ang isang open-source license.") },
+        confirmButton = { TextButton(onClick = { licenseInfoOpen = false }) { Text("Okay") } },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    )
 }
 
+
+
+@Composable
+private fun InstalledBuildChangelogDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val version = BuildConfig.VERSION_NAME
+    val notes by produceState<List<String>?>(null, context, version) {
+        value = withContext(Dispatchers.IO) {
+            val installedRelease = version.removeSuffix("-preview")
+            runCatching {
+                context.assets.open("app-changelog.md").bufferedReader(Charsets.UTF_8).useLines { lines ->
+                    val heading = "## v$installedRelease"
+                    lines.dropWhile { it != heading && !it.startsWith("$heading ") }
+                        .drop(1)
+                        .takeWhile { !it.startsWith("## ") }
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                        .toList()
+                }
+            }.getOrDefault(emptyList())
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Changelog") },
+        text = {
+            Column(
+                Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("Version $version", style = MaterialTheme.typography.titleSmall)
+                val changes = notes
+                when {
+                    changes == null -> CircularProgressIndicator(Modifier.size(24.dp))
+                    changes.isEmpty() -> Text("No changelog was included for this build.", color = Muted)
+                    else -> changes.forEach { change ->
+                        if (change.startsWith("- ")) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("•", color = Forest)
+                                Text(change.removePrefix("- "), modifier = Modifier.weight(1f))
+                            }
+                        } else Text(change)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
 
 @Composable
 private fun AccountPhotoAvatar(account: RemoteAccount, size: androidx.compose.ui.unit.Dp) {
@@ -6044,6 +6101,7 @@ private fun DeviceWorkspaceApp(
                             shape = MaterialTheme.shapes.medium
                         ) { Text("Switch workspace") }
                     }
+                    AppAboutSettingsCard(localWorkspace = true)
                 }
             }
         }

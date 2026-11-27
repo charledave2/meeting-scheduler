@@ -1,3 +1,12 @@
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -54,6 +63,36 @@ android {
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")
         }
+    }
+}
+
+abstract class BundleAppChangelog : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val changelog: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun copyChangelog() {
+        changelog.get().asFile.copyTo(
+            outputDirectory.file("app-changelog.md").get().asFile,
+            overwrite = true
+        )
+    }
+}
+
+val standaloneChangelog = rootProject.layout.projectDirectory.file("CHANGELOG.md")
+val checkoutChangelog = rootProject.layout.projectDirectory.file("../CHANGELOG.md")
+val bundleAppChangelog = tasks.register<BundleAppChangelog>("bundleAppChangelog") {
+    changelog.set(if (standaloneChangelog.asFile.isFile) standaloneChangelog else checkoutChangelog)
+    outputDirectory.set(layout.buildDirectory.dir("generated/app-changelog/assets"))
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(bundleAppChangelog, BundleAppChangelog::outputDirectory)
     }
 }
 
