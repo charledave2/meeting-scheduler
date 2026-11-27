@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
@@ -41,7 +42,7 @@ internal fun PreviewBottomNavigation(
 ) {
     val colors = MaterialTheme.colorScheme
     val labelGrowth = ((LocalDensity.current.fontScale - 1f).coerceAtLeast(0f) * 32f).dp
-    val bodyHeight = 76.dp + labelGrowth
+    val bodyHeight = 84.dp + labelGrowth
     val tools = available.any { it in setOf(Screen.ASSIGNMENTS, Screen.PREVIEW, Screen.PARTICIPANTS) }
     val centerSelected = tools && current in setOf(Screen.ASSIGNMENTS, Screen.PREVIEW, Screen.PARTICIPANTS)
     Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 14.dp, vertical = 6.dp),
@@ -49,6 +50,7 @@ internal fun PreviewBottomNavigation(
         BoxWithConstraints(Modifier.widthIn(max = 640.dp).fillMaxWidth().height(bodyHeight + 24.dp)) {
             if (tools) {
                 val centerSlotWidth = maxWidth / 5
+                val toolsSize = minOf(64.dp, centerSlotWidth)
                 Surface(
                     modifier = Modifier.fillMaxWidth().height(bodyHeight).align(Alignment.BottomCenter),
                     shape = RoundedCornerShape(28.dp), color = colors.surfaceContainerHigh,
@@ -85,12 +87,12 @@ internal fun PreviewBottomNavigation(
                     }
                 }
                 Column(
-                    Modifier.align(Alignment.TopCenter).width(centerSlotWidth.coerceIn(64.dp, 76.dp))
+                    Modifier.align(Alignment.TopCenter).width(centerSlotWidth)
                         .clickable(role = Role.Button, onClickLabel = "Open schedule tools", onClick = onCenterClick),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Surface(
-                        modifier = Modifier.size(64.dp),
+                        modifier = Modifier.size(toolsSize),
                         shape = CircleShape, color = colors.primary, contentColor = colors.onPrimary,
                         shadowElevation = 6.dp, border = BorderStroke(4.dp, colors.primaryContainer)
                     ) {
@@ -99,7 +101,7 @@ internal fun PreviewBottomNavigation(
                         }
                     }
                     Spacer(Modifier.height(6.dp))
-                    Text("Tools", style = MaterialTheme.typography.labelSmall,
+                    Text("Tools", style = MaterialTheme.typography.labelSmall, maxLines = 2, textAlign = TextAlign.Center,
                         fontWeight = FontWeight.Bold, color = if (centerSelected) colors.primary else colors.onSurfaceVariant)
                     if (centerSelected) Box(Modifier.padding(top = 4.dp).size(4.dp).background(colors.primary, CircleShape))
                 }
@@ -157,7 +159,7 @@ private fun ProfileNavItem(
         Column(
             Modifier.fillMaxSize().clip(MaterialTheme.shapes.large)
                 .selectable(selected = selected || expanded, role = Role.Tab, onClick = onClick)
-                .padding(top = 10.dp),
+                .padding(top = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Box(
@@ -169,7 +171,7 @@ private fun ProfileNavItem(
             ) { avatar(26.dp) }
             Spacer(Modifier.height(4.dp))
             Text(
-                "Profile", style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                "Profile", style = MaterialTheme.typography.labelSmall, maxLines = 2, textAlign = TextAlign.Center,
                 fontWeight = if (selected || expanded) FontWeight.Bold else FontWeight.Medium,
                 color = if (selected || expanded) colors.primary else colors.onSurfaceVariant
             )
@@ -233,7 +235,7 @@ private fun PreviewNavItem(screen: Screen, selected: Boolean, modifier: Modifier
     Column(
         modifier.fillMaxHeight().clip(MaterialTheme.shapes.large)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
-            .padding(top = 10.dp),
+             .padding(top = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(Modifier.size(32.dp).background(if (selected) colors.primaryContainer else colors.surfaceContainerHigh,
@@ -243,7 +245,7 @@ private fun PreviewNavItem(screen: Screen, selected: Boolean, modifier: Modifier
                 tint = if (selected) colors.primary else colors.onSurfaceVariant)
         }
         Spacer(Modifier.height(4.dp))
-        Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 2, textAlign = TextAlign.Center,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             color = if (selected) colors.primary else colors.onSurfaceVariant)
         if (selected) Box(Modifier.padding(top = 4.dp).size(4.dp).background(colors.primary, CircleShape))
