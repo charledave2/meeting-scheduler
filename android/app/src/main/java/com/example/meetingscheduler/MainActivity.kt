@@ -4883,8 +4883,9 @@ private fun AboutThisAppDialog(
 private fun InstalledBuildChangelogDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val version = BuildConfig.VERSION_NAME
-    val notes by produceState<List<String>?>(null, context, version) {
-        value = withContext(Dispatchers.IO) {
+    var notes by remember(context, version) { mutableStateOf<List<String>?>(null) }
+    LaunchedEffect(context, version) {
+        notes = withContext(Dispatchers.IO) {
             val installedRelease = version.removeSuffix("-preview")
             runCatching {
                 context.assets.open("app-changelog.md").bufferedReader(Charsets.UTF_8).useLines { lines ->
