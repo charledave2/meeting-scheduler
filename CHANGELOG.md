@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.45.51 — 2026-11-27
+
+- Fix participant CSV headers, including files edited from older templates, and show all ready, skipped, and invalid rows during review.
+- Use a single startup screen while verifying the Shared Workspace session. Offer update prompts in both modes.
+- Set a local meeting start time, preserve saved schedule dates and times, and retain matching assignments when reapplying a workbook capture.
+- Prevent saving or exporting an empty program, align backup size checks, and store local workspace changes by record.
+- Improve Local Back navigation, workbook capture and assignment actions, schedule preview recovery, and the workspace picker and bottom navigation.
+
 ## v0.45.50 — 2026-11-27
 
 - Refine Local Congregation Workspace setup with meeting day selection, a next meeting date preview, and clearer backup restoration.
