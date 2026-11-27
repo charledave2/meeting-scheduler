@@ -42,6 +42,8 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -4196,6 +4198,93 @@ private fun remoteScheduleStartDate(schedule: RemoteSchedule): LocalDate? =
 private data class NotificationFeedback(val sent: Boolean, val message: String)
 
 @Composable
+private fun SettingsCardHeader(title: String, icon: ImageVector, description: String? = null) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Surface(
+            modifier = Modifier.size(40.dp),
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+            if (description != null) Text(description, color = Muted, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun PaletteOptions(selectedPalette: AppPaletteStyle, onSelect: (AppPaletteStyle) -> Unit) {
+    val fontScale = LocalDensity.current.fontScale.coerceAtLeast(1f)
+    BoxWithConstraints(Modifier.fillMaxWidth().selectableGroup()) {
+        val columns = when {
+            maxWidth >= 360.dp * fontScale -> 4
+            maxWidth >= 180.dp * fontScale -> 2
+            else -> 1
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            AppPaletteStyle.entries.chunked(columns).forEach { row ->
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { option ->
+                        val selected = option == selectedPalette
+                        val tileShape = MaterialTheme.shapes.medium
+                        Surface(
+                            modifier = Modifier.weight(1f).fillMaxHeight().clip(tileShape)
+                                .selectable(selected = selected, role = Role.RadioButton, onClick = { onSelect(option) }),
+                            shape = tileShape,
+                            color = if (selected) ForestContainer else SurfaceContainer,
+                            contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else Ink,
+                            border = BorderStroke(
+                                if (selected) 2.dp else 1.dp,
+                                if (selected) Forest else MaterialTheme.colorScheme.outlineVariant
+                            )
+                        ) {
+                            Column(
+                                Modifier.padding(8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(7.dp)
+                            ) {
+                                Box(Modifier.fillMaxWidth().height(48.dp).clip(MaterialTheme.shapes.small)) {
+                                    Column(Modifier.matchParentSize()) {
+                                        option.swatches.forEach { swatch ->
+                                            Box(Modifier.weight(1f).fillMaxWidth().background(swatch))
+                                        }
+                                    }
+                                    if (selected) Surface(
+                                        modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(19.dp),
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(SproutIcons.Check, contentDescription = null, modifier = Modifier.size(13.dp))
+                                        }
+                                    }
+                                }
+                                Text(
+                                    option.label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    textAlign = TextAlign.Center,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun WorkspacePreferencesCard(
     themeMode: AppThemeMode,
     onThemeModeChange: (AppThemeMode) -> Unit,
@@ -4206,7 +4295,7 @@ private fun WorkspacePreferencesCard(
     appLock: AppLockController
 ) {
     M3Card {
-        Text("Preferences", style = MaterialTheme.typography.titleMedium)
+        SettingsCardHeader("Preferences", SproutIcons.Settings)
         Text("Appearance", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AppThemeMode.entries.forEach { option ->
@@ -4244,32 +4333,8 @@ private fun WorkspacePreferencesCard(
         }
         Text("Color palette", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
         Text("Choose the accent colors used throughout the app.", color = Muted, style = MaterialTheme.typography.bodySmall)
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            AppPaletteStyle.entries.forEach { option ->
-                val selected = option == paletteStyle
-                Column(
-                    modifier = Modifier.width(88.dp).clip(MaterialTheme.shapes.medium)
-                        .clickable { onPaletteStyleChange(option) }
-                        .padding(4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Column(
-                        Modifier.fillMaxWidth().height(62.dp).clip(RoundedCornerShape(12.dp))
-                            .then(if (selected) Modifier.border(2.dp, Forest, RoundedCornerShape(12.dp)) else Modifier)
-                    ) {
-                        option.swatches.forEach { swatch ->
-                            Box(Modifier.weight(1f).fillMaxWidth().background(swatch))
-                        }
-                    }
-                    Text(option.label, color = if (selected) Forest else Ink, style = MaterialTheme.typography.labelSmall,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
-                }
-            }
-        }
+        PaletteOptions(paletteStyle, onPaletteStyleChange)
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         BiometricLockPreference(appLock)
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -4299,15 +4364,12 @@ private fun AccountsScreen(
     onAction: (RemoteAccount, String, String, String) -> Unit,
     onUpdateToolAccess: (RemoteAccount, Map<String, String>) -> Unit
 ) {
-    val context = LocalContext.current
     var selectedAccount by remember { mutableStateOf<RemoteAccount?>(null) }
     var actionTarget by remember { mutableStateOf<RemoteAccount?>(null) }
     var selectedAction by remember { mutableStateOf("") }
     var temporaryPassword by remember { mutableStateOf("") }
     var selectedRole by remember { mutableStateOf("viewer") }
     var editProfileNameOpen by remember { mutableStateOf(false) }
-    var aboutOpen by rememberSaveable { mutableStateOf(false) }
-    var licenseInfoOpen by remember { mutableStateOf(false) }
     var profileNameDraft by rememberSaveable(profileName) { mutableStateOf(profileName) }
     val filtered = accounts.sortedWith(compareBy<RemoteAccount>({ if (it.role == "admin") 0 else 1 }, { when (it.status) { "requested" -> 0; "active" -> 1; else -> 2 } }, { it.displayName.lowercase() }))
     fun beginAction(account: RemoteAccount, action: String) {
@@ -4447,15 +4509,7 @@ private fun AccountsScreen(
             }
             }
         }
-        M3Card {
-            Text("App", style = MaterialTheme.typography.titleMedium)
-            AboutRow(
-                title = "About this App",
-                description = "Version, changelog, links and privacy",
-                icon = SproutIcons.Description,
-                onClick = { aboutOpen = true }
-            )
-        }
+        AppAboutSettingsCard()
     }
     if (editProfileNameOpen) AlertDialog(
         onDismissRequest = { editProfileNameOpen = false },
@@ -4687,20 +4741,28 @@ private fun AccountsScreen(
             dismissButton = { TextButton(onClick = { actionTarget = null }) { Text("Cancel", color = Forest) } }
         )
     }
+}
+
+@Composable
+private fun AppAboutSettingsCard(localWorkspace: Boolean = false) {
+    val context = LocalContext.current
+    var aboutOpen by rememberSaveable { mutableStateOf(false) }
+    M3Card {
+        SettingsCardHeader("App", SproutIcons.Description)
+        AboutRow(
+            title = "About this App",
+            description = "Version, changelog, links and privacy",
+            icon = SproutIcons.Description,
+            onClick = { aboutOpen = true }
+        )
+    }
     if (aboutOpen) AboutThisAppDialog(
+        localWorkspace = localWorkspace,
         onDismiss = { aboutOpen = false },
         onOpenLink = { url ->
             runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
                 .onFailure { Toast.makeText(context, "Walang app na mabubuksan ang link.", Toast.LENGTH_SHORT).show() }
-        },
-        onLicenseClick = { licenseInfoOpen = true }
-    )
-    if (licenseInfoOpen) AlertDialog(
-        onDismissRequest = { licenseInfoOpen = false },
-        title = { Text("License information") },
-        text = { Text("Walang app-level LICENSE file sa repository sa ngayon, kaya hindi nakatalaga rito ang isang open-source license.") },
-        confirmButton = { TextButton(onClick = { licenseInfoOpen = false }) { Text("Okay", color = Forest) } },
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        }
     )
 }
 
@@ -4729,10 +4791,12 @@ private fun AboutRow(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AboutThisAppDialog(
+    localWorkspace: Boolean,
     onDismiss: () -> Unit,
-    onOpenLink: (String) -> Unit,
-    onLicenseClick: () -> Unit
+    onOpenLink: (String) -> Unit
 ) {
+    var changelogOpen by rememberSaveable { mutableStateOf(false) }
+    var licenseInfoOpen by rememberSaveable { mutableStateOf(false) }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -4772,8 +4836,8 @@ private fun AboutThisAppDialog(
                     }
                     M3Card {
                         Text("App", style = MaterialTheme.typography.titleMedium)
-                        AboutRow("Changelog", "Full version history", SproutIcons.History) {
-                            onOpenLink("https://github.com/charledave2/meeting-scheduler/blob/main/CHANGELOG.md")
+                        AboutRow("Changelog", "What changed in this version", SproutIcons.History) {
+                            changelogOpen = true
                         }
                         AboutRow("Contributors", "Everyone who helped build this app", SproutIcons.Groups) {
                             onOpenLink("https://github.com/charledave2/meeting-scheduler/graphs/contributors")
@@ -4787,11 +4851,12 @@ private fun AboutThisAppDialog(
                         AboutRow("Developer", "GitHub Profile: @charledave2", SproutIcons.Person) {
                             onOpenLink("https://github.com/charledave2")
                         }
-                        AboutRow("License", "License information", SproutIcons.Lock, onLicenseClick)
+                        AboutRow("License", "License information", SproutIcons.Lock) { licenseInfoOpen = true }
                     }
                     M3Card {
                         Text("Privacy", style = MaterialTheme.typography.titleMedium)
                         Text(
+                            if (localWorkspace) "Participants and schedules for this workspace are stored on this device. Workbook capture and app updates use the internet." else
                             "The app uses its connected cloud service to sync account, profile, participant and meeting schedule data with authorized users. Theme and font preferences are stored on this device. If notifications are enabled, Firebase Cloud Messaging is used to deliver assignment alerts. The app contains no ads or analytics SDK.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = Muted,
@@ -4802,8 +4867,65 @@ private fun AboutThisAppDialog(
             }
         }
     }
+    if (changelogOpen) InstalledBuildChangelogDialog(onDismiss = { changelogOpen = false })
+    if (licenseInfoOpen) AlertDialog(
+        onDismissRequest = { licenseInfoOpen = false },
+        title = { Text("License information") },
+        text = { Text("Walang app-level LICENSE file sa repository sa ngayon, kaya hindi nakatalaga rito ang isang open-source license.") },
+        confirmButton = { TextButton(onClick = { licenseInfoOpen = false }) { Text("Okay") } },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    )
 }
 
+
+
+@Composable
+private fun InstalledBuildChangelogDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val version = BuildConfig.VERSION_NAME
+    val notes by produceState<List<String>?>(null, context, version) {
+        value = withContext(Dispatchers.IO) {
+            val installedRelease = version.removeSuffix("-preview")
+            runCatching {
+                context.assets.open("app-changelog.md").bufferedReader(Charsets.UTF_8).useLines { lines ->
+                    val heading = "## v$installedRelease"
+                    lines.dropWhile { it != heading && !it.startsWith("$heading ") }
+                        .drop(1)
+                        .takeWhile { !it.startsWith("## ") }
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                        .toList()
+                }
+            }.getOrDefault(emptyList())
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Changelog") },
+        text = {
+            Column(
+                Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("Version $version", style = MaterialTheme.typography.titleSmall)
+                val changes = notes
+                when {
+                    changes == null -> CircularProgressIndicator(Modifier.size(24.dp))
+                    changes.isEmpty() -> Text("No changelog was included for this build.", color = Muted)
+                    else -> changes.forEach { change ->
+                        if (change.startsWith("- ")) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("•", color = Forest)
+                                Text(change.removePrefix("- "), modifier = Modifier.weight(1f))
+                            }
+                        } else Text(change)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
 
 @Composable
 private fun AccountPhotoAvatar(account: RemoteAccount, size: androidx.compose.ui.unit.Dp) {
@@ -5938,20 +6060,48 @@ private fun DeviceWorkspaceApp(
                         fontScale, onFontScaleChange, appLock
                     )
                     M3Card {
-                        Text("Backup & restore", style = MaterialTheme.typography.titleMedium)
-                        Text("Move your local participants, drafts, and schedules to another device.", color = Muted, style = MaterialTheme.typography.bodyMedium)
+                        SettingsCardHeader(
+                            "Backup & restore", SproutIcons.Description,
+                            "Move participants, drafts, and schedules to another device."
+                        )
                         AdaptivePair(
-                            { field -> OutlinedButton(modifier = field, enabled = !fileBusy,
-                                onClick = { backup.launch("jw-meeting-workspace.json") }) { Text("Create backup") } },
-                            { field -> OutlinedButton(modifier = field, enabled = !fileBusy && !captureBusy,
-                                onClick = { restore.launch(arrayOf("application/json", "application/octet-stream")) }) { Text("Restore backup") } }
+                            { field ->
+                                FilledTonalButton(
+                                    modifier = field.heightIn(min = 48.dp),
+                                    enabled = !fileBusy,
+                                    shape = MaterialTheme.shapes.medium,
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                                    onClick = { backup.launch("jw-meeting-workspace.json") }
+                                ) { Text("Create backup", textAlign = TextAlign.Center) }
+                            },
+                            { field ->
+                                OutlinedButton(
+                                    modifier = field.heightIn(min = 48.dp),
+                                    enabled = !fileBusy && !captureBusy,
+                                    shape = MaterialTheme.shapes.medium,
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                                    onClick = { restore.launch(arrayOf("application/json", "application/octet-stream")) }
+                                ) { Text("Restore backup", textAlign = TextAlign.Center) }
+                            }
                         )
                     }
                     M3Card {
-                        Text("Workspace", style = MaterialTheme.typography.titleMedium)
-                        Text("Local Workspace · Active", color = Muted, style = MaterialTheme.typography.bodyMedium)
-                        TextButton(onClick = { workspacePickerOpen = true }) { Text("Switch workspace") }
+                        SettingsCardHeader("Workspace", SproutIcons.ScheduleTools, data.name)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) {
+                            Icon(SproutIcons.CheckCircle, contentDescription = null, tint = Forest, modifier = Modifier.size(18.dp))
+                            Text("Local Workspace · Active", style = MaterialTheme.typography.bodyMedium, color = Ink)
+                        }
+                        OutlinedButton(
+                            onClick = { workspacePickerOpen = true },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            shape = MaterialTheme.shapes.medium
+                        ) { Text("Switch workspace") }
                     }
+                    AppAboutSettingsCard(localWorkspace = true)
                 }
             }
         }
@@ -6149,6 +6299,7 @@ private fun DeviceWorkspaceFields(data: DeviceWorkspace, action: String, onSave:
     var day by rememberSaveable(data.meetingDay.name) { mutableStateOf(data.meetingDay.name) }
     var meetingTime by rememberSaveable(data.meetingStart.toString()) { mutableStateOf(data.meetingStart.toString()) }
     M3Card {
+        SettingsCardHeader("Congregation details", SproutIcons.Groups)
         OutlinedTextField(name, { if (it.length <= 80) name = it }, label = { Text("Congregation name") },
             singleLine = true, modifier = Modifier.fillMaxWidth())
         LocalMeetingDayPicker(java.time.DayOfWeek.valueOf(day)) { day = it.name }
