@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.53 — 2026-11-27
+
+- Save new Shared Workspace participants to the server so they appear across devices and remain after refresh.
+- Keep the participant name in the Add dialog when a save fails and show the error there.
+
 ## v0.45.52 — 2026-11-27
 
 - Align Workspace Settings cards, backup actions, and workspace controls. Show color palettes in a responsive grid with clear selection.
