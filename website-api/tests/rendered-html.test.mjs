@@ -4,13 +4,13 @@ import test from "node:test";
 const developmentPreviewMeta =
   /<meta(?=[^>]*\bname=["']codex-preview["'])(?=[^>]*\bcontent=["']development["'])[^>]*>/i;
 
-test("renders development preview metadata", async () => {
+async function fetchSignedOutPage(path) {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
-  const response = await worker.fetch(
-    new Request("http://localhost/", {
+  return worker.fetch(
+    new Request(new URL(path, "http://localhost/"), {
       headers: { accept: "text/html" },
     }),
     {
@@ -23,7 +23,18 @@ test("renders development preview metadata", async () => {
       passThroughOnException() {},
     },
   );
+}
 
+test("signed-out workspace requests return to the login page", async () => {
+  const response = await fetchSignedOutPage("/");
+  assert.equal(response.status, 307);
+  const login = new URL(response.headers.get("location"));
+  assert.equal(login.pathname, "/login");
+  assert.equal(login.searchParams.get("returnTo"), "/");
+});
+
+test("the public request-access page renders development preview metadata", async () => {
+  const response = await fetchSignedOutPage("/request-access");
   assert.equal(response.status, 200);
   assert.match(
     response.headers.get("content-type") ?? "",
