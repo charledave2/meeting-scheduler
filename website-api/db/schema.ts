@@ -107,6 +107,7 @@ export const authSessions = sqliteTable("auth_sessions", {
 export const pushTokens = sqliteTable("push_tokens", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   accountId: integer("account_id").notNull().references(() => authAccounts.id, { onDelete: "cascade" }),
+  deliveryBinding: text("delivery_binding"),
   expoPushToken: text("expo_push_token").notNull(),
   provider: text("provider", { enum: ["expo", "fcm"] }).notNull().default("expo"),
   platform: text("platform", { enum: ["ios", "android"] }).notNull().default("android"),

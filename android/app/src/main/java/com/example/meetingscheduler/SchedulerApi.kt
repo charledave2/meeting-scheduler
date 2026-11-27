@@ -43,7 +43,7 @@ internal data class ParticipantRotation(
     val neverAssigned: Boolean, val recommended: Boolean
 )
 
-internal class SchedulerApi(context: Context) {
+internal class SchedulerApi(private val context: Context) {
     private val vault = SessionVault(context)
     private val base = "https://meeting-scheduler.yelyahwilliams2005.workers.dev"
 
@@ -66,8 +66,21 @@ internal class SchedulerApi(context: Context) {
     fun hasStoredSession(): Boolean = vault.read() != null
 
     suspend fun currentUser(): ApiIdentity = withContext(Dispatchers.IO) { meBlocking() }
+    private fun digest(value: String) = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+
+    private fun removalKey(cookie: String) = digest("remove-push-registration:" + cookie)
+    fun deliveryBinding() = vault.read()?.let { digest(removalKey(it)) }
+
+    suspend fun removeOldRegistration(key: String) = withContext(Dispatchers.IO) {
+        request("/api/push-token", "DELETE", JSONObject().put("removalKey", key), authorized = false)
+    }
+
     suspend fun registerPushToken(token: String) = withContext(Dispatchers.IO) {
-        request("/api/push-token", "POST", JSONObject().put("token", token).put("provider", "fcm").put("platform", "android"))
+        val cookie = vault.read() ?: return@withContext
+        request("/api/push-token", "POST", JSONObject().put("token", token).put("provider", "fcm")
+            .put("platform", "android").put("deliveryBinding", digest(removalKey(cookie))), sessionOverride = cookie)
+        Unit
     }
 
     suspend fun sendTestNotification(): Int = withContext(Dispatchers.IO) {
@@ -99,14 +112,13 @@ internal class SchedulerApi(context: Context) {
 
     suspend fun saveSchedule(weekLabel: String, weekStart: String, reading: String, openingSong: String, closingSong: String,
                              parts: List<JSONObject>, chairman: String, openingPrayer: String, adviser: String, audienceGroup: String,
-                             sourceUrl: String, id: Int = 0, expectedUpdatedAt: String = ""): Boolean = withContext(Dispatchers.IO) {
+                             sourceUrl: String, id: Int = 0, expectedUpdatedAt: String = ""): JSONObject = withContext(Dispatchers.IO) {
         val meta = JSONObject().put("date", weekLabel).put("weekStart", weekStart).put("reading", reading)
             .put("openingSong", openingSong).put("closingSong", closingSong).put("chairman", chairman)
             .put("openingPrayer", openingPrayer).put("adviser", adviser).put("audienceGroup", audienceGroup)
         val body = JSONObject().put("meta", meta).put("parts", JSONArray(parts)).put("sourceUrl", sourceUrl)
         if (id > 0) body.put("id", id).put("expectedUpdatedAt", expectedUpdatedAt)
-        val result = request("/api/schedules", "POST", body)
-        result.optBoolean("historySaved", true)
+        request("/api/schedules", "POST", body)
     }
 
     suspend fun schedules(): List<RemoteSchedule> = schedulePage(limit = 100).schedules
@@ -368,7 +380,9 @@ internal class SchedulerApi(context: Context) {
 
     fun signOut(): String? {
         val oldSession = vault.read()
+        if (oldSession != null) PushCleanupWorker.schedule(context, removalKey(oldSession))
         vault.clear()
+        context.getSystemService(android.app.NotificationManager::class.java).cancelAll()
         return oldSession
     }
 
@@ -380,6 +394,7 @@ internal class SchedulerApi(context: Context) {
     }
 
     private fun request(path: String, method: String, body: JSONObject?, authorized: Boolean = true, captureCookie: Boolean = false, sessionOverride: String? = null): JSONObject {
+        val cookie = sessionOverride ?: if (authorized) vault.read() else null
         val connection = (URL(base + path).openConnection() as HttpURLConnection).apply {
             instanceFollowRedirects = false
             requestMethod = method
@@ -388,7 +403,7 @@ internal class SchedulerApi(context: Context) {
             setRequestProperty("Accept", "application/json")
             if (method != "GET") setRequestProperty("Origin", base)
             if (body != null) { doOutput = true; setRequestProperty("Content-Type", "application/json; charset=utf-8") }
-            (sessionOverride ?: if (authorized) vault.read() else null)?.let { setRequestProperty("Cookie", it) }
+            cookie?.let { setRequestProperty("Cookie", it) }
         }
         try {
             if (body != null) connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
@@ -397,7 +412,7 @@ internal class SchedulerApi(context: Context) {
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             val json = runCatching { JSONObject(text) }.getOrElse { JSONObject() }
             if (code !in 200..299) {
-                if (code == 401) vault.clear()
+                if (code == 401 && cookie != null) vault.clearIfCurrent(cookie)
                 throw IllegalStateException(json.optString("error").ifBlank { "Server error ($code)." })
             }
             if (captureCookie) {
@@ -487,6 +502,8 @@ private class SessionVault(context: Context) {
             }
         }
     }
+
+    fun clearIfCurrent(cookie: String) = synchronized(lock) { if (read() == cookie) clear() }
 
     fun clear() {
         synchronized(lock) {

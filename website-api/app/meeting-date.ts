@@ -1,4 +1,5 @@
 const months: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12,
   enero: 1, january: 1, pebrero: 2, february: 2, marso: 3, march: 3,
   abril: 4, april: 4, mayo: 5, may: 5, hunyo: 6, june: 6,
   hulyo: 7, july: 7, agosto: 8, august: 8, setyembre: 9, september: 9,
@@ -6,7 +7,7 @@ const months: Record<string, number> = {
   disyembre: 12, december: 12,
 };
 
-const monthPattern = "(Enero|January|Pebrero|February|Marso|March|Abril|April|Mayo|May|Hunyo|June|Hulyo|July|Agosto|August|Setyembre|September|Oktubre|October|Nobyembre|November|Disyembre|December)";
+const monthPattern = `(${Object.keys(months).sort((a, b) => b.length - a.length).join("|")})`;
 const weekRangePattern = new RegExp(
   `^${monthPattern}\\s+(\\d{1,2})\\s*[–—-]\\s*(?:(${monthPattern})\\s+)?(\\d{1,2})(?:,?\\s+(20\\d{2}))?$`,
   "i",
@@ -57,6 +58,17 @@ export function meetingDateFromLabel(value: string) {
   const thursday = new Date(monday);
   thursday.setUTCDate(monday.getUTCDate() + 3);
   return `${thursday.getUTCFullYear()}-${String(thursday.getUTCMonth() + 1).padStart(2, "0")}-${String(thursday.getUTCDate()).padStart(2, "0")}`;
+}
+
+export function scheduledMeetingDate(weekStart: unknown, label: string) {
+  if (typeof weekStart === "string" && /^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
+    const date = new Date(weekStart + "T00:00:00Z");
+    if (date.getUTCDay() === 1 && date.toISOString().slice(0, 10) === weekStart) {
+      date.setUTCDate(date.getUTCDate() + 3);
+      return date.toISOString().slice(0, 10);
+    }
+  }
+  return meetingDateFromLabel(label);
 }
 
 export function addCalendarMonth(iso: string) {

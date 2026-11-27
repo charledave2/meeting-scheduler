@@ -603,8 +603,8 @@ internal enum class Screen(val title: String, val section: String) {
     ACCOUNTS("Account & Settings", "ACCOUNT")
 }
 
-private class LocalWorkspaceStore(context: Context) {
-    private val prefs = context.getSharedPreferences("meeting_scheduler_workspace", Context.MODE_PRIVATE)
+private class LocalWorkspaceStore(context: Context, account: String? = null) {
+    private val prefs = context.getSharedPreferences(account?.let { "shared_account_$it" } ?: "meeting_scheduler_workspace", Context.MODE_PRIVATE)
     private fun profileKey(kind: String, username: String) = "${kind}_${username.trim().lowercase(Locale.ROOT).ifBlank { "account" }}"
     fun profileName(username: String, default: String) = prefs.getString(profileKey("profile_name", username), null)?.takeIf { it.isNotBlank() } ?: default
     fun saveProfileName(username: String, value: String) { prefs.edit().putString(profileKey("profile_name", username), value).apply() }
@@ -641,15 +641,15 @@ private class LocalWorkspaceStore(context: Context) {
     }
     fun loadParticipants(): List<Participant> = readList("participants") { o ->
         Participant(o.optString("name"), o.optString("appointment", "publisher"), o.optString("service", "none"), o.optString("gender", "brother"), o.optBoolean("enabled", true),o.optInt("id"),o.optBoolean("unbaptized",false))
-    } ?: sampleParticipants()
+    } ?: emptyList()
     fun saveParticipants(items: List<Participant>) = writeList("participants", items.map { o -> JSONObject().put("name",o.name).put("appointment",o.appointment).put("service",o.service).put("gender",o.gender).put("enabled",o.enabled).put("id",o.id).put("unbaptized",o.unbaptized) })
-    fun loadAssignments(): List<Assignment> = readList("assignments") { o -> o.toAssignment() } ?: sampleAssignments()
+    fun loadAssignments(): List<Assignment> = readList("assignments") { o -> o.toAssignment() } ?: emptyList()
     fun saveAssignments(items: List<Assignment>) = writeList("assignments", items.map { it.toJson() })
     fun loadHistory(): List<SavedSchedule> = readList("history") { o ->
         val a = o.optJSONArray("assignments") ?: JSONArray()
         val assignments = buildList { for (i in 0 until a.length()) a.optJSONObject(i)?.let { add(it.toAssignment()) } }
         SavedSchedule(o.optString("week"),o.optString("reading"),o.optString("saved"),o.optString("weekStart"),o.optString("openingSong","27"),o.optString("closingSong","132"),assignments,o.optString("chairman"),o.optString("openingPrayer"),o.optString("adviser"),o.optString("audienceGroup"))
-    } ?: sampleHistory()
+    } ?: emptyList()
     fun saveHistory(items: List<SavedSchedule>) = writeList("history", items.map { item ->
         val assignments = JSONArray().apply { item.assignments.forEach { put(it.toJson()) } }
         JSONObject().put("week",item.week).put("reading",item.reading).put("saved",item.saved).put("weekStart",item.weekStart).put("openingSong",item.openingSong).put("closingSong",item.closingSong).put("assignments",assignments).put("chairman",item.chairman).put("openingPrayer",item.openingPrayer).put("adviser",item.adviser).put("audienceGroup",item.audienceGroup)
@@ -885,7 +885,7 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
                             onThemeModeChange = { themeMode = it; store.themeMode = it },
                             paletteStyle = paletteStyle,
                             onPaletteStyleChange = { paletteStyle = it; store.paletteStyle = it },
-                            store = store,
+                            profileStore = store,
                             fontScale = appFontScale,
                             onFontScaleChange = { appFontScale = it.coerceIn(0.85f, 1.35f); store.appFontScale = appFontScale },
                             appLock = appLock,
@@ -901,15 +901,15 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (AppThemeMode) -> Unit, paletteStyle: AppPaletteStyle, onPaletteStyleChange: (AppPaletteStyle) -> Unit, store: LocalWorkspaceStore, fontScale: Float, onFontScaleChange: (Float) -> Unit, appLock: AppLockController, onOpenLocal: () -> Unit) {
+private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (AppThemeMode) -> Unit, paletteStyle: AppPaletteStyle, onPaletteStyleChange: (AppPaletteStyle) -> Unit, profileStore: LocalWorkspaceStore, fontScale: Float, onFontScaleChange: (Float) -> Unit, appLock: AppLockController, onOpenLocal: () -> Unit) {
     val context = LocalContext.current
     val api = remember(context) { SchedulerApi(context) }
     val authScope = rememberCoroutineScope()
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) MeetingPushNotifications.syncToken(context, api)
     }
-    var signedIn by rememberSaveable { mutableStateOf(false) }
-    var authReady by rememberSaveable { mutableStateOf(false) }
+    var signedIn by remember { mutableStateOf(false) }
+    var authReady by remember { mutableStateOf(false) }
     var loginBusy by remember { mutableStateOf(false) }
     var loginError by remember { mutableStateOf<String?>(null) }
     var passwordChangeRequired by rememberSaveable { mutableStateOf(false) }
@@ -930,8 +930,8 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
     var cloudStatus by rememberSaveable { mutableStateOf("Konektado sa website") }
     var cloudSaveBusy by remember { mutableStateOf(false) }
     var cloudSaveFeedback by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
-    var participantAdmin by rememberSaveable { mutableStateOf(false) }
-    var participantCanEdit by rememberSaveable { mutableStateOf(false) }
+    var participantAdmin by remember(identityUsername) { mutableStateOf(false) }
+    var participantCanEdit by remember(identityUsername) { mutableStateOf(false) }
     var showNotificationPermissionPrompt by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(signedIn, identityUsername, splashFinished) {
         if (!signedIn || identityUsername.isBlank() || !splashFinished) return@LaunchedEffect
@@ -950,8 +950,8 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
             return@LaunchedEffect
         }
         runCatching { api.currentUser() }.onSuccess {
-            identityName = store.profileName(it.username, it.name); identityUsername = it.username
-            profilePhotoPath = store.profilePhoto(it.username); profilePhotoDataUrl = it.photoDataUrl; identityRole = it.role; identityToolAccess = it.toolAccess; identityToolAccess = it.toolAccess
+            identityName = profileStore.profileName(it.username, it.name); identityUsername = it.username
+            profilePhotoPath = profileStore.profilePhoto(it.username); profilePhotoDataUrl = it.photoDataUrl; identityRole = it.role; identityToolAccess = it.toolAccess
             if (it.mustChangePassword) passwordChangeRequired = true else signedIn = true
         }
         authReady = true
@@ -1002,8 +1002,8 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
                     loginBusy = true; loginError = null
                     runCatching { api.login(username, password) }
                         .onSuccess {
-                            identityName = store.profileName(it.username, it.name); identityUsername = it.username
-                            profilePhotoPath = store.profilePhoto(it.username); profilePhotoDataUrl = it.photoDataUrl; identityRole = it.role
+                            identityName = profileStore.profileName(it.username, it.name); identityUsername = it.username
+                            profilePhotoPath = profileStore.profilePhoto(it.username); profilePhotoDataUrl = it.photoDataUrl; identityRole = it.role; identityToolAccess = it.toolAccess
                             if (it.mustChangePassword) passwordChangeRequired = true else signedIn = true
                         }
                         .onFailure { loginError = it.message ?: "Could not sign in." }
@@ -1014,6 +1014,10 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
         return
     }
 
+    key(identityUsername) {
+    val accountScope = rememberCoroutineScope()
+    val store = remember(identityUsername) { LocalWorkspaceStore(context, identityUsername.lowercase(Locale.ROOT)) }
+    var returnPages by rememberSaveable(identityUsername) { mutableStateOf(arrayListOf<String>()) }
     var current by rememberSaveable { mutableStateOf(Screen.HOME) }
     val officialPreviewWebView = remember { mutableStateOf<WebView?>(null) }
     var toolsOpen by remember { mutableStateOf(false) }
@@ -1146,7 +1150,12 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
     fun canAccess(screen: Screen): Boolean = if (screen == Screen.ACCOUNTS) signedIn else toolMode(screen) != "hidden"
     fun canEdit(screen: Screen): Boolean = identityRole.equals("admin", true) || (identityRole.equals("scheduler", true) && toolMode(screen) == "edit")
     fun navigateTo(screen: Screen) {
-        if (canAccess(screen)) current = screen
+        if (canAccess(screen)) {
+            if (current != screen) {
+                returnPages = ArrayList(returnPages + current.name)
+                current = screen
+            }
+        }
         else {
             restrictedTapCount += 1
             accessNotice = if (restrictedTapCount >= 7)
@@ -1195,7 +1204,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
             participantsLoadError=null
             runCatching { api.members(includeInactive=true) }.onSuccess { response ->
                 participantAdmin=response.optBoolean("isAdmin",participantAdmin); participantCanEdit=response.optBoolean("canManageRoles",participantCanEdit)
-                val rows=response.optJSONArray("members") ?: JSONArray(); participants.clear()
+                val rows=response.getJSONArray("members"); participants.clear()
                 for (i in 0 until rows.length()) rows.optJSONObject(i)?.let { participants.add(it.toSharedParticipant()) }
                 store.saveParticipants(participants.toList()); participantsLoaded=true; participantsLoadError=null; cloudStatus="Nakuha ang participants mula sa website"
             }.onFailure { participantsLoadError=it.message ?: "Suriin ang internet at subukan ulit."; cloudStatus="Hindi makuha ang participants: ${it.message ?: "server error"}"; participantsLoaded=true }
@@ -1243,19 +1252,21 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
             return
         }
         cloudSaveReviewVisible = false
-        authScope.launch {
+        accountScope.launch {
         cloudSaveBusy = true
         cloudSaveFeedback = null
         cloudStatus = "Sine-save sa cloud…"
         runCatching { api.saveSchedule(weekLabel, weekStart, bible, openingSong, closingSong, parts.map { it.toJson() }, chairman, openingPrayer, adviser, audienceGroup, workbook, editingRemoteId, originalCloudUpdatedAt) }
-            .onSuccess { historySaved ->
+            .onSuccess { result ->
+                val historySaved = result.optBoolean("historySaved", true)
+                homeLoaded = false
                 cloudStatus = if (historySaved) "Naka-save sa cloud" else "Na-save; hindi na-update ang assignment history"
                 cloudSaveFeedback = cloudStatus to historySaved
                 toastMessage = cloudStatus
                 historyLoaded=false
                 originalCloudAssignments = scheduleAssignmentValues(parts.toList(), chairman, openingPrayer, adviser, audienceGroup)
-                editingRemoteId=0
-                originalCloudUpdatedAt=""
+                editingRemoteId = result.getJSONObject("schedule").getInt("id")
+                originalCloudUpdatedAt = result.getJSONObject("schedule").optString("updatedAt")
             }
             .onFailure {
                 cloudStatus = "Hindi na-save: ${it.message ?: "server error"}"
@@ -1323,7 +1334,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
         originalCloudUpdatedAt = row.optString("updatedAt")
         editingRemoteId=remote.id; persistDetails(); store.saveAssignments(parts.toList())
         workbookStatus="✓ Na-load ang saved cloud schedule"
-        if(navigate) current=if(edit) Screen.DETAILS else Screen.PREVIEW
+        if (navigate) navigateTo(if (edit) Screen.DETAILS else Screen.PREVIEW)
     }
     LaunchedEffect(weekStart, signedIn, weekLoadNonce, identityToolAccess) {
         if (suppressWeekLookup) { suppressWeekLookup=false; return@LaunchedEffect }
@@ -1365,7 +1376,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
         val exportWeek = weekStart
         val exportLabel = weekLabel
         exportBusyType = "slips_image"
-        authScope.launch {
+        accountScope.launch {
             runCatching { assignmentSlipsShareIntent(context, slips, exportWeek, exportLabel) }
                 .onSuccess { intent -> launchScheduleShare(intent, "slips_image", "Share assignment slips images") }
                 .onFailure { exportBusyType = null; toastMessage = "Hindi mabuo ang assignment slip images: ${it.message ?: "subukan muli"}" }
@@ -1388,7 +1399,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
         bible = item.reading; openingSong = item.openingSong; closingSong = item.closingSong
         chairman=item.chairman; openingPrayer=item.openingPrayer; adviser=item.adviser; audienceGroup=item.audienceGroup
         if (item.assignments.isNotEmpty()) { val unique=deduplicateAssignmentParticipants(item.assignments); parts.clear(); parts.addAll(unique); store.saveAssignments(unique) }
-        persistDetails(); current = Screen.DETAILS; toastMessage = "Na-open ang saved schedule"
+        persistDetails(); navigateTo(Screen.DETAILS); toastMessage = "Na-open ang saved schedule"
     }
     fun duplicateSaved(item: SavedSchedule) {
         editingRemoteId = 0; originalCloudAssignments = emptyList(); originalCloudUpdatedAt = ""
@@ -1397,9 +1408,9 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
         bible = item.reading; openingSong = item.openingSong; closingSong = item.closingSong
         chairman=item.chairman; openingPrayer=item.openingPrayer; adviser=item.adviser; audienceGroup=item.audienceGroup
         if (item.assignments.isNotEmpty()) { val unique=deduplicateAssignmentParticipants(item.assignments); parts.clear(); parts.addAll(unique); store.saveAssignments(unique) }
-        persistDetails(); current = Screen.DETAILS; toastMessage = "Naduplicate para sa susunod na linggo"
+        persistDetails(); navigateTo(Screen.DETAILS); toastMessage = "Naduplicate para sa susunod na linggo"
     }
-    fun loadRemoteSchedule(remote: RemoteSchedule, edit: Boolean) { authScope.launch {
+    fun loadRemoteSchedule(remote: RemoteSchedule, edit: Boolean) { accountScope.launch {
         runCatching { applyRemoteSchedule(remote,navigate=true,edit=edit) }.onFailure { toastMessage=it.message ?: "Hindi mabuksan ang schedule" }
     } }
 
@@ -1415,7 +1426,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
         homePreviewWeek = remote.weekLabel
         homePreviewHtml = null
         homePreviewLoading = true
-        authScope.launch {
+        accountScope.launch {
             runCatching {
                 val saved = api.schedule(remote.id)
                 if (request != homePreviewRequest) return@launch
@@ -1456,7 +1467,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
 
     val accountPhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val account = accountPhotoTarget
-        if (uri != null && account != null) authScope.launch {
+        if (uri != null && account != null) accountScope.launch {
             accountsBusy = true
             accountsError = null
             runCatching {
@@ -1491,20 +1502,20 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
     fun signOut() {
         profileMenuOpen = false
         val oldSession = api.signOut()
-        val pushToken = MeetingPushNotifications.savedToken(context)
         authScope.launch {
-            if (!pushToken.isNullOrBlank()) runCatching { api.unregisterPushToken(pushToken, oldSession) }
             api.revokeSession(oldSession)
         }
         signedIn = false
         identityName = ""
         identityUsername = ""
+        identityToolAccess = emptyMap()
+        passwordChangeRequired = false
         identityRole = ""
         loginError = null
         authReady = true
     }
     val profilePhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) authScope.launch {
+        if (uri != null) accountScope.launch {
             profileError = null
             val dataUrl = runCatching {
                 withContext(Dispatchers.IO) {
@@ -1538,7 +1549,9 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
         }
     }
     BackHandler(enabled = current != Screen.HOME && canAccess(Screen.HOME) && !profileMenuOpen && !toolsOpen) {
-        navigateTo(Screen.HOME)
+        val previous = returnPages.asReversed().firstOrNull { canAccess(Screen.valueOf(it)) }
+        current = previous?.let { Screen.valueOf(it) } ?: Screen.HOME
+        returnPages = if (previous == null) arrayListOf() else ArrayList(returnPages.take(returnPages.lastIndexOf(previous)))
     }
     if (toolsOpen) {
         PreviewToolsSheet(availableScreens, current, onDismiss = { toolsOpen = false }) {
@@ -1587,7 +1600,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
             PreviewBottomNavigation(
                 current = current,
                 available = availableScreens,
-                onNavigate = ::navigateTo,
+                onNavigate = { if (canAccess(it)) { returnPages = arrayListOf(); current = it } },
                 onCenterClick = { profileMenuOpen = false; toolsOpen = true },
                 profileName = identityName,
                 profileRole = identityRole,
@@ -1629,11 +1642,11 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
                 modifier = scroll, weekLabel = weekLabel, bible = bible, onBible = { bible = it; persistDetails() },
                 openingSong = openingSong, onOpeningSong = { openingSong = it; persistDetails() }, closingSong = closingSong,
                 onClosingSong = { closingSong = it; persistDetails() },
-                onPickDate = { datePicker = true }, onImport = { authScope.launch { fetchWorkbookForSelectedWeek() } },
+                onPickDate = { datePicker = true }, onImport = { accountScope.launch { fetchWorkbookForSelectedWeek() } },
                 workbookStatus = workbookStatus,
                 workbookBusy = workbookBusy, workbookCaptureLog = workbookCaptureLog,
-                canContinue = !workbookBusy && participantsLoaded && !participantsBusy,
-                participantsLoadFailed = participantsLoadError != null,
+                canContinue = !workbookBusy && participantsLoaded && !participantsBusy && participants.isNotEmpty(),
+                participantsLoadFailed = participantsLoadError != null, rosterEmpty = participantsLoaded && participants.isEmpty(),
                 onRetryParticipants = { participantsLoadError = null; participantsLoaded = false },
                 canContinueToAssignments = canAccess(Screen.ASSIGNMENTS),
                 readOnly = !canEdit(Screen.DETAILS),
@@ -1693,7 +1706,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
                         exportBusyType = "text"
                         val text = buildOfficialScheduleText(weekStart, bible, openingSong, closingSong, parts.toList(), chairman, openingPrayer, adviser, audienceGroup)
                         val exportWeekStart = weekStart
-                        authScope.launch {
+                        accountScope.launch {
                             runCatching {
                                 scheduleTextShareIntent(context, text, exportWeekStart, weekLabel)
                             }.onSuccess { intent -> launchScheduleShare(intent, "text", "Share schedule text") }
@@ -1716,33 +1729,23 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
                         toastMessage = "Naidagdag si ${added.name}"
                     },
                     onEdit = { original, changed ->
-                        if (original.id <= 0) {
-                            toastMessage = "Nasa device lang ang participant na ito. Gamitin ang Add participant para ma-save sa Shared Workspace."
-                        } else authScope.launch {
-                            runCatching {
-                                api.updateMember(original.id, changed.name, changed.appointment, changed.service, changed.gender, changed.unbaptized)
-                            }.onSuccess { response ->
-                                val saved = response.toSharedParticipant()
-                                val index = participants.indexOfFirst { it.id == saved.id }
-                                if (index >= 0) {
-                                    participants[index] = saved
-                                    store.saveParticipants(participants.toList())
-                                }
-                                toastMessage = if (saved.unbaptized != changed.unbaptized) {
-                                    "Na-update si ${saved.name}, pero hindi nabago ang baptism status."
-                                } else "Na-update si ${saved.name}"
-                            }.onFailure { toastMessage = it.message ?: "Hindi na-update ang participant" }
-                        }
+                        check(original.id > 0) { "Add this device-only participant to Shared Workspace first." }
+                        val saved = api.updateMember(original.id, changed.name, changed.appointment, changed.service,
+                            changed.gender, changed.unbaptized).toSharedParticipant()
+                        val index = participants.indexOfFirst { it.id == saved.id }
+                        if (index >= 0) participants[index] = saved
+                        store.saveParticipants(participants.toList())
+                        toastMessage = "Na-update si ${saved.name}"
                     },
                     isAdmin=participantAdmin,
                     canEdit=canEdit(Screen.PARTICIPANTS) && participantCanEdit,
                     onRefresh={participantsLoadError=null;participantsLoaded=false},
-                    onSetActive={ person,active -> authScope.launch {
+                    onSetActive={ person,active -> accountScope.launch {
                         runCatching { api.setMemberActive(person.id,active) }.onSuccess {
                             val i=participants.indexOfFirst { it.id==person.id }; if(i>=0){participants[i]=participants[i].copy(enabled=active);store.saveParticipants(participants.toList())};toastMessage=if(active)"Na-activate si ${person.name}" else "Ginawang inactive si ${person.name}"
                         }.onFailure{toastMessage=it.message?:"Hindi nabago ang status"}
                     } },
-                    onDelete={ person -> authScope.launch {
+                    onDelete={ person -> accountScope.launch {
                         runCatching { api.deleteMember(person.id) }.onSuccess { response -> if(response.optBoolean("deleted",false)){participants.removeAll { it.id==person.id };store.saveParticipants(participants.toList());toastMessage="Na-delete si ${person.name}"}else toastMessage="Hindi pa updated ang website API para sa permanent delete." }
                             .onFailure{toastMessage=it.message?:"Hindi na-delete ang participant"}
                     } })
@@ -1761,7 +1764,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
                 HistoryScreen(modifier = scroll, schedules = remoteRows.map { it.workspaceEntry() }, loading = historyBusy, error = historyError,
                     hasMore = historyHasMore, loadingMore = historyLoadingMore, availableYears = availableHistoryYears,
                     onLoadMore = {
-                        if (!historyLoadingMore && historyHasMore) authScope.launch {
+                        if (!historyLoadingMore && historyHasMore) accountScope.launch {
                             historyLoadingMore = true
                             runCatching { api.schedulePage(historyNextOffset) }
                                 .onSuccess { page ->
@@ -1777,7 +1780,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
                     },
                     isAdmin=signedIn && identityRole=="admin", canEdit=canEdit(Screen.HISTORY), canCreate=canEdit(Screen.DETAILS),
                     onRefresh={historyLoaded=false;historyReloadTick++}, onView={loadRemoteSchedule(it,false)}, onEdit={loadRemoteSchedule(it,true)},
-                    onDelete={remote -> authScope.launch { runCatching { api.deleteSchedule(remote.id) }.onSuccess { historyLoaded=false;historyReloadTick++;toastMessage="Na-delete ang schedule" }.onFailure { toastMessage=it.message ?: "Hindi ma-delete" } }},
+                    onDelete={remote -> accountScope.launch { runCatching { api.deleteSchedule(remote.id) }.onSuccess { homeLoaded=false;historyLoaded=false;historyReloadTick++;toastMessage="Na-delete ang schedule" }.onFailure { toastMessage=it.message ?: "Hindi ma-delete" } }},
         onNew = { editingRemoteId=0; originalCloudAssignments=emptyList(); originalCloudUpdatedAt=""; navigateTo(Screen.DETAILS) })
             }
             Screen.ACCOUNTS -> {
@@ -1791,7 +1794,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
                         val cleanName = value.trim()
                         if (cleanName.isNotEmpty()) {
                             identityName = cleanName
-                            store.saveProfileName(identityUsername, cleanName)
+                            profileStore.saveProfileName(identityUsername, cleanName)
                         }
                     },
                     onTestNotification={
@@ -1802,7 +1805,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
                             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         } else if (!androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()) {
                             testNotificationFeedback = NotificationFeedback(false, "Turn on notifications in Android Settings, then try again.")
-                        } else if (!testNotificationBusy) authScope.launch {
+                        } else if (!testNotificationBusy) accountScope.launch {
                             testNotificationBusy = true
                             testNotificationFeedback = null
                             try {
@@ -1823,21 +1826,21 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
                     themeMode=themeMode, onThemeModeChange=onThemeModeChange, paletteStyle=paletteStyle, onPaletteStyleChange=onPaletteStyleChange, appLock=appLock,
                     onRefresh={accountsLoaded=false;accountReloadTick++},
                     onUploadPhoto={ account -> accountPhotoTarget=account; accountPhotoPicker.launch("image/*") },
-                    onLinkParticipant={ account, memberId -> authScope.launch {
+                    onLinkParticipant={ account, memberId -> accountScope.launch {
                         accountsBusy=true; accountsError=null
                         runCatching { api.linkAccountParticipant(account.id, memberId) }
                             .onSuccess { response -> toastMessage=response.optString("message","Participant link updated."); accountsLoaded=false; accountReloadTick++ }
                             .onFailure { accountsError=it.message ?: "Hindi na-link ang participant." }
                         accountsBusy=false
                     } },
-                    onAction={ account,action,role,password -> authScope.launch {
+                    onAction={ account,action,role,password -> accountScope.launch {
                         accountsBusy=true;accountsError=null
                         runCatching { api.accountAction(account.id,action,role,password) }
                             .onSuccess { response -> toastMessage=response.optString("message","Account updated.");accountsLoaded=false;accountReloadTick++ }
                             .onFailure { accountsError=it.message ?: "Hindi na-update ang account." }
                         accountsBusy=false
                     } },
-                    onUpdateToolAccess={ account, modes -> authScope.launch {
+                    onUpdateToolAccess={ account, modes -> accountScope.launch {
                         accountsBusy=true; accountsError=null
                         runCatching { api.updateAccountToolAccess(account.id, modes) }
                             .onSuccess { response -> toastMessage=response.optString("message","Tool access updated."); accountsLoaded=false; accountReloadTick++ }
@@ -1939,7 +1942,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
                 Button(
                     onClick = {
                         val target = RemoteSchedule(editingRemoteId, weekLabel, bible, originalCloudUpdatedAt, weekStart)
-                        authScope.launch {
+                        accountScope.launch {
                             runCatching { applyRemoteSchedule(target, navigate = false, edit = true) }
                                 .onSuccess {
                                     cloudConflictVisible = false
@@ -2063,8 +2066,8 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
         AlertDialog(
             onDismissRequest = { shareSuccessType = null },
             icon = { Icon(SproutIcons.CheckCircle, contentDescription = null, tint = Forest, modifier = Modifier.size(28.dp)) },
-            title = { Text("Matagumpay ang pag-share", fontWeight = FontWeight.Bold) },
-            text = { Text(when (type) { "png" -> "Naibahagi ang schedule PNG."; "slips_image" -> "Naibahagi ang assignment slip images."; else -> "Naibahagi ang schedule text." }) },
+            title = { Text("Binuksan ang sharing app", fontWeight = FontWeight.Bold) },
+            text = { Text("Tapusin ang pag-share sa napiling app.") },
             confirmButton = { TextButton(onClick = { shareSuccessType = null }) { Text("Okay", color = Forest) } },
             containerColor = AppSurface,
             titleContentColor = Ink,
@@ -2081,6 +2084,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
                 }
             }
         }
+    }
     }
 }
 
@@ -2984,7 +2988,7 @@ private fun WorkbookProgramCard(
 }
 
 @Composable
-private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, participantsLoadFailed: Boolean, onRetryParticipants: () -> Unit, canContinueToAssignments:Boolean, readOnly:Boolean, isCurrentWeek:Boolean, onThisWeek: () -> Unit, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
+private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, participantsLoadFailed: Boolean, rosterEmpty: Boolean, onRetryParticipants: () -> Unit, canContinueToAssignments:Boolean, readOnly:Boolean, isCurrentWeek:Boolean, onThisWeek: () -> Unit, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
     var showCaptureLog by rememberSaveable(weekLabel) { mutableStateOf(false) }
     val workbookActions: (@Composable ColumnScope.() -> Unit)? = if (canContinueToAssignments) {
         {
@@ -2993,6 +2997,7 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
                 canContinue = canContinue,
                 label = when {
                     workbookBusy -> "Loading weekly program…"
+                    rosterEmpty -> "Participants needed"
                     !canContinue -> "Loading participants…"
                     else -> "Continue to assignments"
                 }
@@ -3018,9 +3023,13 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
             showCaptureLog = showCaptureLog,
             onToggleLog = { showCaptureLog = !showCaptureLog }
         )
-        if (canContinueToAssignments && participantsLoadFailed) {
+        if (canContinueToAssignments && (participantsLoadFailed || rosterEmpty)) {
             M3Card {
-                Text("Couldn’t refresh participants. You can continue with the list available on this device.",
+                Text(when {
+                    !participantsLoadFailed -> "Add participants before assigning meeting parts."
+                    rosterEmpty -> "Couldn’t load participants. Retry to get the roster."
+                    else -> "Couldn’t refresh participants. You can continue with your saved roster."
+                },
                     style = MaterialTheme.typography.bodyMedium)
                 TextButton(onClick = onRetryParticipants) { Text("Retry participant sync") }
             }
@@ -3488,43 +3497,6 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
     PageColumn(modifier) {
         PageHeading("Preview & Export", if (allowExport) "Step 3 of 3 · Review and share the schedule" else null)
         meetingLabel?.let { MeetingScheduleContext(it) }
-        if (allowExport) AdaptivePair(
-            first = { button ->
-                FilledTonalButton(
-                    onClick=onPng, enabled=previewReady && !previewFailed && exportBusyType == null, modifier=button.heightIn(min = 48.dp),
-                    shape = MaterialTheme.shapes.medium, contentPadding=PaddingValues(horizontal=10.dp)
-                ) {
-                    if (exportBusyType == "png") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
-                    else Icon(SproutIcons.Share, contentDescription=null, modifier=Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (exportBusyType == "png") "Preparing…" else "Share PNG",fontSize=14.sp)
-                }
-            },
-            second = { button ->
-                OutlinedButton(
-                    onClick=onExportText, enabled=exportBusyType == null, modifier=button.heightIn(min = 48.dp),
-                    shape = MaterialTheme.shapes.medium, contentPadding=PaddingValues(horizontal=10.dp)
-                ) {
-                    if (exportBusyType == "text") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
-                    else Icon(SproutIcons.Description, contentDescription=null, modifier=Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (exportBusyType == "text") "Preparing…" else "Export text",fontSize=14.sp)
-                }
-            }
-        )
-        val hasAssignmentSlips = parts.any { it.person.isNotBlank() || it.secondaryAssignee.isNotBlank() } ||
-            chairman.isNotBlank() || openingPrayer.isNotBlank() || adviser.isNotBlank()
-        if (allowExport) OutlinedButton(
-            onClick = onAssignmentSlipImages,
-            enabled = exportBusyType == null && hasAssignmentSlips,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            shape = MaterialTheme.shapes.medium
-        ) {
-            if (exportBusyType == "slips_image") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Forest)
-            else Icon(SproutIcons.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(if (exportBusyType == "slips_image") "Preparing images…" else "Share assignment slip images", fontSize = 13.sp)
-        }
         if (exportBusyType != null || (!previewReady && !previewFailed)) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -3568,6 +3540,20 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
                         onPreviewFailed = { previewFailed = true }
                     ) { if (!previewFailed) previewReady = true }
                 }
+            }
+        }
+        if (allowExport) {
+            var more by rememberSaveable { mutableStateOf(false) }
+            Button(onClick = onPng, enabled = previewReady && !previewFailed && exportBusyType == null,
+                modifier = Modifier.fillMaxWidth()) { Text("Share PNG") }
+            TextButton(onClick = { more = !more }) { Text(if (more) "Fewer export options" else "More export options") }
+            if (more) {
+                OutlinedButton(onClick = onExportText, enabled = exportBusyType == null,
+                    modifier = Modifier.fillMaxWidth()) { Text("Export text") }
+                val hasAssignmentSlips = parts.any { it.person.isNotBlank() || it.secondaryAssignee.isNotBlank() } ||
+                    chairman.isNotBlank() || openingPrayer.isNotBlank() || adviser.isNotBlank()
+                OutlinedButton(onClick = onAssignmentSlipImages, enabled = exportBusyType == null && hasAssignmentSlips,
+                    modifier = Modifier.fillMaxWidth()) { Text("Share assignment slip images") }
             }
         }
     }
@@ -3862,7 +3848,7 @@ private fun buildOfficialScheduleHtml(context: Context, weekStart:String,bible:S
 @Composable
 private fun ParticipantsScreen(
     modifier: Modifier, participants: List<Participant>, onAdd: suspend (String) -> Unit,
-    onEdit: (Participant, Participant) -> Unit,
+    onEdit: suspend (Participant, Participant) -> Unit,
     isAdmin: Boolean, canEdit: Boolean, loading: Boolean, loadError: String?, onRefresh: () -> Unit,
     onSetActive: (Participant, Boolean) -> Unit, onDelete: (Participant) -> Unit,
     showRefresh: Boolean = true,
@@ -3925,7 +3911,7 @@ private fun ParticipantsScreen(
                     Icon(SproutIcons.PersonAdd, contentDescription = "Add participant", tint = Forest)
                 }
             }
-            Text("${participants.size} participants · showing ${minOf(visibleCount, filtered.size)} of ${filtered.size} matches",color=Muted,fontSize=12.sp)
+            Text("${filtered.size} matches · ${participants.size} total",color=Muted,fontSize=12.sp)
             if (loading && participants.isNotEmpty()) Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 CircularProgressIndicator(Modifier.size(15.dp),strokeWidth=2.dp,color=Forest)
                 Text("Updating participant list · showing saved data",color=Muted,fontSize = 12.sp)
@@ -3941,7 +3927,7 @@ private fun ParticipantsScreen(
                 Column(Modifier.fillMaxSize().padding(14.dp)) {
                     Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(query,{query=it},placeholder={Text("Search participant")},singleLine=true,shape = MaterialTheme.shapes.medium,modifier=Modifier.weight(1f).heightIn(min=48.dp),textStyle=MaterialTheme.typography.bodyMedium)
-                        IconButton(onClick={showFilters=true},modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(SproutIcons.Sort,contentDescription="Filter and sort participants",tint=Forest,modifier=Modifier.size(22.dp))}
+                        TextButton(onClick = { showFilters = true }) { Text(statusFilter.replaceFirstChar { it.uppercase() }) }
                     }
                     LazyColumn(Modifier.weight(1f).fillMaxWidth(),contentPadding=PaddingValues(top=6.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
                         itemsIndexed(filtered.take(visibleCount), key = { _, entry -> if (entry.value.id > 0) entry.value.id.toLong() else -1L - entry.index }) { _, entry ->
@@ -3988,7 +3974,7 @@ private fun ParticipantsScreen(
                                 FilledTonalButton(onClick = { visibleCount += 50 }, shape = MaterialTheme.shapes.medium) {
                                     Icon(SproutIcons.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(Modifier.width(7.dp))
-                                    Text("Show next ${minOf(50, filtered.size - visibleCount)} participants")
+                                    Text("Show more · $visibleCount of ${filtered.size} shown")
                                 }
                             }
                         }
@@ -4046,32 +4032,37 @@ private fun ParticipantsScreen(
             dismissButton = { TextButton(onClick = ::closeAdd, enabled = !adding) { Text("Cancel") } }
         )
     }
+    var savingEdit by remember(editing) { mutableStateOf(false) }
+    var editError by remember(editing) { mutableStateOf<String?>(null) }
     val editedParticipant = editing
     if (editedParticipant != null && canEdit) AlertDialog(
-        onDismissRequest = { editing = null },
+        onDismissRequest = { if (!savingEdit) editing = null },
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = MaterialTheme.shapes.extraLarge,
         title = { Text("Edit participant", fontWeight = FontWeight.Bold) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
-                    editName, { editName = it }, label = { Text("Name") },
+                    editName, { editName = it; editError = null }, enabled = !savingEdit, label = { Text("Name") },
                     singleLine = true, modifier = Modifier.fillMaxWidth()
                 )
                 ParticipantChoice("Gender", editGender, listOf(
                     "unspecified" to "Unspecified", "brother" to "Brother", "sister" to "Sister"
-                )) { editGender = it }
+                ), enabled = !savingEdit) {
+                    editGender = it
+                    if (it != "brother" && editAppointment in listOf("ministerial", "elder")) editAppointment = "publisher"
+                }
                 ParticipantChoice(
                     "Appointment", editAppointment,
-                    listOf("" to "", "publisher" to "Publisher", "ministerial" to "Ministerial servant", "elder" to "Elder"),
-                    enabled = !editUnbaptized
+                    listOf("" to "", "publisher" to "Publisher") + if (editGender == "brother") listOf("ministerial" to "Ministerial servant", "elder" to "Elder") else emptyList(),
+                    enabled = !savingEdit && !editUnbaptized
                 ) { editAppointment = it }
                 Column(Modifier.fillMaxWidth()) {
-                    ParticipantStatusSwitch("Regular Pioneer", editRegularPioneer, enabled = !editUnbaptized) {
+                    ParticipantStatusSwitch("Regular Pioneer", editRegularPioneer, enabled = !savingEdit && !editUnbaptized) {
                         editRegularPioneer = it
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    ParticipantStatusSwitch("Unbaptized", editUnbaptized) {
+                    ParticipantStatusSwitch("Unbaptized", editUnbaptized, enabled = !savingEdit) {
                         editUnbaptized = it
                         if (it) {
                             editAppointment = "publisher"
@@ -4079,21 +4070,30 @@ private fun ParticipantsScreen(
                         }
                     }
                 }
+                editError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {
-            TextButton(enabled = editName.isNotBlank(), onClick = {
-                onEdit(editedParticipant, editedParticipant.copy(
-                    name = editName.trim(),
-                    gender = editGender,
-                    appointment = editAppointment,
-                    service = if (editRegularPioneer) "regular_pioneer" else "none",
-                    unbaptized = editUnbaptized
-                ))
-                editing = null
-            }) { Text("Save") }
+            TextButton(enabled = !savingEdit && editName.isNotBlank(), onClick = {
+                savingEdit = true
+                editError = null
+                val changed = editedParticipant.copy(name = editName.trim(), gender = editGender,
+                    appointment = editAppointment, service = if (editRegularPioneer) "regular_pioneer" else "none",
+                    unbaptized = editUnbaptized)
+                addScope.launch {
+                    try {
+                        onEdit(editedParticipant, changed)
+                        editing = null
+                    } catch (error: Exception) {
+                        if (error is kotlinx.coroutines.CancellationException) throw error
+                        editError = error.message ?: "Could not save participant."
+                    } finally {
+                        savingEdit = false
+                    }
+                }
+            }) { Text(if (savingEdit) "Saving…" else "Save") }
         },
-        dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancel") } }
+        dismissButton = { TextButton(enabled = !savingEdit, onClick = { editing = null }) { Text("Cancel") } }
     )
     if(showFilters) AlertDialog(
         onDismissRequest={showFilters=false},containerColor=MaterialTheme.colorScheme.surfaceContainerHigh,shape = MaterialTheme.shapes.extraLarge,title={Text("Filter and sort",fontWeight=FontWeight.Bold)},
@@ -5144,37 +5144,7 @@ private fun AccountActionButton(label: String, icon: ImageVector, tint: Color, m
     }
 }
 
-private fun sampleParticipants() = listOf(
-    Participant("Alfredo Casingal Jr", "Elder"), Participant("Aljon Orellano", "Elder"),
-    Participant("Ariel Peñaroyo", "Ministerial Servant", "Regular Pioneer"), Participant("Benjamin Chavez Jr", "Elder"),
-    Participant("Benjo Laurio", "Ministerial Servant"), Participant("Charle Dave Ode", "Elder", "Regular Pioneer"),
-    Participant("Edward Philip Mata", "Elder"), Participant("Glenn Asombrado", "Elder"),
-    Participant("Abegail Hamtig", "Publisher", "Regular Pioneer", "Sister"), Participant("Aliza Solis", "Publisher", "Publisher", "Sister"),
-    Participant("Andre Orellano"), Participant("Angelica Casingal", "Publisher", "Regular Pioneer", "Sister"),
-    Participant("James Simon Pascual", "Elder"), Participant("Jerome Ontog", "Elder"), Participant("Lucio Esquerdo", "Ministerial Servant")
-)
-
 private fun String.htmlSafe(): String = replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;")
-
-private fun sampleAssignments() = listOf(
-    Assignment("1. “Makikipagtipan Ako ng Isang Bagong Tipan”", section="treasures", time="6:06", duration="10 min.", id=1),
-    Assignment("2. Espirituwal na Hiyas", section="treasures", time="6:16", duration="10 min.", id=2),
-    Assignment("3. Pagbabasa ng Bibliya — Jeremias 31:1-11", section="treasures", time="6:26", duration="4 min.", id=3, hasSecondary=true),
-    Assignment("4. Pagpapasimula ng Pakikipag-usap — Bahay-bahay", section="ministry", time="6:31", duration="3 min.", id=4, hasAssistant=true, hasSecondary=true, hasSecondaryAssistant=true),
-    Assignment("5. Pagpapasimula ng Pakikipag-usap — Di-pormal", section="ministry", time="6:35", duration="4 min.", id=5, hasAssistant=true, hasSecondary=true, hasSecondaryAssistant=true),
-    Assignment("6. Ipaliwanag ang Paniniwala Mo", section="ministry", time="6:40", duration="5 min.", id=6, hasSecondary=true),
-    Assignment("7. Makibagay—Gamitin ang JW.ORG", section="living", time="6:46", duration="15 min.", id=7),
-    Assignment("8. Pag-aaral ng Kongregasyon sa Bibliya", section="living", time="7:04", duration="30 min.", id=8, hasAssistant=true)
-)
-
-private fun sampleHistory() = mutableListOf(
-    SavedSchedule("Aug 31 – Sep 6, 2026", "Jeremias 31", "Aug 24, 2026", "2026-08-31"),
-    SavedSchedule("Aug 24 – 30, 2026", "Jeremias 30", "Aug 17, 2026", "2026-08-24"),
-    SavedSchedule("Aug 17 – 23, 2026", "Jeremias 29", "Aug 10, 2026", "2026-08-17")
-)
-
-
-
 
 private fun renderSchedulePng(context: Context, exportHtml: String, onSuccess: (Intent) -> Unit, onFailure: (String) -> Unit) {
     val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
@@ -6202,7 +6172,7 @@ private fun DeviceWorkspaceApp(
                         },
                         onEdit = { old, updated ->
                             if (data.participants.any { it.id != old.id && it.name.equals(updated.name, true) }) {
-                                message("A participant already uses that name.")
+                                error("A participant already uses that name.")
                             } else {
                                 update(data.copy(
                                     participants = data.participants.map { if (it.id == old.id) updated.copy(id = old.id) else it },

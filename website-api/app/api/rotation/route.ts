@@ -2,7 +2,7 @@ import { eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { members, schedules, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
-import { addCalendarMonth, meetingDateFromLabel } from "../../meeting-date";
+import { addCalendarMonth, meetingDateFromLabel, scheduledMeetingDate } from "../../meeting-date";
 import { ensureScheduleSoftDeleteStorage } from "../../schedule-soft-delete-storage";
 import { canAccessAnyTool } from "../../permissions";
 
@@ -13,12 +13,14 @@ export async function GET(request:Request){
     await ensureScheduleSoftDeleteStorage();
     const db=getDb();const [user]=await db.select({id:users.id}).from(users).where(eq(users.email,auth.email)).limit(1);if(!user)return Response.json({error:"Unauthorized"},{status:401});
     const raw=new URL(request.url).searchParams.get("date")||"";const asOfDate=/^\d{4}-\d{2}-\d{2}$/.test(raw)?raw:meetingDateFromLabel(raw);if(!asOfDate)return Response.json({error:"Invalid meeting date"},{status:400});
-    const [memberRows,scheduleRows]=await Promise.all([db.select().from(members),db.select({weekLabel:schedules.weekLabel,assignmentsJson:schedules.assignmentsJson}).from(schedules).where(isNull(schedules.deletedAt))]);
+    const [memberRows,scheduleRows]=await Promise.all([db.select().from(members),db.select({detailsJson:schedules.detailsJson,weekLabel:schedules.weekLabel,assignmentsJson:schedules.assignmentsJson}).from(schedules).where(isNull(schedules.deletedAt))]);
     const byName=new Map(memberRows.map(member=>[member.name.trim().toLocaleLowerCase("tl"),member.id]));
     const totals=new Map<number,{main:number;assistant:number;last:string|null;month:number}>();
     const month=asOfDate.slice(0,7);
     for(const schedule of scheduleRows){
-      const meetingDate=meetingDateFromLabel(schedule.weekLabel);if(!meetingDate)continue;
+      let weekStart: unknown;
+      try { weekStart = JSON.parse(schedule.detailsJson)?.weekStart; } catch { /* Older records use the week label. */ }
+      const meetingDate=scheduledMeetingDate(weekStart,schedule.weekLabel);if(!meetingDate)continue;
       let parts:SavedPart[]=[];try{const parsed=JSON.parse(schedule.assignmentsJson);if(Array.isArray(parsed))parts=parsed;}catch{}
       for(const part of parts){
         const slots=[[part.assignee,"main"],[part.assistant,"assistant"],[part.secondaryAssignee,"main"],[part.secondaryAssistant,"assistant"]] as const;
