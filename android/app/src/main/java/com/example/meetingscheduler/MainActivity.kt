@@ -44,6 +44,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -400,7 +401,11 @@ private data class Participant(
     val enabled: Boolean = true,
     val id: Int = 0,
     val unbaptized: Boolean = false
-)
+) {
+    val isRegularPioneer: Boolean
+        get() = service.replace('_', ' ').equals("Regular Pioneer", ignoreCase = true)
+}
+
 private fun JSONObject.toSharedParticipant() = Participant(
     name = optString("name"),
     appointment = optString("appointment"),
@@ -3882,7 +3887,7 @@ private fun ParticipantsScreen(
     var editName by remember { mutableStateOf("") }
     var editGender by remember { mutableStateOf("brother") }
     var editAppointment by remember { mutableStateOf("publisher") }
-    var editService by remember { mutableStateOf("none") }
+    var editRegularPioneer by remember { mutableStateOf(false) }
     var editUnbaptized by remember { mutableStateOf(false) }
     var visibleCount by rememberSaveable { mutableIntStateOf(50) }
     LaunchedEffect(query, genderFilter, appointmentFilter, serviceFilter, baptismFilter, statusFilter, sortBy) { visibleCount = 50 }
@@ -3891,17 +3896,24 @@ private fun ParticipantsScreen(
         participantsSnapshot.withIndex().filter { (_, p) ->
             p.name.contains(query, true) && (statusFilter == "all" || (statusFilter == "active" && p.enabled) || (statusFilter == "inactive" && !p.enabled)) &&
                 (genderFilter == "all" || p.gender == genderFilter) && (appointmentFilter == "all" || p.appointment == appointmentFilter) &&
-                (serviceFilter == "all" || p.service == serviceFilter) && (baptismFilter == "all" || (baptismFilter == "unbaptized" && p.unbaptized) || (baptismFilter == "baptized" && !p.unbaptized))
+                (serviceFilter == "all" || p.isRegularPioneer == (serviceFilter == "regular_pioneer")) && (baptismFilter == "all" || (baptismFilter == "unbaptized" && p.unbaptized) || (baptismFilter == "baptized" && !p.unbaptized))
         }.sortedWith(when (sortBy) {
             "gender" -> compareBy<IndexedValue<Participant>> { it.value.gender }.thenBy { it.value.name.lowercase() }
             "appointment" -> compareBy<IndexedValue<Participant>> { it.value.appointment }.thenBy { it.value.name.lowercase() }
-            "service" -> compareBy<IndexedValue<Participant>> { it.value.service }.thenBy { it.value.name.lowercase() }
+            "service" -> compareByDescending<IndexedValue<Participant>> { it.value.isRegularPioneer }.thenBy { it.value.name.lowercase() }
             "unbaptized" -> compareByDescending<IndexedValue<Participant>> { it.value.unbaptized }.thenBy { it.value.name.lowercase() }
             "name_desc" -> compareByDescending<IndexedValue<Participant>> { it.value.name.lowercase() }
             else -> compareBy { it.value.name.lowercase() }
         })
     }
-    fun beginEdit(p: Participant) { editing=p; editName=p.name; editGender=p.gender; editAppointment=p.appointment; editService=p.service; editUnbaptized=p.unbaptized }
+    fun beginEdit(person: Participant) {
+        editing = person
+        editName = person.name
+        editGender = person.gender
+        editAppointment = person.appointment
+        editUnbaptized = person.unbaptized
+        editRegularPioneer = person.isRegularPioneer && !editUnbaptized
+    }
     PageFrame(modifier) { page ->
         Column(page.fillMaxHeight().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             PageHeading("Participants") {
@@ -3940,8 +3952,15 @@ private fun ParticipantsScreen(
                                 Column(Modifier.weight(1f).padding(start=10.dp)) {
                                     Text(p.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                     Text(
-                                        if (p.unbaptized) "Unbaptized · ${genderLabel(p.gender)}${if(!p.enabled) " · Inactive" else ""}"
-                                        else "${appointmentLabel(p.appointment)} · ${serviceLabel(p.service)} · ${genderLabel(p.gender)}${if(!p.enabled) " · Inactive" else ""}",
+                                        buildList {
+                                            if (p.unbaptized) add("Unbaptized")
+                                            else {
+                                                appointmentLabel(p.appointment).takeIf { it.isNotBlank() }?.let { add(it) }
+                                                if (p.isRegularPioneer) add("Regular Pioneer")
+                                            }
+                                            add(genderLabel(p.gender))
+                                            if (!p.enabled) add("Inactive")
+                                        }.joinToString(" · "),
                                         color=Muted,fontSize = 12.sp,maxLines=1
                                     )
                                 }
@@ -4027,17 +4046,54 @@ private fun ParticipantsScreen(
             dismissButton = { TextButton(onClick = ::closeAdd, enabled = !adding) { Text("Cancel") } }
         )
     }
-    if(editing!=null && canEdit) AlertDialog(
-        onDismissRequest={editing=null},containerColor=MaterialTheme.colorScheme.surfaceContainerHigh,shape = MaterialTheme.shapes.extraLarge,title={Text("Edit participant",fontWeight=FontWeight.Bold)},
-        text={Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedTextField(editName,{editName=it},label={Text("Name")},singleLine=true,modifier=Modifier.fillMaxWidth())
-            ParticipantChoice("Gender",editGender,listOf("brother" to "Brother","sister" to "Sister")){editGender=it}
-            ParticipantChoice("Appointment",editAppointment,listOf("" to "","publisher" to "Publisher","ministerial" to "Ministerial servant","elder" to "Elder"),enabled=!editUnbaptized){editAppointment=it;if(it!="publisher")editUnbaptized=false}
-            ParticipantChoice("Service status",editService,listOf("" to "","none" to "Publisher","regular_pioneer" to "Regular pioneer"),enabled=!editUnbaptized){editService=it;if(it=="regular_pioneer")editUnbaptized=false}
-            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("Unbaptized",fontSize=14.sp);Switch(checked=editUnbaptized,onCheckedChange={editUnbaptized=it;if(it){editAppointment="";editService=""}},colors=SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.onPrimary, checkedTrackColor = Forest))}
-        }},
-        confirmButton={TextButton(onClick={editing?.let{old->if(editName.isNotBlank())onEdit(old,old.copy(name=editName.trim(),gender=editGender,appointment=editAppointment,service=editService,unbaptized=editUnbaptized))};editing=null}){Text("Save",color=Forest)}},
-        dismissButton={TextButton(onClick={editing=null}){Text("Cancel",color=Forest)}}
+    val editedParticipant = editing
+    if (editedParticipant != null && canEdit) AlertDialog(
+        onDismissRequest = { editing = null },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = MaterialTheme.shapes.extraLarge,
+        title = { Text("Edit participant", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    editName, { editName = it }, label = { Text("Name") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+                ParticipantChoice("Gender", editGender, listOf(
+                    "unspecified" to "Unspecified", "brother" to "Brother", "sister" to "Sister"
+                )) { editGender = it }
+                ParticipantChoice(
+                    "Appointment", editAppointment,
+                    listOf("" to "", "publisher" to "Publisher", "ministerial" to "Ministerial servant", "elder" to "Elder"),
+                    enabled = !editUnbaptized
+                ) { editAppointment = it }
+                Column(Modifier.fillMaxWidth()) {
+                    ParticipantStatusSwitch("Regular Pioneer", editRegularPioneer, enabled = !editUnbaptized) {
+                        editRegularPioneer = it
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    ParticipantStatusSwitch("Unbaptized", editUnbaptized) {
+                        editUnbaptized = it
+                        if (it) {
+                            editAppointment = "publisher"
+                            editRegularPioneer = false
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = editName.isNotBlank(), onClick = {
+                onEdit(editedParticipant, editedParticipant.copy(
+                    name = editName.trim(),
+                    gender = editGender,
+                    appointment = editAppointment,
+                    service = if (editRegularPioneer) "regular_pioneer" else "none",
+                    unbaptized = editUnbaptized
+                ))
+                editing = null
+            }) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancel") } }
     )
     if(showFilters) AlertDialog(
         onDismissRequest={showFilters=false},containerColor=MaterialTheme.colorScheme.surfaceContainerHigh,shape = MaterialTheme.shapes.extraLarge,title={Text("Filter and sort",fontWeight=FontWeight.Bold)},
@@ -4046,8 +4102,8 @@ private fun ParticipantsScreen(
             ParticipantChoice("Baptism",baptismFilter,listOf("all" to "All","baptized" to "Baptized","unbaptized" to "Unbaptized")){baptismFilter=it}
             ParticipantChoice("Brother / Sister",genderFilter,listOf("all" to "All","brother" to "Brother","sister" to "Sister")){genderFilter=it}
             ParticipantChoice("Appointment",appointmentFilter,listOf("all" to "All","elder" to "Elder","ministerial" to "Ministerial servant","publisher" to "Publisher")){appointmentFilter=it}
-            ParticipantChoice("Service status",serviceFilter,listOf("all" to "All","regular_pioneer" to "Regular pioneer","none" to "Publisher")){serviceFilter=it}
-            ParticipantChoice("Sort by",sortBy,listOf("name" to "Name A–Z","name_desc" to "Name Z–A","gender" to "Brother / Sister","appointment" to "Appointment","service" to "Service status","unbaptized" to "Baptism status")){sortBy=it}
+            ParticipantChoice("Regular Pioneer",serviceFilter,listOf("all" to "All","regular_pioneer" to "Yes","none" to "No")){serviceFilter=it}
+            ParticipantChoice("Sort by",sortBy,listOf("name" to "Name A–Z","name_desc" to "Name Z–A","gender" to "Brother / Sister","appointment" to "Appointment","service" to "Regular Pioneers first","unbaptized" to "Baptism status")){sortBy=it}
         }},
         confirmButton={TextButton(onClick={showFilters=false}){Text("Done",color=Forest)}},
         dismissButton={TextButton(onClick={statusFilter="active";baptismFilter="all";genderFilter="all";appointmentFilter="all";serviceFilter="all";sortBy="name"}){Text("Reset",color=Forest)}}
@@ -4056,8 +4112,24 @@ private fun ParticipantsScreen(
 }
 
 private fun appointmentLabel(value: String) = when(value.lowercase()) { "" -> ""; "elder" -> "Elder"; "ministerial" -> "Ministerial"; "publisher" -> "Publisher"; else -> "Publisher" }
-private fun serviceLabel(value: String) = when(value.lowercase()) { "" -> ""; "regular_pioneer" -> "Regular pioneer"; "none" -> "Publisher"; else -> "Publisher" }
 private fun genderLabel(value: String) = when(value.lowercase()) { "sister" -> "Sister"; "brother" -> "Brother"; else -> "Unspecified" }
+
+@Composable
+private fun ParticipantStatusSwitch(label: String, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.38f)
+        )
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+    }
+}
 
 @Composable
 private fun ParticipantChoice(label: String, value: String, options: List<Pair<String,String>>, enabled: Boolean = true, onSelect: (String)->Unit) {
@@ -4877,6 +4949,7 @@ private fun AboutThisAppDialog(
     onOpenLink: (String) -> Unit
 ) {
     var changelogOpen by rememberSaveable { mutableStateOf(false) }
+    var developerOpen by rememberSaveable { mutableStateOf(false) }
     var licenseInfoOpen by rememberSaveable { mutableStateOf(false) }
     Dialog(
         onDismissRequest = onDismiss,
@@ -4920,17 +4993,14 @@ private fun AboutThisAppDialog(
                         AboutRow("Changelog", "What changed in this version", SproutIcons.History) {
                             changelogOpen = true
                         }
-                        AboutRow("Contributors", "Everyone who helped build this app", SproutIcons.Groups) {
-                            onOpenLink("https://github.com/charledave2/meeting-scheduler/graphs/contributors")
+                        AboutRow("Developer", "Charle Dave", SproutIcons.Person) {
+                            developerOpen = true
                         }
                     }
                     M3Card {
                         Text("Links", style = MaterialTheme.typography.titleMedium)
                         AboutRow("GitHub Repository", "Source code, issues and documentation", SproutIcons.Description) {
                             onOpenLink("https://github.com/charledave2/meeting-scheduler")
-                        }
-                        AboutRow("Developer", "GitHub Profile: @charledave2", SproutIcons.Person) {
-                            onOpenLink("https://github.com/charledave2")
                         }
                         AboutRow("License", "License information", SproutIcons.Lock) { licenseInfoOpen = true }
                     }
@@ -4949,6 +5019,7 @@ private fun AboutThisAppDialog(
         }
     }
     if (changelogOpen) InstalledBuildChangelogDialog(onDismiss = { changelogOpen = false })
+    if (developerOpen) DeveloperInfoDialog(onDismiss = { developerOpen = false })
     if (licenseInfoOpen) AlertDialog(
         onDismissRequest = { licenseInfoOpen = false },
         title = { Text("License information") },
@@ -4959,6 +5030,34 @@ private fun AboutThisAppDialog(
 }
 
 
+
+@Composable
+private fun DeveloperInfoDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Developer") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.developer_avatar),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(88.dp)
+                        .clip(CircleShape)
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                )
+                Text("Charle Dave", style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+                Text("Developer of JW Meeting Manager", style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                Text("@charledave2", style = MaterialTheme.typography.bodySmall, color = Muted, textAlign = TextAlign.Center)
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
 
 @Composable
 private fun InstalledBuildChangelogDialog(onDismiss: () -> Unit) {
@@ -5692,7 +5791,7 @@ private fun DeviceWorkspaceApp(
                                                 if (person.unbaptized) add("Unbaptized")
                                                 else {
                                                     add(appointmentLabel(person.appointment))
-                                                    if (person.service == "regular_pioneer") add(serviceLabel(person.service))
+                                                    if (person.isRegularPioneer) add("Regular Pioneer")
                                                 }
                                                 if (!person.enabled) add("Inactive")
                                             }

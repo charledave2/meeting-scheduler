@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.45.54 — 2026-11-27
+
+- Replace the Service status field in Edit participant with a Regular Pioneer switch aligned with Unbaptized in both workspaces.
+- Show developer information in a popup inside About this App, available offline in both workspaces.
+
 ## v0.45.53 — 2026-11-27
 
 - Save new Shared Workspace participants to the server so they appear across devices and remain after refresh.
