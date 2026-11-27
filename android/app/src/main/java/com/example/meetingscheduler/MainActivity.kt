@@ -4796,6 +4796,7 @@ private fun AboutThisAppDialog(
     onOpenLink: (String) -> Unit
 ) {
     var changelogOpen by rememberSaveable { mutableStateOf(false) }
+    var developerOpen by rememberSaveable { mutableStateOf(false) }
     var licenseInfoOpen by rememberSaveable { mutableStateOf(false) }
     Dialog(
         onDismissRequest = onDismiss,
@@ -4839,17 +4840,14 @@ private fun AboutThisAppDialog(
                         AboutRow("Changelog", "What changed in this version", SproutIcons.History) {
                             changelogOpen = true
                         }
-                        AboutRow("Contributors", "Everyone who helped build this app", SproutIcons.Groups) {
-                            onOpenLink("https://github.com/charledave2/meeting-scheduler/graphs/contributors")
+                        AboutRow("Developer", "Charle Dave", SproutIcons.Person) {
+                            developerOpen = true
                         }
                     }
                     M3Card {
                         Text("Links", style = MaterialTheme.typography.titleMedium)
                         AboutRow("GitHub Repository", "Source code, issues and documentation", SproutIcons.Description) {
                             onOpenLink("https://github.com/charledave2/meeting-scheduler")
-                        }
-                        AboutRow("Developer", "GitHub Profile: @charledave2", SproutIcons.Person) {
-                            onOpenLink("https://github.com/charledave2")
                         }
                         AboutRow("License", "License information", SproutIcons.Lock) { licenseInfoOpen = true }
                     }
@@ -4868,6 +4866,7 @@ private fun AboutThisAppDialog(
         }
     }
     if (changelogOpen) InstalledBuildChangelogDialog(onDismiss = { changelogOpen = false })
+    if (developerOpen) DeveloperInfoDialog(onDismiss = { developerOpen = false })
     if (licenseInfoOpen) AlertDialog(
         onDismissRequest = { licenseInfoOpen = false },
         title = { Text("License information") },
@@ -4878,6 +4877,34 @@ private fun AboutThisAppDialog(
 }
 
 
+
+@Composable
+private fun DeveloperInfoDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Developer") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.developer_avatar),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(88.dp)
+                        .clip(CircleShape)
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                )
+                Text("Charle Dave", style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+                Text("Developer of JW Meeting Manager", style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                Text("@charledave2", style = MaterialTheme.typography.bodySmall, color = Muted, textAlign = TextAlign.Center)
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
 
 @Composable
 private fun InstalledBuildChangelogDialog(onDismiss: () -> Unit) {
