@@ -22,8 +22,8 @@ android {
         applicationId = "com.example.meetingscheduler"
         minSdk = 24
         targetSdk = 35
-        versionCode = 117
-        versionName = "0.45.54"
+        versionCode = 118
+        versionName = "0.45.55"
         resValue("string", "app_name", "JW Meeting Manager")
     }
     buildFeatures { compose = true; buildConfig = true }
@@ -97,6 +97,7 @@ androidComponents {
 }
 
 dependencies {
+    implementation("androidx.work:work-runtime-ktx:2.10.1")
     implementation(platform("com.google.firebase:firebase-bom:35.2.0"))
     implementation("com.google.firebase:firebase-messaging")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")

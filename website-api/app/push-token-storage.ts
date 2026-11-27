@@ -16,6 +16,9 @@ export function ensurePushTokenProviderStorage() {
     if (!database) throw new Error("Database binding is unavailable.");
     const result = await database.prepare("PRAGMA table_info(push_tokens)").all<{ name: string }>();
     const columns = new Set((result.results || []).map((column) => column.name));
+    if (!columns.has("delivery_binding")) {
+      await database.exec("ALTER TABLE push_tokens ADD COLUMN delivery_binding TEXT;");
+    }
     if (!columns.has("provider")) {
       await database.exec("ALTER TABLE push_tokens ADD COLUMN provider TEXT DEFAULT 'expo' NOT NULL;");
     }

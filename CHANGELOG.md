@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.45.55 — 2026-11-28
+
+- Preserve participant edits on save failures and apply consistent gender and appointment rules.
+- Improve Workbook roster loading, Back navigation, participant counts and filters, and Home refresh after schedule changes.
+- Bring schedule previews and sharing actions into clearer view and correct share feedback.
+- Isolate Shared Workspace caches by account and retry notification cleanup after offline sign-out.
+- Protect cloud saves against stale edits and correct rotation dates across month and year boundaries.
+- Make interrupted backup restores safe to retry without duplicate participants or broken schedule links.
+
 ## v0.45.54 — 2026-11-27
 
 - Replace the Service status field in Edit participant with a Regular Pioneer switch aligned with Unbaptized in both workspaces.

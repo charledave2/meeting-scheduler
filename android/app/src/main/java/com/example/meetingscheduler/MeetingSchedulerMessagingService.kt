@@ -100,6 +100,8 @@ class MeetingSchedulerMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
+        val binding = SchedulerApi(applicationContext).deliveryBinding() ?: return
+        if (message.data["binding"]?.let { it != binding } == true) return
         val title = message.notification?.title
             ?: message.data["title"]
             ?: "May bagong bahagi ka sa iskedyul"

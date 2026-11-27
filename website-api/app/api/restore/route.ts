@@ -53,6 +53,17 @@ export async function POST(request: Request) {
     if (rows && (!Array.isArray(rows) || rows.length > limit)) return Response.json({ error: `Backup contains too many ${key} rows.` }, { status: 400 });
   }
 
+  for (const rows of Object.values(backup.data)) {
+    if (!Array.isArray(rows) || rows.some(row => !row || typeof row !== "object" || Array.isArray(row))) {
+      return Response.json({ error: "Backup contains an invalid record." }, { status: 400 });
+    }
+  }
+  // These values identify restored records on a retry. Validate before writing anything.
+  if (backup.data.schedules?.some(row => !stringValue(row, "updatedAt", "updated_at")) ||
+      backup.data.participantImportAudits?.some(row => !stringValue(row, "createdAt", "created_at"))) {
+    return Response.json({ error: "Backup is missing a record timestamp." }, { status: 400 });
+  }
+
   const db = getDb();
   const userIdMap = new Map<number, number>();
   const memberIdMap = new Map<number, number>();
@@ -81,11 +92,14 @@ export async function POST(request: Request) {
     if (oldId) userIdMap.set(oldId, target.id);
   }
 
+  const existingMembers = await db.select().from(members);
+  const normalize = (name: string) => name.trim().replace(/\s+/g, " ").toLowerCase();
+  const membersByName = new Map(existingMembers.map(member => [normalize(member.name), member]));
+  const pendingMembers = new Map<string, typeof members.$inferInsert>();
+  const oldMemberNames = new Map<number, string>();
   for (const row of backup.data.members ?? []) {
     const name = stringValue(row, "name", "name").trim().replace(/\s+/g, " ");
     if (!name) continue;
-    const allMembers = await db.select().from(members);
-    const target = allMembers.find((member) => member.name.toLocaleLowerCase() === name.toLocaleLowerCase());
     const appointment = ["elder", "ministerial", "publisher"].includes(stringValue(row, "appointment", "appointment")) ? stringValue(row, "appointment", "appointment") as "elder" | "ministerial" | "publisher" : "publisher";
     const serviceStatus = stringValue(row, "serviceStatus", "service_status") === "regular_pioneer" ? "regular_pioneer" as const : "none" as const;
     const rawGender = stringValue(row, "gender", "gender");
@@ -93,11 +107,33 @@ export async function POST(request: Request) {
     const unbaptized = value(row, "unbaptized", "unbaptized") === true || value(row, "unbaptized", "unbaptized") === 1;
     const createdBy = userIdMap.get(numberValue(row, "createdBy") || numberValue(row, "created_by")) ?? admin.id;
     const active = value(row, "active", "active") !== false && value(row, "active", "active") !== 0;
-    let targetId:number;
-    if (target) { await db.update(members).set({ name, appointment, serviceStatus, gender, active, unbaptized }).where(eq(members.id, target.id)); targetId=target.id; }
-    else { const [created]=await db.insert(members).values({ name, appointment, serviceStatus, gender, active, unbaptized, createdBy }).returning({id:members.id}); targetId=created.id; }
-    const oldId=numberValue(row,"id");if(oldId)memberIdMap.set(oldId,targetId);
-    restoredMembers++;
+    const key = normalize(name);
+    pendingMembers.set(key, { name, appointment, serviceStatus, gender, active, unbaptized, createdBy });
+    const oldId = numberValue(row, "id");
+    if (oldId) oldMemberNames.set(oldId, key);
+  }
+  const newMembers: (typeof members.$inferInsert)[] = [];
+  for (const [key, desired] of pendingMembers) {
+    const existing = membersByName.get(key);
+    if (!existing) {
+      newMembers.push(desired);
+      continue;
+    }
+    const { createdBy, ...changes } = desired;
+    if (Object.entries(changes).some(([field, value]) => existing[field as keyof typeof existing] !== value)) {
+      await db.update(members).set(changes).where(eq(members.id, existing.id));
+      restoredMembers++;
+    }
+  }
+  // Keep multi-row inserts below D1's bound-parameter limit.
+  for (let index = 0; index < newMembers.length; index += 8) {
+    const saved = await db.insert(members).values(newMembers.slice(index, index + 8)).returning();
+    for (const member of saved) membersByName.set(normalize(member.name), member);
+    restoredMembers += saved.length;
+  }
+  for (const [oldId, key] of oldMemberNames) {
+    const saved = membersByName.get(key);
+    if (saved) memberIdMap.set(oldId, saved.id);
   }
 
   for (const row of backup.data.schedules ?? []) {

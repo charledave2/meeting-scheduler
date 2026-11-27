@@ -40,7 +40,7 @@ async function firebaseAccessToken() {
   return result.access_token;
 }
 
-async function sendFcm(token: string, notification: { title: string; body: string; data?: Record<string, unknown> }) {
+async function sendFcm(token: string, binding: string | null, notification: { title: string; body: string; data?: Record<string, unknown> }) {
   const projectId = getRuntimeEnv().FIREBASE_PROJECT_ID || "jwmeeting-scheduler";
   const accessToken = await firebaseAccessToken();
   if (!accessToken) return false;
@@ -48,7 +48,7 @@ async function sendFcm(token: string, notification: { title: string; body: strin
   const response = await fetch(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`, {
     method: "POST",
     headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
-    body: JSON.stringify({ message: { token, notification: { title: notification.title, body: notification.body }, data, android: { priority: "high", notification: { channel_id: "meeting_assignments" } } } }),
+    body: JSON.stringify({ message: { token, ...(binding ? { data: { ...data, title: notification.title, body: notification.body, binding }, android: { priority: "high" } } : { notification: { title: notification.title, body: notification.body }, data, android: { priority: "high", notification: { channel_id: "meeting_assignments" } } }) } }),
   });
   if (response.ok) return true;
   const error = await response.json().catch(() => ({})) as { error?: { status?: string } };
@@ -60,7 +60,7 @@ async function sendFcm(token: string, notification: { title: string; body: strin
 export async function sendPushToAccounts(accountIds: number[], notification: { title: string; body: string; data?: Record<string, unknown> }) {
   if (!accountIds.length) return { sent: 0 };
   await ensurePushTokenProviderStorage();
-  const rows = await getDb().select({ token: pushTokens.expoPushToken, provider: pushTokens.provider }).from(pushTokens).where(inArray(pushTokens.accountId, accountIds));
+  const rows = await getDb().select({ token: pushTokens.expoPushToken, provider: pushTokens.provider, binding: pushTokens.deliveryBinding }).from(pushTokens).where(inArray(pushTokens.accountId, accountIds));
   const expoTokens = rows.filter(row => row.provider === "expo");
   const fcmTokens = rows.filter(row => row.provider === "fcm");
   let sent = 0;
@@ -74,7 +74,7 @@ export async function sendPushToAccounts(accountIds: number[], notification: { t
   }
   if (fcmTokens.length && !getRuntimeEnv().FIREBASE_SERVICE_ACCOUNT_EMAIL) console.warn("Firebase push skipped: service account credentials are not configured.");
   else {
-    const results = await Promise.all(fcmTokens.map(row => sendFcm(row.token, notification).catch(error => { console.error("Firebase push send failed", error); return false; })));
+    const results = await Promise.all(fcmTokens.map(row => sendFcm(row.token, row.binding, notification).catch(error => { console.error("Firebase push send failed", error); return false; })));
     sent += results.filter(Boolean).length;
   }
   return { sent, recipients: accountIds.length };
