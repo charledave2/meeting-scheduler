@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.45.52 — 2026-11-27
+
+- Align Workspace Settings cards, backup actions, and workspace controls. Show color palettes in a responsive grid with clear selection.
+- Add About this App to Local Workspace Settings.
+- Open the installed version’s changelog in a popup in both workspaces, including when offline.
+
 ## v0.45.51 — 2026-11-27
 
 - Fix participant CSV headers, including files edited from older templates, and show all ready, skipped, and invalid rows during review.
