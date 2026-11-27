@@ -952,20 +952,12 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
             }
         )
     }
-    if (!splashFinished) { MeetingSplashScreen(); return }
-    if (!authReady) {
-        PageColumn(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-            PageHeading("JW Meeting Manager")
-            CircularProgressIndicator(modifier = Modifier.size(24.dp))
-            Text("Checking Shared Workspace…", color = Muted)
-            OutlinedButton(onClick = onOpenLocal) { Text("Open Local Workspace") }
-        }
+    if (!splashFinished || !authReady) {
+        MeetingSplashScreen(onOpenLocal = onOpenLocal.takeIf { !authReady })
         return
     }
     if (!signedIn) {
-        if (!authReady) {
-            Surface(color = AppSurface, modifier = Modifier.fillMaxSize()) { Box(contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Forest) } }
-        } else LoginScreen(
+        LoginScreen(
             busy = loginBusy, error = loginError, mustChangePassword = passwordChangeRequired,
             onOpenLocal = onOpenLocal,
             onRequestAccess = { name, username, note -> api.requestAccess(name, username, note); Unit },
@@ -2046,7 +2038,15 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
 }
 
 @Composable
-private fun MeetingSplashScreen() {
+private fun MeetingSplashScreen(onOpenLocal: (() -> Unit)?) {
+    var showLocalShortcut by remember { mutableStateOf(false) }
+    LaunchedEffect(onOpenLocal != null) {
+        showLocalShortcut = false
+        if (onOpenLocal != null) {
+            delay(2_500L)
+            showLocalShortcut = true
+        }
+    }
     val colors = MaterialTheme.colorScheme
     val compact = LocalConfiguration.current.screenHeightDp < 440
     var reveal by remember { mutableStateOf(false) }
@@ -2175,6 +2175,10 @@ private fun MeetingSplashScreen() {
                             .background(if (index == 1) colors.primary else colors.primary.copy(alpha = 0.4f))
                     )
                 }
+            }
+            if (showLocalShortcut && onOpenLocal != null) {
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(onClick = onOpenLocal) { Text("Open Local Workspace") }
             }
         }
     }
