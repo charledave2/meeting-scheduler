@@ -44,6 +44,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.animation.AnimatedContent
@@ -4843,6 +4846,11 @@ private fun List<SavedSchedule>.withLocalSchedule(value: SavedSchedule) =
 
 private fun localWeek(date: LocalDate) = date.minusDays((date.dayOfWeek.value - 1).toLong())
 
+private fun nextLocalMeetingWeek(today: LocalDate, day: java.time.DayOfWeek): LocalDate {
+    val week = localWeek(today)
+    return if (week.plusDays((day.value - 1).toLong()).isBefore(today)) week.plusWeeks(1) else week
+}
+
 private fun blankLocalSchedule(week: LocalDate) = SavedSchedule(
     week = week.format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.ENGLISH)),
     reading = "", saved = "", weekStart = week.toString(), openingSong = "", closingSong = ""
@@ -4866,6 +4874,7 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
     var fileBusy by remember { mutableStateOf(false) }
     var pngBusy by remember { mutableStateOf(false) }
     var pendingRestore by remember { mutableStateOf<DeviceWorkspace?>(null) }
+    var pendingCreate by remember { mutableStateOf<DeviceWorkspace?>(null) }
     var previewSnapshot by remember { mutableStateOf<SavedSchedule?>(null) }
     var removeSchedule by remember { mutableStateOf<SavedSchedule?>(null) }
     val previewWebView = remember { mutableStateOf<WebView?>(null) }
@@ -4943,6 +4952,21 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
             dismissButton = { TextButton(onClick = { pendingRestore = null }) { Text("Cancel") } }
         )
     }
+    pendingCreate?.let { replacement ->
+        AlertDialog(
+            onDismissRequest = { pendingCreate = null },
+            title = { Text("Start a new workspace?") },
+            text = { Text("The workspace saved on this device couldn’t be opened. Creating a new one replaces that copy. Choose Restore backup on the setup screen to recover from a backup.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    update(replacement)
+                    pendingCreate = null
+                    navigate(Screen.HOME)
+                }) { Text("Create new workspace") }
+            },
+            dismissButton = { TextButton(onClick = { pendingCreate = null }) { Text("Cancel") } }
+        )
+    }
     val data = workspace
     BackHandler(enabled = page != Screen.HOME && data != null) {
         navigate(if (page == Screen.PREVIEW && previewSnapshot == null) Screen.ASSIGNMENTS else Screen.HOME)
@@ -4966,19 +4990,22 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
     ) { insets ->
         val modifier = Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)
         if (data == null) {
-            PageColumn(modifier) {
-                PageHeading("Set up Local Workspace", "Create meeting schedules on this device.")
-                DeviceWorkspaceFields(null, "Create workspace") { name, day ->
-                    if (preferences.contains("workspace")) {
-                        pendingRestore = DeviceWorkspace(name, day)
-                    } else {
-                        update(DeviceWorkspace(name, day))
+            LocalCongregationSetup(
+                modifier = modifier,
+                restoring = fileBusy,
+                needsRecovery = preferences.contains("workspace"),
+                onRestore = { restore.launch(arrayOf("application/json", "application/octet-stream")) },
+                onOpenShared = onOpenShared,
+                onCreate = { name, day ->
+                    val nextWeek = nextLocalMeetingWeek(LocalDate.now(), day)
+                    val created = DeviceWorkspace(name, day, selectedWeek = nextWeek.toString())
+                    if (preferences.contains("workspace")) pendingCreate = created
+                    else {
+                        update(created)
                         navigate(Screen.HOME)
                     }
                 }
-                OutlinedButton(onClick = { restore.launch(arrayOf("application/json", "application/octet-stream")) }, enabled = !fileBusy) { Text("Restore backup") }
-                TextButton(onClick = onOpenShared) { Text("Open Shared Workspace") }
-            }
+            )
             return@Scaffold
         }
         if (toolsOpen) PreviewToolsSheet(available, page, { toolsOpen = false }) {
@@ -5225,29 +5252,131 @@ private fun SavedSchedule.renameLocalParticipant(from: String, to: String): Save
 }
 
 @Composable
-private fun DeviceWorkspaceFields(data: DeviceWorkspace?, action: String, onSave: (String, java.time.DayOfWeek) -> Unit) {
-    var name by rememberSaveable(data?.name) { mutableStateOf(data?.name ?: "") }
-    var day by rememberSaveable(data?.meetingDay) { mutableStateOf(data?.meetingDay?.name ?: "THURSDAY") }
-    var chooseDay by remember { mutableStateOf(false) }
+private fun LocalCongregationSetup(
+    modifier: Modifier,
+    restoring: Boolean,
+    needsRecovery: Boolean,
+    onRestore: () -> Unit,
+    onOpenShared: () -> Unit,
+    onCreate: (String, java.time.DayOfWeek) -> Unit
+) {
+    var name by rememberSaveable { mutableStateOf("") }
+    var selectedDayName by rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedDay = selectedDayName?.let { java.time.DayOfWeek.valueOf(it) }
+    val dateFormat = remember { DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH) }
+    BackHandler { if (!restoring) onOpenShared() }
+
+    PageColumn(modifier.imePadding()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            IconButton(onClick = onOpenShared, enabled = !restoring) {
+                Icon(SproutIcons.ArrowBack, contentDescription = "Back to Shared Workspace")
+            }
+            Column(Modifier.weight(1f)) {
+                Text("Local setup", style = MaterialTheme.typography.titleMedium)
+            }
+        }
+        PageHeading("Set up your congregation", "Manage participants and prepare meeting schedules on this device. No account is needed.")
+        if (needsRecovery) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer
+            ) {
+                Text("Your saved workspace couldn’t be opened. Restore a backup or create a new workspace.",
+                    modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        M3Card {
+            Text("Congregation details", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(
+                value = name,
+                onValueChange = { if (it.length <= 80) name = it },
+                label = { Text("Congregation name") },
+                singleLine = true,
+                enabled = !restoring,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
+                modifier = Modifier.fillMaxWidth()
+            )
+            LocalMeetingDayPicker(selectedDay, enabled = !restoring) { selectedDayName = it.name }
+            if (selectedDay != null) {
+                val nextDate = nextLocalMeetingWeek(LocalDate.now(), selectedDay)
+                    .plusDays((selectedDay.value - 1).toLong())
+                Text("Next meeting · ${nextDate.format(dateFormat)}", color = Muted, style = MaterialTheme.typography.bodyMedium)
+            }
+            Button(
+                enabled = name.isNotBlank() && selectedDay != null && !restoring,
+                onClick = { selectedDay?.let { onCreate(name.trim(), it) } },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Create Local Workspace") }
+        }
+        M3Card {
+            Text("Restore from backup", style = MaterialTheme.typography.titleMedium)
+            Text("Use a Local Workspace backup to bring your congregation data to this device.",
+                color = Muted, style = MaterialTheme.typography.bodyMedium)
+            OutlinedButton(onClick = onRestore, enabled = !restoring, modifier = Modifier.fillMaxWidth()) {
+                if (restoring) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(if (restoring) "Restoring backup…" else "Choose backup file")
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalMeetingDayPicker(
+    selectedDay: java.time.DayOfWeek?,
+    enabled: Boolean = true,
+    onSelect: (java.time.DayOfWeek) -> Unit
+) {
+    var open by remember { mutableStateOf(false) }
+    fun displayName(day: java.time.DayOfWeek) =
+        day.getDisplayName(java.time.format.TextStyle.FULL, Locale.ENGLISH)
+
+    Text("Midweek meeting day", style = MaterialTheme.typography.labelLarge)
+    Box(Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = { open = true },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = enabled
+        ) {
+            Icon(SproutIcons.CalendarMonth, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(selectedDay?.let(::displayName) ?: "Choose a day", modifier = Modifier.weight(1f))
+            Icon(SproutIcons.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
+        }
+        DropdownMenu(expanded = open && enabled, onDismissRequest = { open = false }) {
+            java.time.DayOfWeek.values().forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(displayName(option)) },
+                    onClick = { open = false; onSelect(option) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeviceWorkspaceFields(data: DeviceWorkspace, action: String, onSave: (String, java.time.DayOfWeek) -> Unit) {
+    var name by rememberSaveable(data.name) { mutableStateOf(data.name) }
+    var day by rememberSaveable(data.meetingDay) { mutableStateOf(data.meetingDay.name) }
     M3Card {
         OutlinedTextField(name, { if (it.length <= 80) name = it }, label = { Text("Congregation name") },
             singleLine = true, modifier = Modifier.fillMaxWidth())
-        Box {
-            val selected = java.time.DayOfWeek.valueOf(day)
-            OutlinedButton(onClick = { chooseDay = true }) {
-                Text("Meeting day · ${selected.getDisplayName(java.time.format.TextStyle.FULL, Locale.ENGLISH)}")
-            }
-            DropdownMenu(expanded = chooseDay, onDismissRequest = { chooseDay = false }) {
-                java.time.DayOfWeek.values().forEach { option ->
-                    DropdownMenuItem(text = { Text(option.getDisplayName(java.time.format.TextStyle.FULL, Locale.ENGLISH)) },
-                        onClick = { day = option.name; chooseDay = false })
-                }
-            }
-        }
-        Button(enabled = name.isNotBlank(), onClick = { onSave(name.trim(), java.time.DayOfWeek.valueOf(day)) }) { Text(action) }
+        LocalMeetingDayPicker(java.time.DayOfWeek.valueOf(day)) { day = it.name }
+        Button(
+            enabled = name.trim().isNotEmpty() && (name.trim() != data.name || day != data.meetingDay.name),
+            onClick = { onSave(name.trim(), java.time.DayOfWeek.valueOf(day)) },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text(action) }
     }
 }
- 
 
 private val localMeetingClock = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)
 
@@ -5280,8 +5409,7 @@ private fun LocalWorkspaceHome(
     val today = LocalDate.now()
     val dateFormat = remember { DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH) }
     val offset = (workspace.meetingDay.value - 1).toLong()
-    val thisWeek = localWeek(today)
-    val nextWeek = if (thisWeek.plusDays(offset).isBefore(today)) thisWeek.plusWeeks(1) else thisWeek
+    val nextWeek = nextLocalMeetingWeek(today, workspace.meetingDay)
     val nextWeekKey = nextWeek.toString()
     fun meetingDate(week: String) = LocalDate.parse(week).plusDays(offset)
     val savedByWeek = workspace.history.associateBy { it.weekStart }
