@@ -2800,110 +2800,164 @@ private fun HomeScreen(
 }
 
 @Composable
+private fun WorkbookContinueButton(onNext: () -> Unit, canContinue: Boolean, label: String = "Continue to assignments") {
+    Button(
+        onClick = onNext,
+        enabled = canContinue,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = ButtonDefaults.buttonColors(containerColor = Forest),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        Text(label, modifier = Modifier.weight(1f, fill = false))
+        Spacer(Modifier.width(9.dp))
+        Icon(SproutIcons.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
+    }
+}
+
+@Composable
+private fun WorkbookMeetingDetails(
+    weekLabel: String,
+    bible: String,
+    onBible: (String) -> Unit,
+    openingSong: String,
+    onOpeningSong: (String) -> Unit,
+    closingSong: String,
+    onClosingSong: (String) -> Unit,
+    readOnly: Boolean,
+    onThisWeek: (() -> Unit)?,
+    onPickDate: () -> Unit
+) {
+    M3Card {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(38.dp).background(ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) { Icon(SproutIcons.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp)) }
+            Column(Modifier.weight(1f).padding(start = 11.dp)) {
+                Label("MEETING WEEK")
+                Text("Meeting details", style = MaterialTheme.typography.titleMedium)
+            }
+            if (onThisWeek != null) {
+                TextButton(onClick = onThisWeek, enabled = !readOnly, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+                    Text("This Week", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+        OutlinedButton(onClick = onPickDate, enabled=!readOnly, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), shape = MaterialTheme.shapes.medium, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
+            Text(weekLabel, modifier = Modifier.weight(1f), color = Ink, fontWeight = FontWeight.SemiBold)
+            Text("Change", color = Forest, fontSize = 12.sp)
+        }
+        OutlinedTextField(bible, onBible, enabled=!readOnly, label = { Text("Bible reading") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+        AdaptivePair(
+            { field -> OutlinedTextField(openingSong, onOpeningSong, enabled = !readOnly,
+                label = { Text("Opening song") }, singleLine = true, modifier = field) },
+            { field -> OutlinedTextField(closingSong, onClosingSong, enabled = !readOnly,
+                label = { Text("Closing song") }, singleLine = true, modifier = field) }
+        )
+    }
+}
+
+@Composable
+private fun WorkbookProgramCard(
+    workbookStatus: String,
+    workbookBusy: Boolean,
+    workbookCaptureLog: List<String>,
+    fetchError: Boolean,
+    captureSucceeded: Boolean,
+    canImport: Boolean,
+    actionLabel: String,
+    onImport: () -> Unit,
+    showCaptureLog: Boolean,
+    onToggleLog: () -> Unit,
+    extraActions: @Composable () -> Unit = {}
+) {
+    M3Card {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(38.dp).background(if (fetchError) MaterialTheme.colorScheme.error.copy(alpha = .12f) else ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
+                Icon(if (workbookBusy) SproutIcons.Refresh else if (captureSucceeded) SproutIcons.CheckCircle else SproutIcons.AutoStories, contentDescription = null, tint = if (fetchError) MaterialTheme.colorScheme.error else Forest, modifier = Modifier.size(22.dp))
+            }
+            Column(Modifier.weight(1f).padding(start = 11.dp)) {
+                Label("JW.ORG WORKBOOK")
+                Text("Weekly program", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            }
+            IconButton(onClick = onImport, enabled = canImport && !workbookBusy, modifier = Modifier.size(48.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(SproutIcons.Refresh, contentDescription = actionLabel, tint = Forest, modifier = Modifier.size(23.dp)) }
+        }
+        if (workbookBusy) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                color = Forest,
+                trackColor = ForestContainer
+            )
+        }
+        Text(
+            workbookStatus,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (fetchError) MaterialTheme.colorScheme.error else Muted
+        )
+        extraActions()
+        if (workbookCaptureLog.isNotEmpty()) {
+            TextButton(onClick = onToggleLog) {
+                Text(if (showCaptureLog) "Hide capture log" else "Show capture log")
+            }
+        }
+        if (showCaptureLog && workbookCaptureLog.isNotEmpty()) Surface(
+            color = if (IsDarkPalette) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        ) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (workbookBusy) "CAPTURE LOG · RUNNING" else "CAPTURE LOG", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.1.sp)
+                    if (workbookBusy) CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 1.5.dp, color = Forest)
+                }
+                workbookCaptureLog.takeLast(6).forEach { line ->
+                    Text(
+                        "› $line",
+                        color = if (line.startsWith("ERROR")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        maxLines = 2
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, participantsLoadFailed: Boolean, onRetryParticipants: () -> Unit, canContinueToAssignments:Boolean, readOnly:Boolean, isCurrentWeek:Boolean, onThisWeek: () -> Unit, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
     var showCaptureLog by rememberSaveable(weekLabel) { mutableStateOf(false) }
     val workbookActions: (@Composable ColumnScope.() -> Unit)? = if (canContinueToAssignments) {
         {
-            Button(
-                onClick = onNext,
-                enabled = canContinue,
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                colors = ButtonDefaults.buttonColors(containerColor = Forest),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
-            ) {
-                Text(
-                    when {
-                        workbookBusy -> "Loading weekly program…"
-                        !canContinue -> "Loading participants…"
-                        else -> "Continue to assignments"
-                    },
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-                Spacer(Modifier.width(9.dp))
-                Icon(SproutIcons.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
-            }
+            WorkbookContinueButton(
+                onNext = onNext,
+                canContinue = canContinue,
+                label = when {
+                    workbookBusy -> "Loading weekly program…"
+                    !canContinue -> "Loading participants…"
+                    else -> "Continue to assignments"
+                }
+            )
         }
     } else null
     WorkflowPage(modifier, actions = workbookActions) {
         PageHeading("Workbook", if (canContinueToAssignments) "Step 1 of 3 · Choose a meeting week" else "Select a week to load its meeting program.")
-        M3Card {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(38.dp).background(ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) { Icon(SproutIcons.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp)) }
-                Column(Modifier.weight(1f).padding(start = 11.dp)) {
-                    Label("MEETING WEEK")
-                    Text("Meeting details", style = MaterialTheme.typography.titleMedium)
-                }
-                if (!isCurrentWeek) {
-                    TextButton(onClick = onThisWeek, enabled = !readOnly, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
-                        Text("This Week", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
-            OutlinedButton(onClick = onPickDate, enabled=!readOnly, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), shape = MaterialTheme.shapes.medium, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
-                Text(weekLabel, modifier = Modifier.weight(1f), color = Ink, fontWeight = FontWeight.SemiBold)
-                Text("Change", color = Forest, fontSize = 12.sp)
-            }
-            OutlinedTextField(bible, onBible, enabled=!readOnly, label = { Text("Bible reading") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
-            AdaptivePair(
-                { field -> OutlinedTextField(openingSong, onOpeningSong, enabled = !readOnly,
-                    label = { Text("Opening song") }, singleLine = true, modifier = field) },
-                { field -> OutlinedTextField(closingSong, onClosingSong, enabled = !readOnly,
-                    label = { Text("Closing song") }, singleLine = true, modifier = field) }
-            )
-        }
+        WorkbookMeetingDetails(
+            weekLabel, bible, onBible, openingSong, onOpeningSong, closingSong, onClosingSong,
+            readOnly, if (isCurrentWeek) null else onThisWeek, onPickDate
+        )
         val fetchError = !workbookBusy && (workbookCaptureLog.lastOrNull()?.startsWith("ERROR") == true || workbookStatus.contains("hindi", ignoreCase = true) || workbookStatus.contains("wala", ignoreCase = true) || workbookStatus.contains("permission", ignoreCase = true))
-        M3Card {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(38.dp).background(if (fetchError) MaterialTheme.colorScheme.error.copy(alpha = .12f) else ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
-                    Icon(if (workbookBusy) SproutIcons.Refresh else if (workbookStatus.startsWith("✓")) SproutIcons.CheckCircle else SproutIcons.AutoStories, contentDescription = null, tint = if (fetchError) MaterialTheme.colorScheme.error else Forest, modifier = Modifier.size(22.dp))
-                }
-                Column(Modifier.weight(1f).padding(start = 11.dp)) {
-                    Label("JW.ORG WORKBOOK")
-                    Text("Weekly program", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                }
-                IconButton(onClick = onImport, enabled = !workbookBusy && !readOnly, modifier = Modifier.size(48.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(SproutIcons.Refresh, contentDescription = "Refresh weekly program", tint = Forest, modifier = Modifier.size(23.dp)) }
-            }
-            if (workbookBusy) {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    color = Forest,
-                    trackColor = ForestContainer
-                )
-            }
-            Text(
-                workbookStatus.removePrefix("✓ "),
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (fetchError) MaterialTheme.colorScheme.error else Muted
-            )
-            if (workbookCaptureLog.isNotEmpty()) {
-                TextButton(onClick = { showCaptureLog = !showCaptureLog }) {
-                    Text(if (showCaptureLog) "Hide capture log" else "Show capture log")
-                }
-            }
-            if (showCaptureLog && workbookCaptureLog.isNotEmpty()) Surface(
-                color = if (IsDarkPalette) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerLow,
-                shape = MaterialTheme.shapes.medium,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            ) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (workbookBusy) "CAPTURE LOG · RUNNING" else "CAPTURE LOG", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.1.sp)
-                        if (workbookBusy) CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 1.5.dp, color = Forest)
-                    }
-                    workbookCaptureLog.takeLast(6).forEach { line ->
-                        Text(
-                            "› $line",
-                            color = if (line.startsWith("ERROR")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp,
-                            maxLines = 2
-                        )
-                    }
-                }
-            }
-        }
+        WorkbookProgramCard(
+            workbookStatus = workbookStatus.removePrefix("✓ "),
+            workbookBusy = workbookBusy,
+            workbookCaptureLog = workbookCaptureLog,
+            fetchError = fetchError,
+            captureSucceeded = workbookStatus.startsWith("✓"),
+            canImport = !readOnly,
+            actionLabel = "Refresh weekly program",
+            onImport = onImport,
+            showCaptureLog = showCaptureLog,
+            onToggleLog = { showCaptureLog = !showCaptureLog }
+        )
         if (canContinueToAssignments && participantsLoadFailed) {
             M3Card {
                 Text("Couldn’t refresh participants. You can continue with the list available on this device.",
@@ -5513,56 +5567,50 @@ private fun DeviceWorkbook(
     var useDownload by remember(draft.weekStart) { mutableStateOf(false) }
     var showCaptureLog by rememberSaveable(draft.weekStart) { mutableStateOf(false) }
     var showParts by rememberSaveable(draft.weekStart) { mutableStateOf(false) }
+    val currentWeek = localWeek(LocalDate.now())
+    val weekLabel = remember(date) {
+        date.format(DateTimeFormatter.ofPattern("MMM d")) + " – " +
+            date.plusDays(6).format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
+    }
     WorkflowPage(modifier, actions = {
-        Button(onClick = onNext, enabled = draft.assignments.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("Continue to assignments") }
+        WorkbookContinueButton(onNext = onNext, canContinue = draft.assignments.isNotEmpty())
     }) {
         PageHeading("Workbook", "Step 1 of 3 · Local Workspace")
-        M3Card {
-            OutlinedButton(onClick = { pickDate = true }, modifier = Modifier.fillMaxWidth()) {
-                Text("${draft.week} · Change week")
-            }
-            OutlinedTextField(draft.reading, { onEdit(draft.copy(reading = it)) },
-                label = { Text("Bible reading") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            AdaptivePair(
-                { field -> OutlinedTextField(draft.openingSong, { onEdit(draft.copy(openingSong = it)) },
-                    label = { Text("Opening song") }, singleLine = true, modifier = field) },
-                { field -> OutlinedTextField(draft.closingSong, { onEdit(draft.copy(closingSong = it)) },
-                    label = { Text("Closing song") }, singleLine = true, modifier = field) }
-            )
+        WorkbookMeetingDetails(
+            weekLabel = weekLabel,
+            bible = draft.reading,
+            onBible = { onEdit(draft.copy(reading = it)) },
+            openingSong = draft.openingSong,
+            onOpeningSong = { onEdit(draft.copy(openingSong = it)) },
+            closingSong = draft.closingSong,
+            onClosingSong = { onEdit(draft.copy(closingSong = it)) },
+            readOnly = false,
+            onThisWeek = if (date == currentWeek) null else ({ onSelectWeek(currentWeek) }),
+            onPickDate = { pickDate = true }
+        )
+        val status = when {
+            capturingSelectedWeek -> captureLog.lastOrNull() ?: "Starting workbook capture…"
+            captureResult != null -> captureResult.first
+            captureBusy -> "Capture is running for another week."
+            template != null -> "A captured workbook is available offline for this week."
+            else -> "Use the capture button while online to load this week’s meeting parts."
         }
-        M3Card {
-            Label("JW.ORG WORKBOOK")
-            Text("Weekly program", style = MaterialTheme.typography.titleMedium)
-            if (capturingSelectedWeek) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            val status = when {
-                capturingSelectedWeek -> captureLog.lastOrNull() ?: "Starting workbook capture…"
-                captureResult != null -> captureResult.first
-                captureBusy -> "Capture is running for another week."
-                template != null -> "A captured workbook is available offline for this week."
-                else -> "Capture this week while online to load its meeting parts."
-            }
-            Text(
-                status,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                color = if (captureResult?.second == false) MaterialTheme.colorScheme.error else Muted
-            )
-            FilledTonalButton(onClick = onCapture, enabled = !captureBusy) {
-                Icon(SproutIcons.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(if (capturingSelectedWeek) "Capturing workbook…" else "Capture workbook")
-            }
+        WorkbookProgramCard(
+            workbookStatus = status,
+            workbookBusy = capturingSelectedWeek,
+            workbookCaptureLog = captureLog,
+            fetchError = captureResult?.second == false,
+            captureSucceeded = template != null || captureResult?.second == true,
+            canImport = !captureBusy,
+            actionLabel = "Capture workbook",
+            onImport = onCapture,
+            showCaptureLog = showCaptureLog,
+            onToggleLog = { showCaptureLog = !showCaptureLog }
+        ) {
             if (template != null && !draft.matchesWorkbook(template)) TextButton(onClick = {
                 if (draft.hasLocalWorkbookContent()) useDownload = true
                 else onEdit(template.withLocalRoles(draft))
             }) { Text("Apply captured workbook") }
-            if (captureLog.isNotEmpty()) {
-                TextButton(onClick = { showCaptureLog = !showCaptureLog }) {
-                    Text(if (showCaptureLog) "Hide capture log" else "Show capture log")
-                }
-                if (showCaptureLog) captureLog.forEach { line ->
-                    Text(line, color = Muted, style = MaterialTheme.typography.bodySmall)
-                }
-            }
         }
         if (draft.assignments.isNotEmpty()) M3Card {
             Text("Meeting parts", style = MaterialTheme.typography.titleMedium)
