@@ -44,6 +44,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.animation.AnimatedContent
@@ -837,7 +840,16 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
                     AppLockScreen(appLock)
                 } else if (deviceMode) {
                     workspaceState.SaveableStateProvider("deviceWorkspace") {
-                        DeviceWorkspaceApp(onOpenShared = { setWorkspace(false) })
+                        DeviceWorkspaceApp(
+                            onOpenShared = { setWorkspace(false) },
+                            themeMode = themeMode,
+                            onThemeModeChange = { themeMode = it; store.themeMode = it },
+                            paletteStyle = paletteStyle,
+                            onPaletteStyleChange = { paletteStyle = it; store.paletteStyle = it },
+                            fontScale = appFontScale,
+                            onFontScaleChange = { appFontScale = it.coerceIn(0.85f, 1.35f); store.appFontScale = appFontScale },
+                            appLock = appLock
+                        )
                     }
                 } else {
                     workspaceState.SaveableStateProvider("workspace") {
@@ -883,6 +895,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
     var profilePhotoPath by rememberSaveable { mutableStateOf<String?>(null) }
     var profilePhotoDataUrl by remember { mutableStateOf("") }
     var profileMenuOpen by rememberSaveable { mutableStateOf(false) }
+    var workspacePickerOpen by remember { mutableStateOf(false) }
     var profileError by remember { mutableStateOf<String?>(null) }
     var workbookStatus by rememberSaveable { mutableStateOf("Naghahanap ng workbook para sa napiling linggo…") }
     var workbookBusy by remember { mutableStateOf(false) }
@@ -1325,54 +1338,17 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
         }
         web.loadDataWithBaseURL("file:///android_asset/", html, "text/HTML", "UTF-8", null)
     }
-    fun assignmentSlips(): List<AssignmentSlip> {
-        val date = runCatching { LocalDate.parse(weekStart).plusDays(3) }.getOrNull() ?: return emptyList()
-        val dateText = date.format(DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.ENGLISH))
-        return buildList {
-            if (chairman.isNotBlank()) add(AssignmentSlip(chairman, "", dateText, "Chairman", "Main Hall"))
-            if (openingPrayer.isNotBlank()) add(AssignmentSlip(openingPrayer, "", dateText, "Panalangin sa Simula", "Main Hall"))
-            if (adviser.isNotBlank()) add(AssignmentSlip(adviser, "", dateText, "Second Hall Adviser", "Second Hall"))
-            parts.forEachIndexed { index, part ->
-                val number = part.id.takeIf { it > 0 } ?: index + 1
-                val partTitle = when (number) {
-                    1 -> "Kayamanan Mula sa Salita ng Diyos"
-                    2 -> "Espirituwal na Hiyas"
-                    8 -> "Pag-aaral ng Kongregasyon sa Bibliya"
-                    else -> part.title.replaceFirst(Regex("^\\s*\\d+\\.\\s*"), "").trim()
-                }
-                val duration = part.duration.trim()
-                val label = buildString {
-                    append(number).append(". ").append(partTitle)
-                    if (duration.isNotBlank() && !partTitle.contains(duration, ignoreCase = true)) {
-                        append(" (").append(duration).append(")")
-                    }
-                }
-                if (part.person.isNotBlank()) add(AssignmentSlip(part.person, part.assistant, dateText, label, "Main Hall"))
-                if (part.secondaryAssignee.isNotBlank()) add(AssignmentSlip(part.secondaryAssignee, part.secondaryAssistant, dateText, label, "Second Hall"))
-            }
-        }
-    }
     fun shareAssignmentSlipsImages() {
         if (exportBusyType != null) return
-        val slips = assignmentSlips()
+        val date = runCatching { LocalDate.parse(weekStart).plusDays(3) }.getOrNull() ?: return
+        val slips = buildAssignmentSlips(date, parts, chairman, openingPrayer, adviser)
         if (slips.isEmpty()) { toastMessage = "Magtalaga muna ng participant para sa assignment slips."; return }
+        val exportWeek = weekStart
+        val exportLabel = weekLabel
         exportBusyType = "slips_image"
         authScope.launch {
-            runCatching {
-                val files = withContext(Dispatchers.IO) { createAssignmentSlipsImages(context, slips, weekStart) }
-                val uris = ArrayList(files.map { FileProvider.getUriForFile(context, "${context.packageName}.files", it) })
-                val multiple = uris.size > 1
-                Intent(if (multiple) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND).apply {
-                    type = "image/png"
-                    if (multiple) putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
-                    else putExtra(Intent.EXTRA_STREAM, uris.first())
-                    putExtra(Intent.EXTRA_SUBJECT, "Meeting assignment slips · $weekLabel")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    clipData = android.content.ClipData.newUri(context.contentResolver, "Assignment slips images", uris.first()).apply {
-                        uris.drop(1).forEach { addItem(android.content.ClipData.Item(it)) }
-                    }
-                }
-            }.onSuccess { intent -> launchScheduleShare(intent, "slips_image", "Share assignment slips images") }
+            runCatching { assignmentSlipsShareIntent(context, slips, exportWeek, exportLabel) }
+                .onSuccess { intent -> launchScheduleShare(intent, "slips_image", "Share assignment slips images") }
                 .onFailure { exportBusyType = null; toastMessage = "Hindi mabuo ang assignment slip images: ${it.message ?: "subukan muli"}" }
         }
     }
@@ -1569,6 +1545,22 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
         }
     }
 
+    if (workspacePickerOpen) {
+        val localName = remember(context) {
+            val prefs = context.getSharedPreferences("meeting_scheduler_device_only", Context.MODE_PRIVATE)
+            prefs.getString("workspace", null)?.let { raw ->
+                runCatching { JSONObject(raw).optString("name").takeIf { it.isNotBlank() } }.getOrNull()
+            }
+        }
+        WorkspacePickerDialog(
+            localActive = false,
+            localName = localName,
+            onDismiss = { workspacePickerOpen = false },
+            canSwitch = exportBusyType == null,
+            onSwitch = { workspacePickerOpen = false; onOpenLocal() }
+        )
+    }
+
     Scaffold(
         containerColor = AppSurface,
         topBar = {},
@@ -1586,7 +1578,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
                 onProfileMenuDismiss = { profileMenuOpen = false },
                 onProfileSettings = { profileMenuOpen = false; navigateTo(Screen.ACCOUNTS) },
                 onProfileSignOut = ::signOut,
-                onProfileWorkspace = { profileMenuOpen = false; onOpenLocal() }
+                onProfileWorkspace = { profileMenuOpen = false; workspacePickerOpen = true }
             )
         },
         snackbarHost = { SnackbarHost(hostState = remember { SnackbarHostState() }) },
@@ -1607,7 +1599,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
                 modifier = scroll,
                 accountName = identityName,
                 canCreateSchedule = canEdit(Screen.DETAILS),
-                schedules = homeSchedules,
+                schedules = homeSchedules.map { it.workspaceEntry() },
                 loading = homeBusy,
                 error = homeError,
                 onRefresh = { homeLoaded = false },
@@ -1684,19 +1676,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
                         val exportWeekStart = weekStart
                         authScope.launch {
                             runCatching {
-                                val file = withContext(Dispatchers.IO) {
-                                    File(File(context.cacheDir, "exports").apply { mkdirs() }, "meeting-schedule-${exportWeekStart}.txt")
-                                        .apply { writeText(text, Charsets.UTF_8) }
-                                }
-                                val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
-                                Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_STREAM, uri)
-                                    putExtra(Intent.EXTRA_SUBJECT, "Meeting schedule · $weekLabel")
-                                    putExtra(Intent.EXTRA_TEXT, "Iskedyul ng Pulong ng Gitnang Sanlinggo · $weekLabel")
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    clipData = android.content.ClipData.newUri(context.contentResolver, "Meeting schedule text", uri)
-                                }
+                                scheduleTextShareIntent(context, text, exportWeekStart, weekLabel)
                             }.onSuccess { intent -> launchScheduleShare(intent, "text", "Share schedule text") }
                                 .onFailure { exportBusyType = null; toastMessage = "Hindi mabuo ang export text: ${it.message ?: "subukan muli"}" }
                         }
@@ -1739,7 +1719,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
                         historyBusy = false
                     }
                 }
-                HistoryScreen(modifier = scroll, remoteSchedules = remoteRows, cloudStatus = cloudStatus, loading = historyBusy, error = historyError,
+                HistoryScreen(modifier = scroll, schedules = remoteRows.map { it.workspaceEntry() }, loading = historyBusy, error = historyError,
                     hasMore = historyHasMore, loadingMore = historyLoadingMore, availableYears = availableHistoryYears,
                     onLoadMore = {
                         if (!historyLoadingMore && historyHasMore) authScope.launch {
@@ -2527,26 +2507,49 @@ private fun rememberMascotAnimationsEnabled(): Boolean {
     return enabled
 }
 
+private data class WorkspaceScheduleEntry<T>(
+    val source: T,
+    val key: String,
+    val weekLabel: String,
+    val reading: String,
+    val weekStart: LocalDate?,
+    val updatedAt: String,
+    val assignedNames: List<String>
+)
+
+private fun RemoteSchedule.workspaceEntry() = WorkspaceScheduleEntry(
+    this, id.toString(), weekLabel, reading, remoteScheduleStartDate(this), updatedAt, assignedNames
+)
+
+private fun SavedSchedule.workspaceEntry() = WorkspaceScheduleEntry(
+    this, weekStart, week, reading, LocalDate.parse(weekStart), saved,
+    scheduleAssignmentValues(assignments, chairman, openingPrayer, adviser, audienceGroup)
+        .map { it.person }.filter { it.isNotBlank() }
+)
+
 @Composable
-private fun HomeScreen(
+private fun <T> HomeScreen(
     modifier: Modifier,
     accountName: String,
     canCreateSchedule: Boolean,
-    schedules: List<RemoteSchedule>,
+    schedules: List<WorkspaceScheduleEntry<T>>,
     loading: Boolean,
     error: String?,
-    onRefresh: () -> Unit,
-    onOpenSchedule: (RemoteSchedule) -> Unit,
-    onCreateSchedule: () -> Unit
+    onRefresh: (() -> Unit)?,
+    onOpenSchedule: (T) -> Unit,
+    onCreateSchedule: () -> Unit,
+    dayOffset: Long = 3,
+    workspaceLabel: String? = null,
+    emptyMessage: String = "Create a workbook and save the schedule to the cloud to see it here.",
+    draftCard: @Composable () -> Unit = {}
 ) {
     val hour = java.time.LocalTime.now().hour
     val greeting = when (hour) { in 5..11 -> "Good morning"; in 12..17 -> "Good afternoon"; else -> "Good evening" }
     val today = LocalDate.now()
-    val upcoming = remember(schedules, today) {
+    val upcoming = remember(schedules, today, dayOffset) {
         schedules.mapNotNull { remote ->
-            val weekStart = remoteScheduleStartDate(remote) ?: return@mapNotNull null
-            // Workbook weeks are normalized to Monday; this congregation meets midweek on Thursday.
-            val meetingDate = weekStart.plusDays(3)
+            val weekStart = remote.weekStart ?: return@mapNotNull null
+            val meetingDate = weekStart.plusDays(dayOffset)
             if (meetingDate.isBefore(today)) null else meetingDate to remote
         }.sortedBy { it.first }
     }
@@ -2578,6 +2581,7 @@ private fun HomeScreen(
             style = MaterialTheme.typography.headlineSmall.copy(fontSize = 30.sp, lineHeight = 35.sp),
             fontWeight = FontWeight.SemiBold
         )
+        if (workspaceLabel != null) Text(workspaceLabel, color = Muted, style = MaterialTheme.typography.bodyMedium)
         val greetingShape = RoundedCornerShape(26.dp)
         val abstractAccent = MaterialTheme.colorScheme.onPrimaryContainer
         Card(shape = greetingShape, colors = CardDefaults.cardColors(containerColor = ForestContainer)) {
@@ -2704,12 +2708,13 @@ private fun HomeScreen(
                 }
             }
         }
+        draftCard()
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Upcoming Meetings", fontSize = 21.sp, fontWeight = FontWeight.Bold)
                 Text("Tap a meeting to preview its official schedule.", color = Muted, fontSize = 12.sp)
             }
-            IconButton(onClick = onRefresh) { Icon(SproutIcons.Refresh, contentDescription = "Refresh upcoming meetings", tint = Forest) }
+            if (onRefresh != null) IconButton(onClick = onRefresh) { Icon(SproutIcons.Refresh, contentDescription = "Refresh upcoming meetings", tint = Forest) }
         }
         when {
             loading && upcoming.isEmpty() -> Surface(color = SurfaceContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
@@ -2722,14 +2727,14 @@ private fun HomeScreen(
                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Icon(SproutIcons.ErrorOutline, contentDescription = "Schedule unavailable", tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(22.dp))
                     Text(error, color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 12.sp, modifier = Modifier.weight(1f))
-                    TextButton(onClick = onRefresh) { Text("Retry", color = MaterialTheme.colorScheme.onErrorContainer) }
+                    if (onRefresh != null) TextButton(onClick = onRefresh) { Text("Retry", color = MaterialTheme.colorScheme.onErrorContainer) }
                 }
             }
             upcoming.isEmpty() -> Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = SurfaceContainer)) {
                 Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Icon(SproutIcons.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(30.dp))
                     Text("No upcoming saved meetings", fontWeight = FontWeight.SemiBold)
-                    Text("Create a workbook and save the schedule to the cloud to see it here.", color = Muted, fontSize = 12.sp)
+                    Text(emptyMessage, color = Muted, fontSize = 12.sp)
                     if (canCreateSchedule) FilledTonalButton(onClick = onCreateSchedule, shape = MaterialTheme.shapes.medium) {
                         Icon(SproutIcons.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(7.dp)); Text("Open Workbook")
@@ -2740,11 +2745,11 @@ private fun HomeScreen(
                 if (loading || error != null) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (loading) CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp, color = Forest)
                     Text(if (loading) "Updating · showing saved meetings" else "Couldn’t refresh · showing saved meetings", color = Muted, fontSize = 12.sp)
-                    if (error != null) TextButton(onClick = onRefresh) { Text("Retry", fontSize = 12.sp) }
+                    if (error != null && onRefresh != null) TextButton(onClick = onRefresh) { Text("Retry", fontSize = 12.sp) }
                 }
                 val (nextDate, nextSchedule) = upcoming.first()
                 Card(
-                    modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "Preview ${nextSchedule.weekLabel}") { onOpenSchedule(nextSchedule) },
+                    modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "Preview ${nextSchedule.weekLabel}") { onOpenSchedule(nextSchedule.source) },
                     shape = RoundedCornerShape(22.dp),
                     colors = CardDefaults.cardColors(containerColor = ForestContainer),
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -2764,7 +2769,7 @@ private fun HomeScreen(
                 if (upcoming.size > 1) Text("MORE UPCOMING", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(top = 2.dp))
                 (if (showAllMeetings) upcoming else upcoming.take(3)).drop(1).forEach { (date, remote) ->
                     Card(
-                        modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "Preview ${remote.weekLabel}") { onOpenSchedule(remote) },
+                        modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "Preview ${remote.weekLabel}") { onOpenSchedule(remote.source) },
                         shape = MaterialTheme.shapes.medium,
                         colors = CardDefaults.cardColors(containerColor = SurfaceContainer),
                         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -2797,110 +2802,164 @@ private fun HomeScreen(
 }
 
 @Composable
+private fun WorkbookContinueButton(onNext: () -> Unit, canContinue: Boolean, label: String = "Continue to assignments") {
+    Button(
+        onClick = onNext,
+        enabled = canContinue,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = ButtonDefaults.buttonColors(containerColor = Forest),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        Text(label, modifier = Modifier.weight(1f, fill = false))
+        Spacer(Modifier.width(9.dp))
+        Icon(SproutIcons.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
+    }
+}
+
+@Composable
+private fun WorkbookMeetingDetails(
+    weekLabel: String,
+    bible: String,
+    onBible: (String) -> Unit,
+    openingSong: String,
+    onOpeningSong: (String) -> Unit,
+    closingSong: String,
+    onClosingSong: (String) -> Unit,
+    readOnly: Boolean,
+    onThisWeek: (() -> Unit)?,
+    onPickDate: () -> Unit
+) {
+    M3Card {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(38.dp).background(ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) { Icon(SproutIcons.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp)) }
+            Column(Modifier.weight(1f).padding(start = 11.dp)) {
+                Label("MEETING WEEK")
+                Text("Meeting details", style = MaterialTheme.typography.titleMedium)
+            }
+            if (onThisWeek != null) {
+                TextButton(onClick = onThisWeek, enabled = !readOnly, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+                    Text("This Week", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+        OutlinedButton(onClick = onPickDate, enabled=!readOnly, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), shape = MaterialTheme.shapes.medium, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
+            Text(weekLabel, modifier = Modifier.weight(1f), color = Ink, fontWeight = FontWeight.SemiBold)
+            Text("Change", color = Forest, fontSize = 12.sp)
+        }
+        OutlinedTextField(bible, onBible, enabled=!readOnly, label = { Text("Bible reading") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+        AdaptivePair(
+            { field -> OutlinedTextField(openingSong, onOpeningSong, enabled = !readOnly,
+                label = { Text("Opening song") }, singleLine = true, modifier = field) },
+            { field -> OutlinedTextField(closingSong, onClosingSong, enabled = !readOnly,
+                label = { Text("Closing song") }, singleLine = true, modifier = field) }
+        )
+    }
+}
+
+@Composable
+private fun WorkbookProgramCard(
+    workbookStatus: String,
+    workbookBusy: Boolean,
+    workbookCaptureLog: List<String>,
+    fetchError: Boolean,
+    captureSucceeded: Boolean,
+    canImport: Boolean,
+    actionLabel: String,
+    onImport: () -> Unit,
+    showCaptureLog: Boolean,
+    onToggleLog: () -> Unit,
+    extraActions: @Composable () -> Unit = {}
+) {
+    M3Card {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(38.dp).background(if (fetchError) MaterialTheme.colorScheme.error.copy(alpha = .12f) else ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
+                Icon(if (workbookBusy) SproutIcons.Refresh else if (captureSucceeded) SproutIcons.CheckCircle else SproutIcons.AutoStories, contentDescription = null, tint = if (fetchError) MaterialTheme.colorScheme.error else Forest, modifier = Modifier.size(22.dp))
+            }
+            Column(Modifier.weight(1f).padding(start = 11.dp)) {
+                Label("JW.ORG WORKBOOK")
+                Text("Weekly program", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            }
+            IconButton(onClick = onImport, enabled = canImport && !workbookBusy, modifier = Modifier.size(48.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(SproutIcons.Refresh, contentDescription = actionLabel, tint = Forest, modifier = Modifier.size(23.dp)) }
+        }
+        if (workbookBusy) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                color = Forest,
+                trackColor = ForestContainer
+            )
+        }
+        Text(
+            workbookStatus,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (fetchError) MaterialTheme.colorScheme.error else Muted
+        )
+        extraActions()
+        if (workbookCaptureLog.isNotEmpty()) {
+            TextButton(onClick = onToggleLog) {
+                Text(if (showCaptureLog) "Hide capture log" else "Show capture log")
+            }
+        }
+        if (showCaptureLog && workbookCaptureLog.isNotEmpty()) Surface(
+            color = if (IsDarkPalette) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        ) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (workbookBusy) "CAPTURE LOG · RUNNING" else "CAPTURE LOG", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.1.sp)
+                    if (workbookBusy) CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 1.5.dp, color = Forest)
+                }
+                workbookCaptureLog.takeLast(6).forEach { line ->
+                    Text(
+                        "› $line",
+                        color = if (line.startsWith("ERROR")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        maxLines = 2
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, participantsLoadFailed: Boolean, onRetryParticipants: () -> Unit, canContinueToAssignments:Boolean, readOnly:Boolean, isCurrentWeek:Boolean, onThisWeek: () -> Unit, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
     var showCaptureLog by rememberSaveable(weekLabel) { mutableStateOf(false) }
     val workbookActions: (@Composable ColumnScope.() -> Unit)? = if (canContinueToAssignments) {
         {
-            Button(
-                onClick = onNext,
-                enabled = canContinue,
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                colors = ButtonDefaults.buttonColors(containerColor = Forest),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
-            ) {
-                Text(
-                    when {
-                        workbookBusy -> "Loading weekly program…"
-                        !canContinue -> "Loading participants…"
-                        else -> "Continue to assignments"
-                    },
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-                Spacer(Modifier.width(9.dp))
-                Icon(SproutIcons.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
-            }
+            WorkbookContinueButton(
+                onNext = onNext,
+                canContinue = canContinue,
+                label = when {
+                    workbookBusy -> "Loading weekly program…"
+                    !canContinue -> "Loading participants…"
+                    else -> "Continue to assignments"
+                }
+            )
         }
     } else null
     WorkflowPage(modifier, actions = workbookActions) {
         PageHeading("Workbook", if (canContinueToAssignments) "Step 1 of 3 · Choose a meeting week" else "Select a week to load its meeting program.")
-        M3Card {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(38.dp).background(ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) { Icon(SproutIcons.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp)) }
-                Column(Modifier.weight(1f).padding(start = 11.dp)) {
-                    Label("MEETING WEEK")
-                    Text("Meeting details", style = MaterialTheme.typography.titleMedium)
-                }
-                if (!isCurrentWeek) {
-                    TextButton(onClick = onThisWeek, enabled = !readOnly, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
-                        Text("This Week", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
-            OutlinedButton(onClick = onPickDate, enabled=!readOnly, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), shape = MaterialTheme.shapes.medium, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
-                Text(weekLabel, modifier = Modifier.weight(1f), color = Ink, fontWeight = FontWeight.SemiBold)
-                Text("Change", color = Forest, fontSize = 12.sp)
-            }
-            OutlinedTextField(bible, onBible, enabled=!readOnly, label = { Text("Bible reading") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
-            AdaptivePair(
-                { field -> OutlinedTextField(openingSong, onOpeningSong, enabled = !readOnly,
-                    label = { Text("Opening song") }, singleLine = true, modifier = field) },
-                { field -> OutlinedTextField(closingSong, onClosingSong, enabled = !readOnly,
-                    label = { Text("Closing song") }, singleLine = true, modifier = field) }
-            )
-        }
+        WorkbookMeetingDetails(
+            weekLabel, bible, onBible, openingSong, onOpeningSong, closingSong, onClosingSong,
+            readOnly, if (isCurrentWeek) null else onThisWeek, onPickDate
+        )
         val fetchError = !workbookBusy && (workbookCaptureLog.lastOrNull()?.startsWith("ERROR") == true || workbookStatus.contains("hindi", ignoreCase = true) || workbookStatus.contains("wala", ignoreCase = true) || workbookStatus.contains("permission", ignoreCase = true))
-        M3Card {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(38.dp).background(if (fetchError) MaterialTheme.colorScheme.error.copy(alpha = .12f) else ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
-                    Icon(if (workbookBusy) SproutIcons.Refresh else if (workbookStatus.startsWith("✓")) SproutIcons.CheckCircle else SproutIcons.AutoStories, contentDescription = null, tint = if (fetchError) MaterialTheme.colorScheme.error else Forest, modifier = Modifier.size(22.dp))
-                }
-                Column(Modifier.weight(1f).padding(start = 11.dp)) {
-                    Label("JW.ORG WORKBOOK")
-                    Text("Weekly program", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                }
-                IconButton(onClick = onImport, enabled = !workbookBusy && !readOnly, modifier = Modifier.size(48.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(SproutIcons.Refresh, contentDescription = "Refresh weekly program", tint = Forest, modifier = Modifier.size(23.dp)) }
-            }
-            if (workbookBusy) {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    color = Forest,
-                    trackColor = ForestContainer
-                )
-            }
-            Text(
-                workbookStatus.removePrefix("✓ "),
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (fetchError) MaterialTheme.colorScheme.error else Muted
-            )
-            if (workbookCaptureLog.isNotEmpty()) {
-                TextButton(onClick = { showCaptureLog = !showCaptureLog }) {
-                    Text(if (showCaptureLog) "Hide capture log" else "Show capture log")
-                }
-            }
-            if (showCaptureLog && workbookCaptureLog.isNotEmpty()) Surface(
-                color = if (IsDarkPalette) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerLow,
-                shape = MaterialTheme.shapes.medium,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            ) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (workbookBusy) "CAPTURE LOG · RUNNING" else "CAPTURE LOG", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.1.sp)
-                        if (workbookBusy) CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 1.5.dp, color = Forest)
-                    }
-                    workbookCaptureLog.takeLast(6).forEach { line ->
-                        Text(
-                            "› $line",
-                            color = if (line.startsWith("ERROR")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp,
-                            maxLines = 2
-                        )
-                    }
-                }
-            }
-        }
+        WorkbookProgramCard(
+            workbookStatus = workbookStatus.removePrefix("✓ "),
+            workbookBusy = workbookBusy,
+            workbookCaptureLog = workbookCaptureLog,
+            fetchError = fetchError,
+            captureSucceeded = workbookStatus.startsWith("✓"),
+            canImport = !readOnly,
+            actionLabel = "Refresh weekly program",
+            onImport = onImport,
+            showCaptureLog = showCaptureLog,
+            onToggleLog = { showCaptureLog = !showCaptureLog }
+        )
         if (canContinueToAssignments && participantsLoadFailed) {
             M3Card {
                 Text("Couldn’t refresh participants. You can continue with the list available on this device.",
@@ -3330,7 +3389,7 @@ private fun rotationShortDate(value: String): String = runCatching {
 }.getOrDefault(value)
 
 @Composable
-private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, openingSong:String, closingSong:String, parts:List<Assignment>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, previewWebView:MutableState<WebView?>, allowExport:Boolean, exportBusyType:String?, onExportText:()->Unit, onPng:()->Unit, onAssignmentSlipImages:()->Unit, showAssignmentSlips: Boolean = true, useLocalClock: Boolean = false) {
+private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, openingSong:String, closingSong:String, parts:List<Assignment>, chairman:String, openingPrayer:String, adviser:String, audienceGroup:String, previewWebView:MutableState<WebView?>, allowExport:Boolean, exportBusyType:String?, onExportText:()->Unit, onPng:()->Unit, onAssignmentSlipImages:()->Unit, useLocalClock: Boolean = false) {
     val context = LocalContext.current
     val html=remember(weekStart,bible,openingSong,closingSong,parts.toList(),chairman,openingPrayer,adviser,audienceGroup,useLocalClock) {
         buildOfficialScheduleHtml(context, weekStart,bible,openingSong,closingSong,parts,chairman,openingPrayer,adviser,audienceGroup,exportMode=true,useLocalClock=useLocalClock)
@@ -3365,7 +3424,7 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
         )
         val hasAssignmentSlips = parts.any { it.person.isNotBlank() || it.secondaryAssignee.isNotBlank() } ||
             chairman.isNotBlank() || openingPrayer.isNotBlank() || adviser.isNotBlank()
-        if (allowExport && showAssignmentSlips) OutlinedButton(
+        if (allowExport) OutlinedButton(
             onClick = onAssignmentSlipImages,
             enabled = exportBusyType == null && hasAssignmentSlips,
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
@@ -3469,9 +3528,77 @@ private fun OfficialScheduleWebPreview(html:String,previewWebView:MutableState<W
     )
 }
 
+private fun buildAssignmentSlips(
+    date: LocalDate,
+    parts: List<Assignment>,
+    chairman: String,
+    openingPrayer: String,
+    adviser: String
+): List<AssignmentSlip> {
+    val dateText = date.format(DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.ENGLISH))
+    return buildList {
+        if (chairman.isNotBlank()) add(AssignmentSlip(chairman, "", dateText, "Chairman", "Main Hall"))
+        if (openingPrayer.isNotBlank()) add(AssignmentSlip(openingPrayer, "", dateText, "Panalangin sa Simula", "Main Hall"))
+        if (adviser.isNotBlank()) add(AssignmentSlip(adviser, "", dateText, "Second Hall Adviser", "Second Hall"))
+        parts.forEachIndexed { index, part ->
+            val number = part.id.takeIf { it > 0 } ?: index + 1
+            val partTitle = when (number) {
+                1 -> "Kayamanan Mula sa Salita ng Diyos"
+                2 -> "Espirituwal na Hiyas"
+                8 -> "Pag-aaral ng Kongregasyon sa Bibliya"
+                else -> part.title.replaceFirst(Regex("^\\s*\\d+\\.\\s*"), "").trim()
+            }
+            val duration = part.duration.trim()
+            val label = buildString {
+                append(number).append(". ").append(partTitle)
+                if (duration.isNotBlank() && !partTitle.contains(duration, ignoreCase = true)) {
+                    append(" (").append(duration).append(")")
+                }
+            }
+            if (part.person.isNotBlank()) add(AssignmentSlip(part.person, part.assistant, dateText, label, "Main Hall"))
+            if (part.secondaryAssignee.isNotBlank()) add(AssignmentSlip(part.secondaryAssignee, part.secondaryAssistant, dateText, label, "Second Hall"))
+        }
+    }
+}
+
+private suspend fun assignmentSlipsShareIntent(
+    context: Context, slips: List<AssignmentSlip>, weekStart: String, weekLabel: String
+): Intent {
+    val files = withContext(Dispatchers.IO) { createAssignmentSlipsImages(context, slips, weekStart) }
+    val uris = ArrayList(files.map { FileProvider.getUriForFile(context, "${context.packageName}.files", it) })
+    val multiple = uris.size > 1
+    return Intent(if (multiple) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND).apply {
+        type = "image/png"
+        if (multiple) putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+        else putExtra(Intent.EXTRA_STREAM, uris.first())
+        putExtra(Intent.EXTRA_SUBJECT, "Meeting assignment slips · $weekLabel")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        clipData = android.content.ClipData.newUri(context.contentResolver, "Assignment slips images", uris.first()).apply {
+            uris.drop(1).forEach { addItem(android.content.ClipData.Item(it)) }
+        }
+    }
+}
+
+private suspend fun scheduleTextShareIntent(context: Context, text: String, weekStart: String, weekLabel: String): Intent {
+    val file = withContext(Dispatchers.IO) {
+        File(File(context.cacheDir, "exports").apply { mkdirs() }, "meeting-schedule-$weekStart.txt")
+            .apply { writeText(text, Charsets.UTF_8) }
+    }
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+    return Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        putExtra(Intent.EXTRA_SUBJECT, "Meeting schedule · $weekLabel")
+        putExtra(Intent.EXTRA_TEXT, "Iskedyul ng Pulong ng Gitnang Sanlinggo · $weekLabel")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        clipData = android.content.ClipData.newUri(context.contentResolver, "Meeting schedule text", uri)
+    }
+}
+
 private fun buildOfficialScheduleText(
     weekStart: String, bible: String, openingSong: String, closingSong: String, parts: List<Assignment>,
-    chairman: String, openingPrayer: String, adviser: String, audienceGroup: String
+    chairman: String, openingPrayer: String, adviser: String, audienceGroup: String,
+    useLocalClock: Boolean = false
 ): String {
     val start = runCatching { LocalDate.parse(weekStart) }.getOrDefault(LocalDate.now())
     val end = start.plusDays(6)
@@ -3482,6 +3609,7 @@ private fun buildOfficialScheduleText(
         return if (fields.size == 2) (fields[0].toIntOrNull() ?: 0) * 60 + (fields[1].toIntOrNull() ?: 0) else 0
     }
     fun clock(value: Int): String {
+        if (useLocalClock) return localMeetingTimeFromMinutes(value)
         val hour = (value / 60) % 12
         return "${if (hour == 0) 12 else hour}:${(value % 60).toString().padStart(2, '0')}"
     }
@@ -3518,7 +3646,7 @@ private fun buildOfficialScheduleText(
                     val number = part.id.takeIf { it > 0 } ?: index + 1
                     val title = part.title.replaceFirst(Regex("^\\s*\\d+\\.\\s*"), "").trim()
                     val heading = buildString {
-                        append(part.time.ifBlank { "—" }).append("  •  ").append(number).append(". ").append(title)
+                        append((if (useLocalClock) formatLocalMeetingTime(part.time) else part.time).ifBlank { "—" }).append("  •  ").append(number).append(". ").append(title)
                         if (part.duration.isNotBlank()) append(" (").append(part.duration).append(")")
                     }
                     appendLine(heading)
@@ -3563,10 +3691,7 @@ private fun buildOfficialScheduleHtml(context: Context, weekStart:String,bible:S
     val weekText=if(start.month==end.month) "${months[start.monthValue-1]} ${start.dayOfMonth}-${end.dayOfMonth}" else "${months[start.monthValue-1]} ${start.dayOfMonth}–${months[end.monthValue-1]} ${end.dayOfMonth}"
     fun minutes(time:String):Int { val p=time.split(":");return if(p.size==2) (p[0].toIntOrNull()?:0)*60+(p[1].toIntOrNull()?:0) else 0 }
     fun clock(value:Int):String {
-        if (useLocalClock) {
-            val minuteOfDay = Math.floorMod(value, 24 * 60)
-            return java.time.LocalTime.of(minuteOfDay / 60, minuteOfDay % 60).format(localMeetingClock)
-        }
+        if (useLocalClock) return localMeetingTimeFromMinutes(value)
         val hour = (value / 60) % 12
         return "${if(hour==0)12 else hour}:${(value%60).toString().padStart(2,'0')}"
     }
@@ -3634,7 +3759,9 @@ private fun ParticipantsScreen(
     onToggle: (Int) -> Unit, onEdit: (Participant, Participant) -> Unit,
     isAdmin: Boolean, canEdit: Boolean, loading: Boolean, loadError: String?, onRefresh: () -> Unit,
     onSetActive: (Participant, Boolean) -> Unit, onDelete: (Participant) -> Unit,
-    showRefresh: Boolean = true
+    showRefresh: Boolean = true,
+    onImportParticipants: (() -> Unit)? = null,
+    participantImportBusy: Boolean = false
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var genderFilter by rememberSaveable { mutableStateOf("all") }
@@ -3674,6 +3801,7 @@ private fun ParticipantsScreen(
     PageFrame(modifier) { page ->
         Column(page.fillMaxHeight().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             PageHeading("Participants") {
+                if (onImportParticipants != null) TextButton(onClick = onImportParticipants, enabled = !participantImportBusy) { Text("Import") }
                 if (showRefresh) IconButton(onClick = onRefresh) {
                     Icon(SproutIcons.Refresh, contentDescription = "Refresh participants", tint = Forest)
                 }
@@ -3731,7 +3859,7 @@ private fun ParticipantsScreen(
                                 CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp,color=Forest)
                                 Text("Loading participants…",color=Muted,fontSize=12.sp)
                             }
-                        } else if(filtered.isEmpty()) item { Text(if (query.isNotBlank() || genderFilter!="all" || appointmentFilter!="all" || serviceFilter!="all" || baptismFilter!="all") "No participants match the current search or filters." else if (!showRefresh) "No participants yet. Add a participant to get started." else if (canEdit) "No participants yet. Refresh the list or add a participant." else "No participants are available yet. Refresh the list to try again.",color=Muted,fontSize=12.sp,modifier=Modifier.padding(vertical=12.dp)) }
+                        } else if(filtered.isEmpty()) item { Text(if (query.isNotBlank() || genderFilter!="all" || appointmentFilter!="all" || serviceFilter!="all" || baptismFilter!="all") "No participants match the current search or filters." else if (!showRefresh) "No participants yet. Add or import participants to get started." else if (canEdit) "No participants yet. Refresh the list or add a participant." else "No participants are available yet. Refresh the list to try again.",color=Muted,fontSize=12.sp,modifier=Modifier.padding(vertical=12.dp)) }
                         if (filtered.size > visibleCount) item {
                             Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.Center) {
                                 FilledTonalButton(onClick = { visibleCount += 50 }, shape = MaterialTheme.shapes.medium) {
@@ -3803,10 +3931,9 @@ private fun MetricCard(label: String, value: String, modifier: Modifier = Modifi
 }
 
 @Composable
-private fun HistoryScreen(
+private fun <T> HistoryScreen(
     modifier: Modifier,
-    remoteSchedules: List<RemoteSchedule>,
-    cloudStatus: String,
+    schedules: List<WorkspaceScheduleEntry<T>>,
     loading: Boolean,
     error: String?,
     hasMore: Boolean,
@@ -3816,22 +3943,23 @@ private fun HistoryScreen(
     isAdmin: Boolean,
     canEdit: Boolean,
     canCreate: Boolean,
-    onView: (RemoteSchedule) -> Unit,
-    onEdit: (RemoteSchedule) -> Unit,
-    onDelete: (RemoteSchedule) -> Unit,
-    onRefresh: () -> Unit,
-    onNew: () -> Unit
+    onView: (T) -> Unit,
+    onEdit: (T) -> Unit,
+    onDelete: (T) -> Unit,
+    onRefresh: (() -> Unit)?,
+    onNew: () -> Unit,
+    local: Boolean = false
 ) {
-    var deleteTarget by remember { mutableStateOf<RemoteSchedule?>(null) }
+    var deleteTarget by remember { mutableStateOf<WorkspaceScheduleEntry<T>?>(null) }
     var historyQuery by rememberSaveable { mutableStateOf("") }
     var selectedYear by rememberSaveable { mutableStateOf("all") }
-    val sortedSchedules = remoteSchedules.sortedWith(
-        compareByDescending<RemoteSchedule> { remoteScheduleStartDate(it) ?: LocalDate.MIN }
+    val sortedSchedules = schedules.sortedWith(
+        compareByDescending<WorkspaceScheduleEntry<T>> { it.weekStart ?: LocalDate.MIN }
             .thenByDescending { it.updatedAt }
     )
-    val historyYears = (availableYears + sortedSchedules.mapNotNull { remoteScheduleStartDate(it)?.year }).distinct().sortedDescending()
+    val historyYears = (availableYears + sortedSchedules.mapNotNull { it.weekStart?.year }).distinct().sortedDescending()
     val filteredSchedules = sortedSchedules.filter { schedule ->
-        val startDate = remoteScheduleStartDate(schedule)
+        val startDate = schedule.weekStart
         val matchesYear = selectedYear == "all" || startDate?.year?.toString() == selectedYear
         val matchesQuery = historyQuery.isBlank() || schedule.weekLabel.contains(historyQuery.trim(), ignoreCase = true) ||
             schedule.reading.contains(historyQuery.trim(), ignoreCase = true) ||
@@ -3842,9 +3970,9 @@ private fun HistoryScreen(
     PageColumn(modifier) {
         PageHeading("History")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("${remoteSchedules.size} loaded · newest first", color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text("${schedules.size} loaded · newest first", color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick=onRefresh,modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(SproutIcons.Refresh,contentDescription="Refresh schedule history",tint=Forest,modifier=Modifier.size(20.dp))}
+                if (onRefresh != null) IconButton(onClick=onRefresh,modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(SproutIcons.Refresh,contentDescription="Refresh schedule history",tint=Forest,modifier=Modifier.size(20.dp))}
                 if (canCreate) FilledTonalButton(onClick = onNew, shape = MaterialTheme.shapes.medium) {
                     Icon(SproutIcons.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
@@ -3852,26 +3980,26 @@ private fun HistoryScreen(
                 }
             }
         }
-        if (loading && remoteSchedules.isNotEmpty()) Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+        if (loading && schedules.isNotEmpty()) Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             CircularProgressIndicator(Modifier.size(15.dp),strokeWidth=2.dp,color=Forest)
             Text("Refreshing · showing saved schedules",color=Muted,fontSize = 12.sp)
         }
         if (error != null) Surface(color=MaterialTheme.colorScheme.errorContainer,shape = MaterialTheme.shapes.medium,modifier=Modifier.fillMaxWidth()) {
             Row(Modifier.padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 Icon(SproutIcons.ErrorOutline,contentDescription="History refresh failed",tint=MaterialTheme.colorScheme.onErrorContainer,modifier=Modifier.size(19.dp))
-                Text((if(remoteSchedules.isEmpty()) "Could not load history. " else "Showing saved history. ")+error,color=MaterialTheme.colorScheme.onErrorContainer,fontSize = 12.sp,modifier=Modifier.weight(1f))
-                TextButton(onClick=onRefresh,contentPadding=PaddingValues(horizontal=6.dp)){Text("Retry",color=MaterialTheme.colorScheme.onErrorContainer,fontSize = 12.sp)}
+                Text((if(schedules.isEmpty()) "Could not load history. " else "Showing saved history. ")+error,color=MaterialTheme.colorScheme.onErrorContainer,fontSize = 12.sp,modifier=Modifier.weight(1f))
+                if (onRefresh != null) TextButton(onClick=onRefresh,contentPadding=PaddingValues(horizontal=6.dp)){Text("Retry",color=MaterialTheme.colorScheme.onErrorContainer,fontSize = 12.sp)}
             }
         }
         M3Card {
-            if (remoteSchedules.isEmpty()) {
+            if (schedules.isEmpty()) {
                 if (loading) Row(Modifier.fillMaxWidth().padding(vertical=18.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                     CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp,color=Forest)
                     Text("Loading saved schedules…",color=Muted,fontSize=12.sp)
                 } else if (error == null) Column(Modifier.fillMaxWidth().padding(vertical=18.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(8.dp)) {
                     Icon(SproutIcons.CalendarMonth,contentDescription=null,tint=Forest,modifier=Modifier.size(28.dp))
                     Text("No saved schedules yet",fontWeight=FontWeight.SemiBold,fontSize=14.sp)
-                    Text("Schedules saved to the cloud will appear here.",color=Muted,fontSize=12.sp)
+                    Text(if (local) "Schedules saved on this device will appear here." else "Schedules saved to the cloud will appear here.",color=Muted,fontSize=12.sp)
                     if(canCreate) FilledTonalButton(onClick=onNew,shape = MaterialTheme.shapes.medium){Icon(SproutIcons.Add,contentDescription=null,modifier=Modifier.size(17.dp));Spacer(Modifier.width(6.dp));Text("Create schedule")}
                 }
             } else {
@@ -3925,13 +4053,13 @@ private fun HistoryScreen(
                         Text(remote.weekLabel, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text("${remote.reading} · ${remote.updatedAt.take(10)}", color = Muted, style = MaterialTheme.typography.bodySmall)
                     }
-                    TextButton(onClick = { onView(remote) }, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                    TextButton(onClick = { onView(remote.source) }, contentPadding = PaddingValues(horizontal = 6.dp)) {
                         Icon(SproutIcons.Visibility, contentDescription = null, tint = Forest, modifier = Modifier.size(17.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("View", fontSize = 12.sp, color = Forest)
                     }
                     if (isAdmin) {
-                        var menu by remember(remote.id) { mutableStateOf(false) }
+                        var menu by remember(remote.key) { mutableStateOf(false) }
                         Box {
                             IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp)) {
                                 Icon(SproutIcons.MoreVert, contentDescription = "Schedule actions", tint = Forest)
@@ -3939,7 +4067,7 @@ private fun HistoryScreen(
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, modifier = Modifier.background(AppSurface)) {
                                 if (canEdit) DropdownMenuItem(
                                     text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(SproutIcons.Edit, contentDescription = null, tint = Forest, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(10.dp)); Text("Edit") } },
-                                    onClick = { menu = false; onEdit(remote) }
+                                    onClick = { menu = false; onEdit(remote.source) }
                                 )
                                 if (isAdmin) DropdownMenuItem(
                                     text = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(SproutIcons.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(10.dp)); Text("Delete", color = MaterialTheme.colorScheme.error) } },
@@ -3968,8 +4096,8 @@ private fun HistoryScreen(
             containerColor = AppSurface,
             shape = RoundedCornerShape(26.dp),
             title = { Text("Delete saved schedule?") },
-            text = { Text("${item.weekLabel} will be removed from schedule history. Assignment history will be archived safely.", color = Muted) },
-            confirmButton = { TextButton(onClick = { onDelete(item); deleteTarget = null }) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
+            text = { Text(if (local) "${item.weekLabel} will be removed from local schedule history." else "${item.weekLabel} will be removed from schedule history. Assignment history will be archived safely.", color = Muted) },
+            confirmButton = { TextButton(onClick = { onDelete(item.source); deleteTarget = null }) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancel", color = Forest) } }
         )
     }
@@ -3997,6 +4125,97 @@ private fun remoteScheduleStartDate(schedule: RemoteSchedule): LocalDate? =
         ?: scheduleStartDate(schedule.weekLabel, schedule.updatedAt)
 
 private data class NotificationFeedback(val sent: Boolean, val message: String)
+
+@Composable
+private fun WorkspacePreferencesCard(
+    themeMode: AppThemeMode,
+    onThemeModeChange: (AppThemeMode) -> Unit,
+    paletteStyle: AppPaletteStyle,
+    onPaletteStyleChange: (AppPaletteStyle) -> Unit,
+    fontScale: Float,
+    onFontScaleChange: (Float) -> Unit,
+    appLock: AppLockController
+) {
+    M3Card {
+        Text("Preferences", style = MaterialTheme.typography.titleMedium)
+        Text("Appearance", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AppThemeMode.entries.forEach { option ->
+                val selected = themeMode == option
+                val icon = when (option) {
+                    AppThemeMode.SYSTEM -> SproutIcons.Settings
+                    AppThemeMode.LIGHT -> SproutIcons.LightMode
+                    AppThemeMode.DARK -> SproutIcons.DarkMode
+                }
+                Column(
+                    modifier = Modifier.weight(1f).clip(MaterialTheme.shapes.medium)
+                        .clickable { onThemeModeChange(option) }
+                        .padding(vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Surface(
+                        modifier = Modifier.size(56.dp),
+                        shape = CircleShape,
+                        color = if (selected) ForestContainer else SurfaceContainer,
+                        border = if (selected) BorderStroke(2.dp, Forest) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(icon, contentDescription = null, tint = if (selected) Forest else Muted, modifier = Modifier.size(24.dp))
+                        }
+                    }
+                    Text(
+                        option.label,
+                        color = if (selected) Forest else Ink,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                    )
+                }
+            }
+        }
+        Text("Color palette", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
+        Text("Choose the accent colors used throughout the app.", color = Muted, style = MaterialTheme.typography.bodySmall)
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            AppPaletteStyle.entries.forEach { option ->
+                val selected = option == paletteStyle
+                Column(
+                    modifier = Modifier.width(88.dp).clip(MaterialTheme.shapes.medium)
+                        .clickable { onPaletteStyleChange(option) }
+                        .padding(4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Column(
+                        Modifier.fillMaxWidth().height(62.dp).clip(RoundedCornerShape(12.dp))
+                            .then(if (selected) Modifier.border(2.dp, Forest, RoundedCornerShape(12.dp)) else Modifier)
+                    ) {
+                        option.swatches.forEach { swatch ->
+                            Box(Modifier.weight(1f).fillMaxWidth().background(swatch))
+                        }
+                    }
+                    Text(option.label, color = if (selected) Forest else Ink, style = MaterialTheme.typography.labelSmall,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+                }
+            }
+        }
+        BiometricLockPreference(appLock)
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(SproutIcons.ManageAccounts, contentDescription = null, tint = Forest, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(9.dp))
+            Column(Modifier.weight(1f)) {
+                Text("App font size", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Text("${(fontScale * 100).toInt()}%", color = Muted, fontSize = 12.sp)
+            }
+            TextButton(onClick = { onFontScaleChange(1f) }, enabled = fontScale != 1f) { Text("Reset", color = Forest) }
+        }
+        Slider(value = fontScale, onValueChange = onFontScaleChange, valueRange = 0.85f..1.35f, steps = 9)
+        Text("Applies across the app and is saved on this device.", color = Muted, fontSize = 12.sp)
+    }
+}
 
 @Composable
 private fun AccountsScreen(
@@ -4072,85 +4291,10 @@ private fun AccountsScreen(
             }
             profileError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         }
-        M3Card {
-            Text("Preferences", style = MaterialTheme.typography.titleMedium)
-            Text("Appearance", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AppThemeMode.entries.forEach { option ->
-                    val selected = themeMode == option
-                    val icon = when (option) {
-                        AppThemeMode.SYSTEM -> SproutIcons.Settings
-                        AppThemeMode.LIGHT -> SproutIcons.LightMode
-                        AppThemeMode.DARK -> SproutIcons.DarkMode
-                    }
-                    Column(
-                        modifier = Modifier.weight(1f).clip(MaterialTheme.shapes.medium)
-                            .clickable { onThemeModeChange(option) }
-                            .padding(vertical = 8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Surface(
-                            modifier = Modifier.size(56.dp),
-                            shape = CircleShape,
-                            color = if (selected) ForestContainer else SurfaceContainer,
-                            border = if (selected) BorderStroke(2.dp, Forest) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(icon, contentDescription = null, tint = if (selected) Forest else Muted, modifier = Modifier.size(24.dp))
-                            }
-                        }
-                        Text(
-                            option.label,
-                            color = if (selected) Forest else Ink,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
-                        )
-                    }
-                }
-            }
-            Text("Color palette", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
-            Text("Choose the accent colors used throughout the app.", color = Muted, style = MaterialTheme.typography.bodySmall)
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                AppPaletteStyle.entries.forEach { option ->
-                    val selected = option == paletteStyle
-                    Column(
-                        modifier = Modifier.width(88.dp).clip(MaterialTheme.shapes.medium)
-                            .clickable { onPaletteStyleChange(option) }
-                            .padding(4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Column(
-                            Modifier.fillMaxWidth().height(62.dp).clip(RoundedCornerShape(12.dp))
-                                .then(if (selected) Modifier.border(2.dp, Forest, RoundedCornerShape(12.dp)) else Modifier)
-                        ) {
-                            option.swatches.forEach { swatch ->
-                                Box(Modifier.weight(1f).fillMaxWidth().background(swatch))
-                            }
-                        }
-                        Text(option.label, color = if (selected) Forest else Ink, style = MaterialTheme.typography.labelSmall,
-                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
-                    }
-                }
-            }
-            BiometricLockPreference(appLock)
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(SproutIcons.ManageAccounts, contentDescription = null, tint = Forest, modifier = Modifier.size(22.dp))
-                Spacer(Modifier.width(9.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("App font size", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    Text("${(fontScale * 100).toInt()}%", color = Muted, fontSize = 12.sp)
-                }
-                TextButton(onClick = { onFontScaleChange(1f) }, enabled = fontScale != 1f) { Text("Reset", color = Forest) }
-            }
-            Slider(value = fontScale, onValueChange = onFontScaleChange, valueRange = 0.85f..1.35f, steps = 9)
-            Text("Applies across the app and is saved on this device.", color = Muted, fontSize = 12.sp)
-        }
+        WorkspacePreferencesCard(
+            themeMode, onThemeModeChange, paletteStyle, onPaletteStyleChange,
+            fontScale, onFontScaleChange, appLock
+        )
         M3Card {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(SproutIcons.NotificationsActive, contentDescription = null, tint = Forest, modifier = Modifier.size(22.dp))
@@ -4838,10 +4982,164 @@ private data class DeviceWorkspace(
     }
 }
 
+
+private val participantCsvColumns = listOf("Name", "Gender", "Appointment", "Service Status", "Baptism Status", "Status")
+private const val participantCsvLimit = 2 * 1024 * 1024
+private const val participantCsvRowLimit = 3000
+
+private data class ParticipantCsvRow(val line: Int, val fields: List<String>)
+private data class ParticipantImportPreview(val entries: List<Participant>, val issues: List<String>, val duplicates: Int)
+
+private fun participantImportNameKey(name: String): String =
+    name.trim().replace(Regex("""\s+"""), " ").lowercase(Locale.ROOT)
+
+private fun readParticipantCsv(input: java.io.InputStream): String {
+    val output = ByteArrayOutputStream()
+    val buffer = ByteArray(8192)
+    while (true) {
+        val size = input.read(buffer)
+        if (size < 0) break
+        require(output.size() + size <= participantCsvLimit) { "Use a CSV file under 2 MB." }
+        output.write(buffer, 0, size)
+    }
+    return try {
+        Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(output.toByteArray())).toString().removePrefix("\uFEFF")
+    } catch (_: java.nio.charset.CharacterCodingException) {
+        throw IllegalArgumentException("Save the template as CSV UTF-8 and try again.")
+    }
+}
+
+private fun parseParticipantCsvRows(text: String): List<ParticipantCsvRow> {
+    val firstLine = text.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty()
+    val delimiter = if (';' in firstLine && ',' !in firstLine) ';' else ','
+    val rows = mutableListOf<ParticipantCsvRow>()
+    val fields = mutableListOf<String>()
+    val field = StringBuilder()
+    var quoted = false
+    var afterQuote = false
+    var line = 1
+    var rowLine = 1
+    var index = 0
+
+    fun endField() {
+        fields.add(field.toString().trim())
+        field.setLength(0)
+        afterQuote = false
+    }
+    fun endRow() {
+        endField()
+        if (fields.any { it.isNotBlank() }) {
+            require(rows.size <= participantCsvRowLimit) { "Import up to $participantCsvRowLimit participants per file." }
+            rows.add(ParticipantCsvRow(rowLine, fields.toList()))
+        }
+        fields.clear()
+    }
+
+    while (index < text.length) {
+        val char = text[index++]
+        val newline = char == '\r' || char == '\n'
+        if (char == '\r' && text.getOrNull(index) == '\n') index++
+        when {
+            quoted && char == '"' && text.getOrNull(index) == '"' -> {
+                field.append('"')
+                index++
+            }
+            quoted && char == '"' -> {
+                quoted = false
+                afterQuote = true
+            }
+            quoted -> field.append(if (newline) '\n' else char)
+            char == delimiter -> endField()
+            newline -> endRow()
+            afterQuote && (char == ' ' || char == '\t') -> Unit
+            afterQuote -> throw IllegalArgumentException("Line $line: unexpected text after a closing quote.")
+            char == '"' && field.isEmpty() -> quoted = true
+            char == '"' -> throw IllegalArgumentException("Line $line: put quotes around the whole CSV field.")
+            else -> field.append(char)
+        }
+        if (newline) {
+            line++
+            if (!quoted) rowLine = line
+        }
+    }
+    require(!quoted) { "Line $rowLine: missing closing quote." }
+    endRow()
+    return rows
+}
+
+private fun parseParticipantImport(text: String, existing: List<Participant>): ParticipantImportPreview {
+    val rows = parseParticipantCsvRows(text)
+    require(rows.isNotEmpty()) { "The CSV is empty. Download the participant template to get started." }
+    val expected = participantCsvColumns.map { it.lowercase(Locale.ROOT) }
+    val columns = rows.first().fields.map { it.lowercase(Locale.ROOT) }
+    require(columns.size == expected.size && columns.toSet() == expected.toSet()) {
+        "The CSV headers don’t match the participant template. Keep all six column names."
+    }
+    val positions = expected.map(columns::indexOf)
+    val names = existing.mapTo(mutableSetOf()) { participantImportNameKey(it.name) }
+    val result = mutableListOf<Participant>()
+    val issues = mutableListOf<String>()
+    var duplicates = 0
+
+    for ((line, fields) in rows.drop(1)) {
+        if (fields.size != positions.size) {
+            issues += "Line $line: expected six columns."
+            continue
+        }
+        val name = fields[positions[0]]
+        fun value(index: Int) = fields[positions[index]].lowercase(Locale.ROOT).replace('_', ' ')
+        val gender = value(1)
+        val rawAppointment = value(2)
+        val rawService = value(3)
+        val baptism = value(4)
+        val status = value(5)
+        val unbaptized = baptism == "unbaptized"
+        val appointment = when (rawAppointment) {
+            "", "publisher" -> "publisher"
+            "ministerial", "ministerial servant" -> "ministerial"
+            "elder" -> "elder"
+            else -> null
+        }
+        val service = when (rawService) {
+            "", "none", "publisher" -> "none"
+            "regular pioneer" -> "regular_pioneer"
+            else -> null
+        }
+        val issue = when {
+            name.isBlank() || name.length > 120 || name.any { it.isISOControl() } -> "Enter a name of 1–120 characters."
+            gender !in setOf("brother", "sister") -> "Gender must be Brother or Sister."
+            appointment == null -> "Use Publisher, Ministerial servant, or Elder for Appointment."
+            service == null -> "Use Publisher or Regular pioneer for Service Status."
+            baptism !in setOf("", "baptized", "unbaptized") -> "Use Baptized or Unbaptized for Baptism Status."
+            status !in setOf("", "active", "inactive") -> "Use Active or Inactive for Status."
+            (unbaptized || gender == "sister") && appointment != "publisher" -> "Elder and Ministerial servant require a baptized brother."
+            unbaptized && service == "regular_pioneer" -> "An unbaptized participant can’t be marked as a regular pioneer."
+            else -> null
+        }
+        if (issue != null) {
+            issues += "Line $line: $issue"
+        } else if (!names.add(participantImportNameKey(name))) {
+            duplicates++
+        } else {
+            result += Participant(
+                name = name, gender = gender, enabled = status != "inactive", unbaptized = unbaptized,
+                appointment = if (unbaptized) "" else requireNotNull(appointment),
+                service = if (unbaptized) "" else requireNotNull(service)
+            )
+        }
+    }
+    return ParticipantImportPreview(result, issues, duplicates)
+}
+
 private fun List<SavedSchedule>.withLocalSchedule(value: SavedSchedule) =
     filterNot { it.weekStart == value.weekStart } + value
 
 private fun localWeek(date: LocalDate) = date.minusDays((date.dayOfWeek.value - 1).toLong())
+
+private fun nextLocalMeetingWeek(today: LocalDate, day: java.time.DayOfWeek): LocalDate {
+    val week = localWeek(today)
+    return if (week.plusDays((day.value - 1).toLong()).isBefore(today)) week.plusWeeks(1) else week
+}
 
 private fun blankLocalSchedule(week: LocalDate) = SavedSchedule(
     week = week.format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.ENGLISH)),
@@ -4849,7 +5147,16 @@ private fun blankLocalSchedule(week: LocalDate) = SavedSchedule(
 )
 
 @Composable
-private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
+private fun DeviceWorkspaceApp(
+    onOpenShared: () -> Unit,
+    themeMode: AppThemeMode,
+    onThemeModeChange: (AppThemeMode) -> Unit,
+    paletteStyle: AppPaletteStyle,
+    onPaletteStyleChange: (AppPaletteStyle) -> Unit,
+    fontScale: Float,
+    onFontScaleChange: (Float) -> Unit,
+    appLock: AppLockController
+) {
     val context = LocalContext.current
     val preferences = remember(context) { context.getSharedPreferences("meeting_scheduler_device_only", Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
@@ -4859,15 +5166,19 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
     val page = Screen.valueOf(pageName)
     var toolsOpen by remember { mutableStateOf(false) }
     var profileOpen by remember { mutableStateOf(false) }
+    var workspacePickerOpen by remember { mutableStateOf(false) }
     var captureWeek by remember { mutableStateOf<String?>(null) }
     var captureBusy by remember { mutableStateOf(false) }
     var captureLog by remember { mutableStateOf(emptyList<String>()) }
     var captureResult by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     var fileBusy by remember { mutableStateOf(false) }
-    var pngBusy by remember { mutableStateOf(false) }
+    var localExportType by remember { mutableStateOf<String?>(null) }
     var pendingRestore by remember { mutableStateOf<DeviceWorkspace?>(null) }
+    var pendingCreate by remember { mutableStateOf<DeviceWorkspace?>(null) }
+    var participantImportOpen by rememberSaveable { mutableStateOf(false) }
+    var participantImportMessage by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    var participantImport by remember { mutableStateOf<ParticipantImportPreview?>(null) }
     var previewSnapshot by remember { mutableStateOf<SavedSchedule?>(null) }
-    var removeSchedule by remember { mutableStateOf<SavedSchedule?>(null) }
     val previewWebView = remember { mutableStateOf<WebView?>(null) }
     val available = remember { Screen.entries.toSet() }
 
@@ -4879,6 +5190,148 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
     fun navigate(next: Screen) {
         previewSnapshot = null
         pageName = next.name
+    }
+
+
+    val downloadParticipantTemplate = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null && !fileBusy) scope.launch {
+            fileBusy = true
+            try {
+                withContext(Dispatchers.IO) {
+                    val stream = context.contentResolver.openOutputStream(uri, "wt")
+                        ?: error("Couldn’t open the template file.")
+                    stream.bufferedWriter(Charsets.UTF_8).use { writer ->
+                        writer.write("\uFEFF")
+                        writer.write(participantCsvColumns.joinToString(","))
+                        writer.write("\r\n")
+                    }
+                }
+                participantImportMessage = "Participant template saved." to false
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                participantImportMessage = "Couldn’t save the participant template." to true
+            } finally {
+                fileBusy = false
+            }
+        }
+    }
+    val chooseParticipantCsv = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val existing = workspace?.participants
+        if (uri != null && existing != null && !fileBusy) scope.launch {
+            fileBusy = true
+            try {
+                participantImport = withContext(Dispatchers.IO) {
+                    val stream = context.contentResolver.openInputStream(uri)
+                        ?: error("Couldn’t open the CSV file.")
+                    parseParticipantImport(stream.use(::readParticipantCsv), existing)
+                }
+                participantImportOpen = false
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                val detail = if (error is IllegalArgumentException) error.message ?: "Invalid CSV file." else "Couldn’t read the participant CSV file."
+                participantImportMessage = detail to true
+            } finally {
+                fileBusy = false
+            }
+        }
+    }
+
+    if (participantImportOpen) AlertDialog(
+        onDismissRequest = { if (!fileBusy) participantImportOpen = false },
+        title = { Text("Import participants") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Download the template, fill in one participant per row, and save it as CSV UTF-8.")
+                Text("Name and Gender are required. Keep all the template headers.")
+                Text("Gender: Brother or Sister\nAppointment: Publisher, Ministerial servant, or Elder\nService Status: Publisher or Regular pioneer\nBaptism Status: Baptized or Unbaptized\nStatus: Active or Inactive",
+                    color = Muted, style = MaterialTheme.typography.bodySmall)
+                Text("Blank optional fields default to Publisher, Baptized, and Active. Existing names are skipped.",
+                    color = Muted, style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(
+                    onClick = { downloadParticipantTemplate.launch("participants-template.csv") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !fileBusy
+                ) { Text("Download template") }
+                participantImportMessage?.let { (detail, error) ->
+                    Text(detail, color = if (error) MaterialTheme.colorScheme.error else Muted,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                }
+                if (fileBusy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !fileBusy, onClick = {
+                participantImportMessage = null
+                chooseParticipantCsv.launch(arrayOf("text/*", "application/csv", "application/vnd.ms-excel", "application/octet-stream"))
+            }) { Text("Choose CSV file") }
+        },
+        dismissButton = { TextButton(enabled = !fileBusy, onClick = { participantImportOpen = false }) { Text("Cancel") } }
+    )
+
+    participantImport?.let { preview ->
+        AlertDialog(
+            onDismissRequest = { participantImport = null },
+            title = { Text("Review participant import") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("${preview.entries.size} ready to import · ${preview.duplicates} duplicate names · ${preview.issues.size} invalid rows")
+                    preview.entries.take(8).forEach { person ->
+                        Column {
+                            Text(person.name, style = MaterialTheme.typography.titleSmall)
+                            val details = buildList {
+                                add(genderLabel(person.gender))
+                                if (person.unbaptized) add("Unbaptized")
+                                else {
+                                    add(appointmentLabel(person.appointment))
+                                    if (person.service == "regular_pioneer") add(serviceLabel(person.service))
+                                }
+                                if (!person.enabled) add("Inactive")
+                            }
+                            Text(details.joinToString(" · "), color = Muted, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    if (preview.entries.size > 8) Text("And ${preview.entries.size - 8} more.", color = Muted)
+                    if (preview.issues.isNotEmpty()) {
+                        Text("Invalid rows will be skipped.", color = MaterialTheme.colorScheme.error)
+                        preview.issues.take(8).forEach { issue ->
+                            Text(issue, color = Muted, style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (preview.issues.size > 8) Text("And ${preview.issues.size - 8} more invalid rows.", color = Muted)
+                    }
+                    if (preview.entries.isEmpty() && preview.issues.isEmpty() && preview.duplicates == 0) {
+                        Text("The template has no participant rows. Add names and try again.", color = Muted)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (preview.entries.isNotEmpty()) {
+                        val latest = workspace
+                        if (latest != null) {
+                            val names = latest.participants.mapTo(mutableSetOf()) { participantImportNameKey(it.name) }
+                            val newEntries = preview.entries.filter { names.add(participantImportNameKey(it.name)) }
+                            val lastId = latest.participants.maxOfOrNull { it.id } ?: 0
+                            if (newEntries.size > Int.MAX_VALUE - lastId) {
+                                message("Couldn’t assign participant IDs. No participants were imported.")
+                            } else if (newEntries.isEmpty()) {
+                                message("No new participants to import.")
+                            } else {
+                                update(latest.copy(participants = latest.participants + newEntries.mapIndexed { index, person ->
+                                    person.copy(id = lastId + index + 1)
+                                }))
+                                message("Imported ${newEntries.size} participants on this device.")
+                            }
+                        }
+                    }
+                    participantImport = null
+                }) { Text(if (preview.entries.isEmpty()) "Done" else "Import ${preview.entries.size}") }
+            },
+            dismissButton = {
+                if (preview.entries.isNotEmpty()) TextButton(onClick = { participantImport = null }) { Text("Cancel") }
+            }
+        )
     }
 
     val backup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -4943,7 +5396,29 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
             dismissButton = { TextButton(onClick = { pendingRestore = null }) { Text("Cancel") } }
         )
     }
+    pendingCreate?.let { replacement ->
+        AlertDialog(
+            onDismissRequest = { pendingCreate = null },
+            title = { Text("Start a new workspace?") },
+            text = { Text("The workspace saved on this device couldn’t be opened. Creating a new one replaces that copy. Choose Restore backup on the setup screen to recover from a backup.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    update(replacement)
+                    pendingCreate = null
+                    navigate(Screen.HOME)
+                }) { Text("Create new workspace") }
+            },
+            dismissButton = { TextButton(onClick = { pendingCreate = null }) { Text("Cancel") } }
+        )
+    }
     val data = workspace
+    if (workspacePickerOpen && data != null) WorkspacePickerDialog(
+        localActive = true,
+        localName = data.name,
+        onDismiss = { workspacePickerOpen = false },
+        canSwitch = !fileBusy && !captureBusy && localExportType == null,
+        onSwitch = { workspacePickerOpen = false; onOpenShared() }
+    )
     BackHandler(enabled = page != Screen.HOME && data != null) {
         navigate(if (page == Screen.PREVIEW && previewSnapshot == null) Screen.ASSIGNMENTS else Screen.HOME)
     }
@@ -4960,25 +5435,29 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
                 profileMenuOpen = profileOpen, onProfileMenuToggle = { profileOpen = !profileOpen },
                 onProfileMenuDismiss = { profileOpen = false },
                 onProfileSettings = { profileOpen = false; navigate(Screen.ACCOUNTS) },
-                onProfileSignOut = null
+                onProfileSignOut = null,
+                onProfileWorkspace = { profileOpen = false; workspacePickerOpen = true }
             )
         }
     ) { insets ->
         val modifier = Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)
         if (data == null) {
-            PageColumn(modifier) {
-                PageHeading("Set up Local Workspace", "Create meeting schedules on this device.")
-                DeviceWorkspaceFields(null, "Create workspace") { name, day ->
-                    if (preferences.contains("workspace")) {
-                        pendingRestore = DeviceWorkspace(name, day)
-                    } else {
-                        update(DeviceWorkspace(name, day))
+            LocalCongregationSetup(
+                modifier = modifier,
+                restoring = fileBusy,
+                needsRecovery = preferences.contains("workspace"),
+                onRestore = { restore.launch(arrayOf("application/json", "application/octet-stream")) },
+                onOpenShared = onOpenShared,
+                onCreate = { name, day ->
+                    val nextWeek = nextLocalMeetingWeek(LocalDate.now(), day)
+                    val created = DeviceWorkspace(name, day, selectedWeek = nextWeek.toString())
+                    if (preferences.contains("workspace")) pendingCreate = created
+                    else {
+                        update(created)
                         navigate(Screen.HOME)
                     }
                 }
-                OutlinedButton(onClick = { restore.launch(arrayOf("application/json", "application/octet-stream")) }, enabled = !fileBusy) { Text("Restore backup") }
-                TextButton(onClick = onOpenShared) { Text("Open Shared Workspace") }
-            }
+            )
             return@Scaffold
         }
         if (toolsOpen) PreviewToolsSheet(available, page, { toolsOpen = false }) {
@@ -5000,31 +5479,33 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
                     update(data.copy(selectedWeek = week))
                     navigate(Screen.DETAILS)
                 },
-                onPreview = ::viewSaved,
-                onHistory = { navigate(Screen.HISTORY) }
+                onPreview = ::viewSaved
             )
-            Screen.HISTORY -> PageColumn(modifier) {
-                PageHeading("Local History", "${data.name} · Local Workspace")
-                val schedules = data.history.sortedByDescending { it.weekStart }
-                if (schedules.isEmpty()) Text("No schedules saved on this device.")
-                schedules.forEach { item ->
-                    val meetingDate = LocalDate.parse(item.weekStart).plusDays((data.meetingDay.value - 1).toLong())
-                    M3Card {
-                        Text(meetingDate.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH)),
-                            style = MaterialTheme.typography.titleMedium)
-                        if (item.reading.isNotBlank()) Text(item.reading, color = Muted)
-                        AdaptivePair(
-                            { field -> TextButton(onClick = { viewSaved(item) }, modifier = field) { Text("Preview") } },
-                            { field -> TextButton(onClick = {
-                                if (data.drafts.none { it.weekStart == item.weekStart }) edit(item)
-                                else update(data.copy(selectedWeek = item.weekStart))
-                                navigate(Screen.DETAILS)
-                            }, modifier = field) { Text("Open editor") } }
-                        )
-                        TextButton(onClick = { removeSchedule = item }) { Text("Delete saved schedule") }
+            Screen.HISTORY -> HistoryScreen(
+                modifier = modifier,
+                schedules = data.history.map { it.workspaceEntry() },
+                loading = false, error = null, hasMore = false, loadingMore = false,
+                availableYears = emptyList(), onLoadMore = {},
+                isAdmin = true, canEdit = true, canCreate = true,
+                onView = ::viewSaved,
+                onEdit = { item ->
+                    if (data.drafts.none { it.weekStart == item.weekStart }) edit(item)
+                    else update(data.copy(selectedWeek = item.weekStart))
+                    navigate(Screen.DETAILS)
+                },
+                onDelete = { item ->
+                    workspace?.let { latest ->
+                        update(latest.copy(history = latest.history.filterNot { it.weekStart == item.weekStart }))
                     }
-                }
-            }
+                },
+                onRefresh = null,
+                onNew = {
+                    val nextWeek = nextLocalMeetingWeek(LocalDate.now(), data.meetingDay)
+                    update(data.copy(selectedWeek = nextWeek.toString()))
+                    navigate(Screen.DETAILS)
+                },
+                local = true
+            )
             Screen.DETAILS -> DeviceWorkbook(
                 modifier, draft, data.downloads,
                 captureBusy = captureBusy,
@@ -5104,35 +5585,58 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
             )
             Screen.PREVIEW -> {
                 val item = previewSnapshot ?: draft
+                fun shareFile(type: String, title: String, createIntent: suspend () -> Intent) {
+                    if (localExportType != null) return
+                    localExportType = type
+                    scope.launch {
+                        try {
+                            context.startActivity(Intent.createChooser(createIntent(), title))
+                        } catch (error: Exception) {
+                            if (error is kotlinx.coroutines.CancellationException) throw error
+                            message(error.message ?: "Couldn’t share this export. Try again.")
+                        } finally {
+                            localExportType = null
+                        }
+                    }
+                }
                 PreviewScreen(
                     modifier, item.weekStart, item.reading, item.openingSong, item.closingSong,
                     item.assignments, item.chairman, item.openingPrayer, item.adviser, item.audienceGroup,
-                    previewWebView, true, if (pngBusy) "png" else null,
+                    previewWebView, true, localExportType,
                     onExportText = {
-                        val body = (listOf(item.week, item.reading) + scheduleAssignmentValues(
-                            item.assignments, item.chairman, item.openingPrayer, item.adviser, item.audienceGroup
-                        ).map { "${it.label}: ${it.person.ifBlank { "Unassigned" }}" }).joinToString("\n")
-                        context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, body)
-                        }, "Share schedule text"))
+                        shareFile("text", "Share schedule text") {
+                            val text = buildOfficialScheduleText(
+                                item.weekStart, item.reading, item.openingSong, item.closingSong,
+                                item.assignments, item.chairman, item.openingPrayer, item.adviser,
+                                item.audienceGroup, useLocalClock = true
+                            )
+                            scheduleTextShareIntent(context, text, item.weekStart, item.week)
+                        }
                     },
                     onPng = {
-                        pngBusy = true
-                        renderSchedulePng(context, buildOfficialScheduleHtml(
-                            context, item.weekStart, item.reading, item.openingSong, item.closingSong,
-                            item.assignments, item.chairman, item.openingPrayer, item.adviser, item.audienceGroup,
-                            exportMode = true, useLocalClock = true
-                        ), onSuccess = { intent ->
-                            pngBusy = false
-                            context.startActivity(Intent.createChooser(intent, "Share schedule image"))
-                        }, onFailure = { error ->
-                            pngBusy = false
-                            message(error)
-                        })
+                        if (localExportType == null) {
+                            localExportType = "png"
+                            renderSchedulePng(context, buildOfficialScheduleHtml(
+                                context, item.weekStart, item.reading, item.openingSong, item.closingSong,
+                                item.assignments, item.chairman, item.openingPrayer, item.adviser, item.audienceGroup,
+                                exportMode = true, useLocalClock = true
+                            ), onSuccess = { intent ->
+                                localExportType = null
+                                context.startActivity(Intent.createChooser(intent, "Share schedule image"))
+                            }, onFailure = { error ->
+                                localExportType = null
+                                message(error)
+                            })
+                        }
                     },
-                    onAssignmentSlipImages = {},
-                    showAssignmentSlips = false,
+                    onAssignmentSlipImages = {
+                        val date = LocalDate.parse(item.weekStart).plusDays((data.meetingDay.value - 1).toLong())
+                        val slips = buildAssignmentSlips(date, item.assignments, item.chairman, item.openingPrayer, item.adviser)
+                        if (slips.isEmpty()) message("Assign a participant before exporting assignment slips.")
+                        else shareFile("slips_image", "Share assignment slip images") {
+                            assignmentSlipsShareIntent(context, slips, item.weekStart, item.week)
+                        }
+                    },
                     useLocalClock = true
                 )
             }
@@ -5169,15 +5673,21 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
                             drafts = data.drafts.map { it.withoutLocalParticipant(person.name) }
                         ))
                     },
-                    showRefresh = false
+                    showRefresh = false,
+                    onImportParticipants = { participantImportMessage = null; participantImportOpen = true },
+                    participantImportBusy = fileBusy
                 )
             }
             Screen.ACCOUNTS -> PageColumn(modifier) {
-                PageHeading("Workspace", "Schedules and participants are stored on this device.")
+                PageHeading("Account & Settings", "Local Workspace")
                 DeviceWorkspaceFields(data, "Save workspace settings") { name, day ->
                     update(data.copy(name = name, meetingDay = day))
                     message("Workspace settings saved.")
                 }
+                WorkspacePreferencesCard(
+                    themeMode, onThemeModeChange, paletteStyle, onPaletteStyleChange,
+                    fontScale, onFontScaleChange, appLock
+                )
                 M3Card {
                     Text("Backup & restore", style = MaterialTheme.typography.titleMedium)
                     Text("Move your local participants, drafts, and schedules to another device.", color = Muted, style = MaterialTheme.typography.bodyMedium)
@@ -5189,24 +5699,12 @@ private fun DeviceWorkspaceApp(onOpenShared: () -> Unit) {
                     )
                 }
                 M3Card {
-                    Text("Shared Workspace", style = MaterialTheme.typography.titleMedium)
-                    Text("Open your cloud workspace and shared schedules.", color = Muted, style = MaterialTheme.typography.bodyMedium)
-                    TextButton(enabled = !pngBusy && !fileBusy, onClick = onOpenShared) { Text("Open Shared Workspace") }
+                    Text("Workspace", style = MaterialTheme.typography.titleMedium)
+                    Text("Local Workspace · Active", color = Muted, style = MaterialTheme.typography.bodyMedium)
+                    TextButton(onClick = { workspacePickerOpen = true }) { Text("Switch workspace") }
                 }
             }
         }
-    }
-    removeSchedule?.let { schedule ->
-        AlertDialog(
-            onDismissRequest = { removeSchedule = null },
-            title = { Text("Delete saved schedule?") },
-            text = { Text(schedule.week) },
-            confirmButton = { TextButton(onClick = {
-                workspace?.let { latest -> update(latest.copy(history = latest.history.filterNot { it.weekStart == schedule.weekStart })) }
-                removeSchedule = null
-            }) { Text("Delete") } },
-            dismissButton = { TextButton(onClick = { removeSchedule = null }) { Text("Cancel") } }
-        )
     }
 }
 
@@ -5225,31 +5723,169 @@ private fun SavedSchedule.renameLocalParticipant(from: String, to: String): Save
 }
 
 @Composable
-private fun DeviceWorkspaceFields(data: DeviceWorkspace?, action: String, onSave: (String, java.time.DayOfWeek) -> Unit) {
-    var name by rememberSaveable(data?.name) { mutableStateOf(data?.name ?: "") }
-    var day by rememberSaveable(data?.meetingDay) { mutableStateOf(data?.meetingDay?.name ?: "THURSDAY") }
-    var chooseDay by remember { mutableStateOf(false) }
+private fun WorkspacePickerDialog(
+    localActive: Boolean,
+    localName: String?,
+    onDismiss: () -> Unit,
+    canSwitch: Boolean,
+    onSwitch: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Workspace") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(if (localActive) "Local Workspace · Active" else "Shared Workspace · Active",
+                    style = MaterialTheme.typography.titleSmall, color = Forest)
+                if (localName != null) Text(localName, color = Muted, style = MaterialTheme.typography.bodyMedium)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onSwitch, enabled = canSwitch) {
+                Text(when {
+                    localActive -> "Switch to Shared"
+                    localName != null -> "Switch to Local"
+                    else -> "Set up Local Workspace"
+                })
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun LocalCongregationSetup(
+    modifier: Modifier,
+    restoring: Boolean,
+    needsRecovery: Boolean,
+    onRestore: () -> Unit,
+    onOpenShared: () -> Unit,
+    onCreate: (String, java.time.DayOfWeek) -> Unit
+) {
+    var name by rememberSaveable { mutableStateOf("") }
+    var selectedDayName by rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedDay = selectedDayName?.let { java.time.DayOfWeek.valueOf(it) }
+    val dateFormat = remember { DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH) }
+    BackHandler { if (!restoring) onOpenShared() }
+
+    PageColumn(modifier.imePadding()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            IconButton(onClick = onOpenShared, enabled = !restoring) {
+                Icon(SproutIcons.ArrowBack, contentDescription = "Back to Shared Workspace")
+            }
+            Column(Modifier.weight(1f)) {
+                Text("Local setup", style = MaterialTheme.typography.titleMedium)
+            }
+        }
+        PageHeading("Set up your congregation", "Manage participants and prepare meeting schedules on this device. No account is needed.")
+        if (needsRecovery) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer
+            ) {
+                Text("Your saved workspace couldn’t be opened. Restore a backup or create a new workspace.",
+                    modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        M3Card {
+            Text("Congregation details", style = MaterialTheme.typography.titleMedium)
+            OutlinedTextField(
+                value = name,
+                onValueChange = { if (it.length <= 80) name = it },
+                label = { Text("Congregation name") },
+                singleLine = true,
+                enabled = !restoring,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
+                modifier = Modifier.fillMaxWidth()
+            )
+            LocalMeetingDayPicker(selectedDay, enabled = !restoring) { selectedDayName = it.name }
+            if (selectedDay != null) {
+                val nextDate = nextLocalMeetingWeek(LocalDate.now(), selectedDay)
+                    .plusDays((selectedDay.value - 1).toLong())
+                Text("Next meeting · ${nextDate.format(dateFormat)}", color = Muted, style = MaterialTheme.typography.bodyMedium)
+            }
+            Button(
+                enabled = name.isNotBlank() && selectedDay != null && !restoring,
+                onClick = { selectedDay?.let { onCreate(name.trim(), it) } },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Create Local Workspace") }
+        }
+        M3Card {
+            Text("Restore from backup", style = MaterialTheme.typography.titleMedium)
+            Text("Use a Local Workspace backup to bring your congregation data to this device.",
+                color = Muted, style = MaterialTheme.typography.bodyMedium)
+            OutlinedButton(onClick = onRestore, enabled = !restoring, modifier = Modifier.fillMaxWidth()) {
+                if (restoring) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(if (restoring) "Restoring backup…" else "Choose backup file")
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalMeetingDayPicker(
+    selectedDay: java.time.DayOfWeek?,
+    enabled: Boolean = true,
+    onSelect: (java.time.DayOfWeek) -> Unit
+) {
+    var open by remember { mutableStateOf(false) }
+    fun displayName(day: java.time.DayOfWeek) =
+        day.getDisplayName(java.time.format.TextStyle.FULL, Locale.ENGLISH)
+
+    Text("Midweek meeting day", style = MaterialTheme.typography.labelLarge)
+    Box(Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = { open = true },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = enabled
+        ) {
+            Icon(SproutIcons.CalendarMonth, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(selectedDay?.let(::displayName) ?: "Choose a day", modifier = Modifier.weight(1f))
+            Icon(SproutIcons.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
+        }
+        DropdownMenu(expanded = open && enabled, onDismissRequest = { open = false }) {
+            java.time.DayOfWeek.values().forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(displayName(option)) },
+                    onClick = { open = false; onSelect(option) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeviceWorkspaceFields(data: DeviceWorkspace, action: String, onSave: (String, java.time.DayOfWeek) -> Unit) {
+    var name by rememberSaveable(data.name) { mutableStateOf(data.name) }
+    var day by rememberSaveable(data.meetingDay) { mutableStateOf(data.meetingDay.name) }
     M3Card {
         OutlinedTextField(name, { if (it.length <= 80) name = it }, label = { Text("Congregation name") },
             singleLine = true, modifier = Modifier.fillMaxWidth())
-        Box {
-            val selected = java.time.DayOfWeek.valueOf(day)
-            OutlinedButton(onClick = { chooseDay = true }) {
-                Text("Meeting day · ${selected.getDisplayName(java.time.format.TextStyle.FULL, Locale.ENGLISH)}")
-            }
-            DropdownMenu(expanded = chooseDay, onDismissRequest = { chooseDay = false }) {
-                java.time.DayOfWeek.values().forEach { option ->
-                    DropdownMenuItem(text = { Text(option.getDisplayName(java.time.format.TextStyle.FULL, Locale.ENGLISH)) },
-                        onClick = { day = option.name; chooseDay = false })
-                }
-            }
-        }
-        Button(enabled = name.isNotBlank(), onClick = { onSave(name.trim(), java.time.DayOfWeek.valueOf(day)) }) { Text(action) }
+        LocalMeetingDayPicker(java.time.DayOfWeek.valueOf(day)) { day = it.name }
+        Button(
+            enabled = name.trim().isNotEmpty() && (name.trim() != data.name || day != data.meetingDay.name),
+            onClick = { onSave(name.trim(), java.time.DayOfWeek.valueOf(day)) },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text(action) }
     }
 }
- 
 
 private val localMeetingClock = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)
+
+private fun localMeetingTimeFromMinutes(value: Int): String {
+    val minuteOfDay = Math.floorMod(value, 24 * 60)
+    return java.time.LocalTime.of(minuteOfDay / 60, minuteOfDay % 60).format(localMeetingClock)
+}
 
 private fun formatLocalMeetingTime(value: String): String = runCatching {
     java.time.LocalTime.parse(value.trim()).format(localMeetingClock)
@@ -5274,92 +5910,37 @@ private fun LocalWorkspaceHome(
     modifier: Modifier,
     workspace: DeviceWorkspace,
     onOpenWeek: (String) -> Unit,
-    onPreview: (SavedSchedule) -> Unit,
-    onHistory: () -> Unit
+    onPreview: (SavedSchedule) -> Unit
 ) {
     val today = LocalDate.now()
-    val dateFormat = remember { DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH) }
-    val offset = (workspace.meetingDay.value - 1).toLong()
-    val thisWeek = localWeek(today)
-    val nextWeek = if (thisWeek.plusDays(offset).isBefore(today)) thisWeek.plusWeeks(1) else thisWeek
+    val nextWeek = nextLocalMeetingWeek(today, workspace.meetingDay)
     val nextWeekKey = nextWeek.toString()
-    fun meetingDate(week: String) = LocalDate.parse(week).plusDays(offset)
+    val offset = (workspace.meetingDay.value - 1).toLong()
+    val dateFormat = remember { DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.ENGLISH) }
     val savedByWeek = workspace.history.associateBy { it.weekStart }
-    val nextSaved = savedByWeek[nextWeekKey]
-    val activeDraft = workspace.drafts.firstOrNull { draft ->
-        draft.weekStart == workspace.selectedWeek && draft.hasLocalWorkbookContent() &&
-            savedByWeek[draft.weekStart]?.copy(saved = draft.saved) != draft
-    }
-    val nextDraft = workspace.drafts.firstOrNull { it.weekStart == nextWeekKey && it.hasLocalWorkbookContent() }
-    val cachedNext = workspace.downloads.firstOrNull { it.weekStart == nextWeekKey }
-    val upcoming = workspace.history.filter { it.weekStart != nextWeekKey && !meetingDate(it.weekStart).isBefore(today) }
-        .sortedBy { it.weekStart }
+    fun isUnsaved(draft: SavedSchedule): Boolean = draft.hasLocalWorkbookContent() &&
+        savedByWeek[draft.weekStart]?.copy(saved = draft.saved) != draft
+    val activeDraft = workspace.drafts.firstOrNull { it.weekStart == workspace.selectedWeek && isUnsaved(it) }
+        ?: workspace.drafts.firstOrNull { it.weekStart == nextWeekKey && isUnsaved(it) }
 
-    PageColumn(modifier) {
-        PageHeading("JW Meeting Manager", "${workspace.name} · Local Workspace")
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-        ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Icon(SproutIcons.CalendarMonth, contentDescription = null, modifier = Modifier.size(24.dp))
-                    Text("Next meeting", style = MaterialTheme.typography.titleMedium)
-                }
-                Text(nextWeek.plusDays(offset).format(dateFormat), style = MaterialTheme.typography.headlineSmall)
-                val reading = nextSaved?.reading ?: nextDraft?.reading ?: cachedNext?.reading
-                if (!reading.isNullOrBlank()) Text(reading, style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    when {
-                        nextSaved != null -> "Schedule saved on this device."
-                        nextDraft != null -> "Draft in progress."
-                        cachedNext != null -> "Workbook available offline."
-                        else -> "Open Workbook to capture the weekly program and start your schedule."
-                    },
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Button(
-                    onClick = { if (nextSaved != null) onPreview(nextSaved) else onOpenWeek(nextWeekKey) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(when {
-                        nextSaved != null -> "Preview schedule"
-                        nextDraft != null -> "Continue draft"
-                        else -> "Open Workbook"
-                    })
-                }
-            }
-        }
-
-        if (activeDraft != null && (activeDraft.weekStart != nextWeekKey || nextSaved != null)) {
-            M3Card {
-                Text("Continue your draft", style = MaterialTheme.typography.titleMedium)
-                Text(meetingDate(activeDraft.weekStart).format(dateFormat), color = Muted)
-                TextButton(onClick = { onOpenWeek(activeDraft.weekStart) }) { Text("Resume draft") }
-            }
-        }
-
-        if (upcoming.isNotEmpty()) {
-            Text("Other upcoming schedules", style = MaterialTheme.typography.titleLarge)
-            upcoming.take(3).forEach { item ->
-                M3Card {
-                    Text(meetingDate(item.weekStart).format(dateFormat), style = MaterialTheme.typography.titleMedium)
-                    if (item.reading.isNotBlank()) Text(item.reading, color = Muted)
-                    TextButton(onClick = { onPreview(item) }) { Text("Preview schedule") }
-                }
-            }
-        }
-        if (workspace.history.isNotEmpty()) {
-            OutlinedButton(onClick = onHistory, modifier = Modifier.fillMaxWidth()) {
-                Icon(SproutIcons.History, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("View schedule history")
-            }
+    HomeScreen(
+        modifier = modifier,
+        accountName = workspace.name,
+        canCreateSchedule = true,
+        schedules = workspace.history.map { it.workspaceEntry() },
+        loading = false,
+        error = null,
+        onRefresh = null,
+        onOpenSchedule = onPreview,
+        onCreateSchedule = { onOpenWeek(nextWeekKey) },
+        dayOffset = offset,
+        workspaceLabel = "Local Workspace",
+        emptyMessage = "Next meeting: ${nextWeek.plusDays(offset).format(dateFormat)}. Save a schedule to this device to see it here."
+    ) {
+        if (activeDraft != null) M3Card {
+            Text("Continue your draft", style = MaterialTheme.typography.titleMedium)
+            Text(LocalDate.parse(activeDraft.weekStart).plusDays(offset).format(dateFormat), color = Muted)
+            TextButton(onClick = { onOpenWeek(activeDraft.weekStart) }) { Text("Resume draft") }
         }
     }
 }
@@ -5385,56 +5966,50 @@ private fun DeviceWorkbook(
     var useDownload by remember(draft.weekStart) { mutableStateOf(false) }
     var showCaptureLog by rememberSaveable(draft.weekStart) { mutableStateOf(false) }
     var showParts by rememberSaveable(draft.weekStart) { mutableStateOf(false) }
+    val currentWeek = localWeek(LocalDate.now())
+    val weekLabel = remember(date) {
+        date.format(DateTimeFormatter.ofPattern("MMM d")) + " – " +
+            date.plusDays(6).format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
+    }
     WorkflowPage(modifier, actions = {
-        Button(onClick = onNext, enabled = draft.assignments.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("Continue to assignments") }
+        WorkbookContinueButton(onNext = onNext, canContinue = draft.assignments.isNotEmpty())
     }) {
         PageHeading("Workbook", "Step 1 of 3 · Local Workspace")
-        M3Card {
-            OutlinedButton(onClick = { pickDate = true }, modifier = Modifier.fillMaxWidth()) {
-                Text("${draft.week} · Change week")
-            }
-            OutlinedTextField(draft.reading, { onEdit(draft.copy(reading = it)) },
-                label = { Text("Bible reading") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            AdaptivePair(
-                { field -> OutlinedTextField(draft.openingSong, { onEdit(draft.copy(openingSong = it)) },
-                    label = { Text("Opening song") }, singleLine = true, modifier = field) },
-                { field -> OutlinedTextField(draft.closingSong, { onEdit(draft.copy(closingSong = it)) },
-                    label = { Text("Closing song") }, singleLine = true, modifier = field) }
-            )
+        WorkbookMeetingDetails(
+            weekLabel = weekLabel,
+            bible = draft.reading,
+            onBible = { onEdit(draft.copy(reading = it)) },
+            openingSong = draft.openingSong,
+            onOpeningSong = { onEdit(draft.copy(openingSong = it)) },
+            closingSong = draft.closingSong,
+            onClosingSong = { onEdit(draft.copy(closingSong = it)) },
+            readOnly = false,
+            onThisWeek = if (date == currentWeek) null else ({ onSelectWeek(currentWeek) }),
+            onPickDate = { pickDate = true }
+        )
+        val status = when {
+            capturingSelectedWeek -> captureLog.lastOrNull() ?: "Starting workbook capture…"
+            captureResult != null -> captureResult.first
+            captureBusy -> "Capture is running for another week."
+            template != null -> "A captured workbook is available offline for this week."
+            else -> "Use the capture button while online to load this week’s meeting parts."
         }
-        M3Card {
-            Label("JW.ORG WORKBOOK")
-            Text("Weekly program", style = MaterialTheme.typography.titleMedium)
-            if (capturingSelectedWeek) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            val status = when {
-                capturingSelectedWeek -> captureLog.lastOrNull() ?: "Starting workbook capture…"
-                captureResult != null -> captureResult.first
-                captureBusy -> "Capture is running for another week."
-                template != null -> "A captured workbook is available offline for this week."
-                else -> "Capture this week while online to load its meeting parts."
-            }
-            Text(
-                status,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                color = if (captureResult?.second == false) MaterialTheme.colorScheme.error else Muted
-            )
-            FilledTonalButton(onClick = onCapture, enabled = !captureBusy) {
-                Icon(SproutIcons.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(if (capturingSelectedWeek) "Capturing workbook…" else "Capture workbook")
-            }
+        WorkbookProgramCard(
+            workbookStatus = status,
+            workbookBusy = capturingSelectedWeek,
+            workbookCaptureLog = captureLog,
+            fetchError = captureResult?.second == false,
+            captureSucceeded = template != null || captureResult?.second == true,
+            canImport = !captureBusy,
+            actionLabel = "Capture workbook",
+            onImport = onCapture,
+            showCaptureLog = showCaptureLog,
+            onToggleLog = { showCaptureLog = !showCaptureLog }
+        ) {
             if (template != null && !draft.matchesWorkbook(template)) TextButton(onClick = {
                 if (draft.hasLocalWorkbookContent()) useDownload = true
                 else onEdit(template.withLocalRoles(draft))
             }) { Text("Apply captured workbook") }
-            if (captureLog.isNotEmpty()) {
-                TextButton(onClick = { showCaptureLog = !showCaptureLog }) {
-                    Text(if (showCaptureLog) "Hide capture log" else "Show capture log")
-                }
-                if (showCaptureLog) captureLog.forEach { line ->
-                    Text(line, color = Muted, style = MaterialTheme.typography.bodySmall)
-                }
-            }
         }
         if (draft.assignments.isNotEmpty()) M3Card {
             Text("Meeting parts", style = MaterialTheme.typography.titleMedium)

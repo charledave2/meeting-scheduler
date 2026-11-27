@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.45.50 — 2026-11-27
+
+- Refine Local Congregation Workspace setup with meeting day selection, a next meeting date preview, and clearer backup restoration.
+- Align Local and Shared layouts for Home, Workbook, History, Preview & Export, and app preferences. Switch modes from Profile → Workspace.
+- Add a CSV template and participant import to Local Workspace, with a review step, duplicate-name protection, and row validation.
+
 ## v0.45.49 — 2026-11-27
 
 - Show the next meeting and its available actions on Local Workspace Home, with access to upcoming schedules and history.
