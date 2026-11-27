@@ -5071,9 +5071,14 @@ private fun parseParticipantImport(text: String, existing: List<Participant>): P
     val rows = parseParticipantCsvRows(text)
     require(rows.isNotEmpty()) { "The CSV is empty. Download the participant template to get started." }
     val expected = participantCsvColumns.map { it.lowercase(Locale.ROOT) }
-    val columns = rows.first().fields.map { it.lowercase(Locale.ROOT) }
-    require(columns.size == expected.size && columns.toSet() == expected.toSet()) {
-        "The CSV headers don’t match the participant template. Keep all six column names."
+    // Older templates had a UTF-8 BOM. Some editors save its misdecoded bytes as header text.
+    val legacyBom = Regex("""^(?:\uFEFF|\u00EF\u00BB\u00BF|\u00C3\u00AF\u00C2\u00BB\u00C2\u00BF)+""")
+    val columns = rows.first().fields
+        .map { it.replaceFirst(legacyBom, "").trim().lowercase(Locale.ROOT) }
+        .dropLastWhile { it.isEmpty() }
+    require(columns.distinct().size == columns.size && columns.all { it in expected } &&
+        expected.take(2).all { it in columns }) {
+        "The CSV must have Name and Gender headers. Use the template’s column names for optional details."
     }
     val positions = expected.map(columns::indexOf)
     val names = existing.mapTo(mutableSetOf()) { participantImportNameKey(it.name) }
@@ -5082,12 +5087,13 @@ private fun parseParticipantImport(text: String, existing: List<Participant>): P
     var duplicates = 0
 
     for ((line, fields) in rows.drop(1)) {
-        if (fields.size != positions.size) {
-            issues += "Line $line: expected six columns."
+        if (fields.drop(columns.size).any { it.isNotBlank() }) {
+            issues += "Line $line: found values with no matching header."
             continue
         }
-        val name = fields[positions[0]]
-        fun value(index: Int) = fields[positions[index]].lowercase(Locale.ROOT).replace('_', ' ')
+        fun field(index: Int) = fields.getOrNull(positions[index]).orEmpty()
+        val name = field(0)
+        fun value(index: Int) = field(index).lowercase(Locale.ROOT).replace('_', ' ')
         val gender = value(1)
         val rawAppointment = value(2)
         val rawService = value(3)
@@ -5203,7 +5209,6 @@ private fun DeviceWorkspaceApp(
                     val stream = context.contentResolver.openOutputStream(uri, "wt")
                         ?: error("Couldn’t open the template file.")
                     stream.bufferedWriter(Charsets.UTF_8).use { writer ->
-                        writer.write("\uFEFF")
                         writer.write(participantCsvColumns.joinToString(","))
                         writer.write("\r\n")
                     }
@@ -5244,7 +5249,7 @@ private fun DeviceWorkspaceApp(
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Download the template, fill in one participant per row, and save it as CSV UTF-8.")
-                Text("Name and Gender are required. Keep all the template headers.")
+                Text("Name and Gender are required. The other template columns are optional.")
                 Text("Gender: Brother or Sister\nAppointment: Publisher, Ministerial servant, or Elder\nService Status: Publisher or Regular pioneer\nBaptism Status: Baptized or Unbaptized\nStatus: Active or Inactive",
                     color = Muted, style = MaterialTheme.typography.bodySmall)
                 Text("Blank optional fields default to Publisher, Baptized, and Active. Existing names are skipped.",
