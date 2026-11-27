@@ -3759,7 +3759,9 @@ private fun ParticipantsScreen(
     onToggle: (Int) -> Unit, onEdit: (Participant, Participant) -> Unit,
     isAdmin: Boolean, canEdit: Boolean, loading: Boolean, loadError: String?, onRefresh: () -> Unit,
     onSetActive: (Participant, Boolean) -> Unit, onDelete: (Participant) -> Unit,
-    showRefresh: Boolean = true
+    showRefresh: Boolean = true,
+    onImportParticipants: (() -> Unit)? = null,
+    participantImportBusy: Boolean = false
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var genderFilter by rememberSaveable { mutableStateOf("all") }
@@ -3799,6 +3801,7 @@ private fun ParticipantsScreen(
     PageFrame(modifier) { page ->
         Column(page.fillMaxHeight().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             PageHeading("Participants") {
+                if (onImportParticipants != null) TextButton(onClick = onImportParticipants, enabled = !participantImportBusy) { Text("Import") }
                 if (showRefresh) IconButton(onClick = onRefresh) {
                     Icon(SproutIcons.Refresh, contentDescription = "Refresh participants", tint = Forest)
                 }
@@ -3856,7 +3859,7 @@ private fun ParticipantsScreen(
                                 CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp,color=Forest)
                                 Text("Loading participants…",color=Muted,fontSize=12.sp)
                             }
-                        } else if(filtered.isEmpty()) item { Text(if (query.isNotBlank() || genderFilter!="all" || appointmentFilter!="all" || serviceFilter!="all" || baptismFilter!="all") "No participants match the current search or filters." else if (!showRefresh) "No participants yet. Add a participant to get started." else if (canEdit) "No participants yet. Refresh the list or add a participant." else "No participants are available yet. Refresh the list to try again.",color=Muted,fontSize=12.sp,modifier=Modifier.padding(vertical=12.dp)) }
+                        } else if(filtered.isEmpty()) item { Text(if (query.isNotBlank() || genderFilter!="all" || appointmentFilter!="all" || serviceFilter!="all" || baptismFilter!="all") "No participants match the current search or filters." else if (!showRefresh) "No participants yet. Add or import participants to get started." else if (canEdit) "No participants yet. Refresh the list or add a participant." else "No participants are available yet. Refresh the list to try again.",color=Muted,fontSize=12.sp,modifier=Modifier.padding(vertical=12.dp)) }
                         if (filtered.size > visibleCount) item {
                             Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.Center) {
                                 FilledTonalButton(onClick = { visibleCount += 50 }, shape = MaterialTheme.shapes.medium) {
@@ -4979,6 +4982,155 @@ private data class DeviceWorkspace(
     }
 }
 
+
+private val participantCsvColumns = listOf("Name", "Gender", "Appointment", "Service Status", "Baptism Status", "Status")
+private const val participantCsvLimit = 2 * 1024 * 1024
+private const val participantCsvRowLimit = 3000
+
+private data class ParticipantCsvRow(val line: Int, val fields: List<String>)
+private data class ParticipantImportPreview(val entries: List<Participant>, val issues: List<String>, val duplicates: Int)
+
+private fun participantImportNameKey(name: String): String =
+    name.trim().replace(Regex("""\s+"""), " ").lowercase(Locale.ROOT)
+
+private fun readParticipantCsv(input: java.io.InputStream): String {
+    val output = ByteArrayOutputStream()
+    val buffer = ByteArray(8192)
+    while (true) {
+        val size = input.read(buffer)
+        if (size < 0) break
+        require(output.size() + size <= participantCsvLimit) { "Use a CSV file under 2 MB." }
+        output.write(buffer, 0, size)
+    }
+    return try {
+        Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(output.toByteArray())).toString().removePrefix("\uFEFF")
+    } catch (_: java.nio.charset.CharacterCodingException) {
+        throw IllegalArgumentException("Save the template as CSV UTF-8 and try again.")
+    }
+}
+
+private fun parseParticipantCsvRows(text: String): List<ParticipantCsvRow> {
+    val firstLine = text.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty()
+    val delimiter = if (';' in firstLine && ',' !in firstLine) ';' else ','
+    val rows = mutableListOf<ParticipantCsvRow>()
+    val fields = mutableListOf<String>()
+    val field = StringBuilder()
+    var quoted = false
+    var afterQuote = false
+    var line = 1
+    var rowLine = 1
+    var index = 0
+
+    fun endField() {
+        fields.add(field.toString().trim())
+        field.setLength(0)
+        afterQuote = false
+    }
+    fun endRow() {
+        endField()
+        if (fields.any { it.isNotBlank() }) {
+            require(rows.size <= participantCsvRowLimit) { "Import up to $participantCsvRowLimit participants per file." }
+            rows.add(ParticipantCsvRow(rowLine, fields.toList()))
+        }
+        fields.clear()
+    }
+
+    while (index < text.length) {
+        val char = text[index++]
+        val newline = char == '\r' || char == '\n'
+        if (char == '\r' && text.getOrNull(index) == '\n') index++
+        when {
+            quoted && char == '"' && text.getOrNull(index) == '"' -> {
+                field.append('"')
+                index++
+            }
+            quoted && char == '"' -> {
+                quoted = false
+                afterQuote = true
+            }
+            quoted -> field.append(if (newline) '\n' else char)
+            char == delimiter -> endField()
+            newline -> endRow()
+            afterQuote && (char == ' ' || char == '\t') -> Unit
+            afterQuote -> throw IllegalArgumentException("Line $line: unexpected text after a closing quote.")
+            char == '"' && field.isEmpty() -> quoted = true
+            char == '"' -> throw IllegalArgumentException("Line $line: put quotes around the whole CSV field.")
+            else -> field.append(char)
+        }
+        if (newline) {
+            line++
+            if (!quoted) rowLine = line
+        }
+    }
+    require(!quoted) { "Line $rowLine: missing closing quote." }
+    endRow()
+    return rows
+}
+
+private fun parseParticipantImport(text: String, existing: List<Participant>): ParticipantImportPreview {
+    val rows = parseParticipantCsvRows(text)
+    require(rows.isNotEmpty()) { "The CSV is empty. Download the participant template to get started." }
+    val expected = participantCsvColumns.map { it.lowercase(Locale.ROOT) }
+    val columns = rows.first().fields.map { it.lowercase(Locale.ROOT) }
+    require(columns.size == expected.size && columns.toSet() == expected.toSet()) {
+        "The CSV headers don’t match the participant template. Keep all six column names."
+    }
+    val positions = expected.map(columns::indexOf)
+    val names = existing.mapTo(mutableSetOf()) { participantImportNameKey(it.name) }
+    val result = mutableListOf<Participant>()
+    val issues = mutableListOf<String>()
+    var duplicates = 0
+
+    for ((line, fields) in rows.drop(1)) {
+        if (fields.size != positions.size) {
+            issues += "Line $line: expected six columns."
+            continue
+        }
+        val name = fields[positions[0]]
+        fun value(index: Int) = fields[positions[index]].lowercase(Locale.ROOT).replace('_', ' ')
+        val gender = value(1)
+        val rawAppointment = value(2)
+        val rawService = value(3)
+        val baptism = value(4)
+        val status = value(5)
+        val unbaptized = baptism == "unbaptized"
+        val appointment = when (rawAppointment) {
+            "", "publisher" -> "publisher"
+            "ministerial", "ministerial servant" -> "ministerial"
+            "elder" -> "elder"
+            else -> null
+        }
+        val service = when (rawService) {
+            "", "none", "publisher" -> "none"
+            "regular pioneer" -> "regular_pioneer"
+            else -> null
+        }
+        val issue = when {
+            name.isBlank() || name.length > 120 || name.any { it.isISOControl() } -> "Enter a name of 1–120 characters."
+            gender !in setOf("brother", "sister") -> "Gender must be Brother or Sister."
+            appointment == null -> "Use Publisher, Ministerial servant, or Elder for Appointment."
+            service == null -> "Use Publisher or Regular pioneer for Service Status."
+            baptism !in setOf("", "baptized", "unbaptized") -> "Use Baptized or Unbaptized for Baptism Status."
+            status !in setOf("", "active", "inactive") -> "Use Active or Inactive for Status."
+            (unbaptized || gender == "sister") && appointment != "publisher" -> "Elder and Ministerial servant require a baptized brother."
+            unbaptized && service == "regular_pioneer" -> "An unbaptized participant can’t be marked as a regular pioneer."
+            else -> null
+        }
+        if (issue != null) {
+            issues += "Line $line: $issue"
+        } else if (!names.add(participantImportNameKey(name))) {
+            duplicates++
+        } else {
+            result += Participant(
+                name = name, gender = gender, enabled = status != "inactive", unbaptized = unbaptized,
+                appointment = if (unbaptized) "" else requireNotNull(appointment),
+                service = if (unbaptized) "" else requireNotNull(service)
+            )
+        }
+    }
+    return ParticipantImportPreview(result, issues, duplicates)
+}
+
 private fun List<SavedSchedule>.withLocalSchedule(value: SavedSchedule) =
     filterNot { it.weekStart == value.weekStart } + value
 
@@ -5023,6 +5175,9 @@ private fun DeviceWorkspaceApp(
     var localExportType by remember { mutableStateOf<String?>(null) }
     var pendingRestore by remember { mutableStateOf<DeviceWorkspace?>(null) }
     var pendingCreate by remember { mutableStateOf<DeviceWorkspace?>(null) }
+    var participantImportOpen by rememberSaveable { mutableStateOf(false) }
+    var participantImportMessage by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    var participantImport by remember { mutableStateOf<ParticipantImportPreview?>(null) }
     var previewSnapshot by remember { mutableStateOf<SavedSchedule?>(null) }
     val previewWebView = remember { mutableStateOf<WebView?>(null) }
     val available = remember { Screen.entries.toSet() }
@@ -5035,6 +5190,148 @@ private fun DeviceWorkspaceApp(
     fun navigate(next: Screen) {
         previewSnapshot = null
         pageName = next.name
+    }
+
+
+    val downloadParticipantTemplate = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null && !fileBusy) scope.launch {
+            fileBusy = true
+            try {
+                withContext(Dispatchers.IO) {
+                    val stream = context.contentResolver.openOutputStream(uri, "wt")
+                        ?: error("Couldn’t open the template file.")
+                    stream.bufferedWriter(Charsets.UTF_8).use { writer ->
+                        writer.write("\uFEFF")
+                        writer.write(participantCsvColumns.joinToString(","))
+                        writer.write("\r\n")
+                    }
+                }
+                participantImportMessage = "Participant template saved." to false
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                participantImportMessage = "Couldn’t save the participant template." to true
+            } finally {
+                fileBusy = false
+            }
+        }
+    }
+    val chooseParticipantCsv = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val existing = workspace?.participants
+        if (uri != null && existing != null && !fileBusy) scope.launch {
+            fileBusy = true
+            try {
+                participantImport = withContext(Dispatchers.IO) {
+                    val stream = context.contentResolver.openInputStream(uri)
+                        ?: error("Couldn’t open the CSV file.")
+                    parseParticipantImport(stream.use(::readParticipantCsv), existing)
+                }
+                participantImportOpen = false
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                val detail = if (error is IllegalArgumentException) error.message ?: "Invalid CSV file." else "Couldn’t read the participant CSV file."
+                participantImportMessage = detail to true
+            } finally {
+                fileBusy = false
+            }
+        }
+    }
+
+    if (participantImportOpen) AlertDialog(
+        onDismissRequest = { if (!fileBusy) participantImportOpen = false },
+        title = { Text("Import participants") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Download the template, fill in one participant per row, and save it as CSV UTF-8.")
+                Text("Name and Gender are required. Keep all the template headers.")
+                Text("Gender: Brother or Sister\nAppointment: Publisher, Ministerial servant, or Elder\nService Status: Publisher or Regular pioneer\nBaptism Status: Baptized or Unbaptized\nStatus: Active or Inactive",
+                    color = Muted, style = MaterialTheme.typography.bodySmall)
+                Text("Blank optional fields default to Publisher, Baptized, and Active. Existing names are skipped.",
+                    color = Muted, style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(
+                    onClick = { downloadParticipantTemplate.launch("participants-template.csv") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !fileBusy
+                ) { Text("Download template") }
+                participantImportMessage?.let { (detail, error) ->
+                    Text(detail, color = if (error) MaterialTheme.colorScheme.error else Muted,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                }
+                if (fileBusy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !fileBusy, onClick = {
+                participantImportMessage = null
+                chooseParticipantCsv.launch(arrayOf("text/*", "application/csv", "application/vnd.ms-excel", "application/octet-stream"))
+            }) { Text("Choose CSV file") }
+        },
+        dismissButton = { TextButton(enabled = !fileBusy, onClick = { participantImportOpen = false }) { Text("Cancel") } }
+    )
+
+    participantImport?.let { preview ->
+        AlertDialog(
+            onDismissRequest = { participantImport = null },
+            title = { Text("Review participant import") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("${preview.entries.size} ready to import · ${preview.duplicates} duplicate names · ${preview.issues.size} invalid rows")
+                    preview.entries.take(8).forEach { person ->
+                        Column {
+                            Text(person.name, style = MaterialTheme.typography.titleSmall)
+                            val details = buildList {
+                                add(genderLabel(person.gender))
+                                if (person.unbaptized) add("Unbaptized")
+                                else {
+                                    add(appointmentLabel(person.appointment))
+                                    if (person.service == "regular_pioneer") add(serviceLabel(person.service))
+                                }
+                                if (!person.enabled) add("Inactive")
+                            }
+                            Text(details.joinToString(" · "), color = Muted, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    if (preview.entries.size > 8) Text("And ${preview.entries.size - 8} more.", color = Muted)
+                    if (preview.issues.isNotEmpty()) {
+                        Text("Invalid rows will be skipped.", color = MaterialTheme.colorScheme.error)
+                        preview.issues.take(8).forEach { issue ->
+                            Text(issue, color = Muted, style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (preview.issues.size > 8) Text("And ${preview.issues.size - 8} more invalid rows.", color = Muted)
+                    }
+                    if (preview.entries.isEmpty() && preview.issues.isEmpty() && preview.duplicates == 0) {
+                        Text("The template has no participant rows. Add names and try again.", color = Muted)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (preview.entries.isNotEmpty()) {
+                        val latest = workspace
+                        if (latest != null) {
+                            val names = latest.participants.mapTo(mutableSetOf()) { participantImportNameKey(it.name) }
+                            val newEntries = preview.entries.filter { names.add(participantImportNameKey(it.name)) }
+                            val lastId = latest.participants.maxOfOrNull { it.id } ?: 0
+                            if (newEntries.size > Int.MAX_VALUE - lastId) {
+                                message("Couldn’t assign participant IDs. No participants were imported.")
+                            } else if (newEntries.isEmpty()) {
+                                message("No new participants to import.")
+                            } else {
+                                update(latest.copy(participants = latest.participants + newEntries.mapIndexed { index, person ->
+                                    person.copy(id = lastId + index + 1)
+                                }))
+                                message("Imported ${newEntries.size} participants on this device.")
+                            }
+                        }
+                    }
+                    participantImport = null
+                }) { Text(if (preview.entries.isEmpty()) "Done" else "Import ${preview.entries.size}") }
+            },
+            dismissButton = {
+                if (preview.entries.isNotEmpty()) TextButton(onClick = { participantImport = null }) { Text("Cancel") }
+            }
+        )
     }
 
     val backup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -5376,7 +5673,9 @@ private fun DeviceWorkspaceApp(
                             drafts = data.drafts.map { it.withoutLocalParticipant(person.name) }
                         ))
                     },
-                    showRefresh = false
+                    showRefresh = false,
+                    onImportParticipants = { participantImportMessage = null; participantImportOpen = true },
+                    participantImportBusy = fileBusy
                 )
             }
             Screen.ACCOUNTS -> PageColumn(modifier) {
