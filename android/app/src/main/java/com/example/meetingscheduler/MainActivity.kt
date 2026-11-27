@@ -401,6 +401,16 @@ private data class Participant(
     val id: Int = 0,
     val unbaptized: Boolean = false
 )
+private fun JSONObject.toSharedParticipant() = Participant(
+    name = optString("name"),
+    appointment = optString("appointment"),
+    service = optString("serviceStatus"),
+    gender = optString("gender").ifBlank { "unspecified" },
+    enabled = optBoolean("active", true),
+    id = optInt("id"),
+    unbaptized = optBoolean("unbaptized")
+)
+
 private fun Participant.isBrother() = gender.equals("brother", true)
 private fun Participant.isAppointedBrother() = isBrother() && appointment.lowercase().replace('_',' ').let { it=="elder" || it=="ministerial" || it=="ministerial servant" || it=="ministerialservant" }
 
@@ -1181,7 +1191,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
             runCatching { api.members(includeInactive=true) }.onSuccess { response ->
                 participantAdmin=response.optBoolean("isAdmin",participantAdmin); participantCanEdit=response.optBoolean("canManageRoles",participantCanEdit)
                 val rows=response.optJSONArray("members") ?: JSONArray(); participants.clear()
-                for(i in 0 until rows.length()) rows.optJSONObject(i)?.let { row -> participants.add(Participant(row.optString("name"),row.optString("appointment"),row.optString("serviceStatus"),row.optString("gender").ifBlank{"unspecified"},row.optBoolean("active",true),row.optInt("id"),row.optBoolean("unbaptized",false))) }
+                for (i in 0 until rows.length()) rows.optJSONObject(i)?.let { participants.add(it.toSharedParticipant()) }
                 store.saveParticipants(participants.toList()); participantsLoaded=true; participantsLoadError=null; cloudStatus="Nakuha ang participants mula sa website"
             }.onFailure { participantsLoadError=it.message ?: "Suriin ang internet at subukan ulit."; cloudStatus="Hindi makuha ang participants: ${it.message ?: "server error"}"; participantsLoaded=true }
             participantsBusy=false
@@ -1689,16 +1699,36 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
             )
             Screen.PARTICIPANTS -> {
                 ParticipantsScreen(modifier = scroll, participants = participants, loading = participantsBusy, loadError = participantsLoadError,
-                    onAdd = { name -> participants.add(0, Participant(name)); store.saveParticipants(participants.toList()); toastMessage = "Naidagdag si $name" },
-                    onToggle = { index -> participants[index] = participants[index].copy(enabled = !participants[index].enabled); store.saveParticipants(participants.toList()) },
-                    onEdit = { original, changed -> authScope.launch {
-                        runCatching { if (changed.id > 0 && signedIn) api.updateMember(changed.id, changed.name, changed.appointment, changed.service, changed.gender, changed.unbaptized) else JSONObject() }
-                            .onSuccess { response ->
-                                if (changed.unbaptized && !response.optBoolean("unbaptized",false)) { toastMessage = "Hindi pa updated ang website API. I-deploy muna ang backend update." }
-                                else participants.indexOfFirst { it.id == original.id && it.name == original.name }.takeIf { it >= 0 }?.let { index -> participants[index] = changed; store.saveParticipants(participants.toList()); toastMessage = "Na-update si ${changed.name}" }
-                            }
-                            .onFailure { toastMessage = it.message ?: "Hindi na-update ang participant" }
-                    } },
+                    onAdd = { name ->
+                        val normalizedName = name.replace(Regex("\\s+"), " ")
+                        check(participants.none { it.id > 0 && it.name.equals(normalizedName, ignoreCase = true) }) {
+                            "A participant already uses that name."
+                        }
+                        val added = api.addMember(normalizedName).toSharedParticipant()
+                        participants.removeAll { it.id == added.id || (it.id <= 0 && it.name.equals(added.name, ignoreCase = true)) }
+                        participants.add(0, added)
+                        store.saveParticipants(participants.toList())
+                        toastMessage = "Naidagdag si ${added.name}"
+                    },
+                    onEdit = { original, changed ->
+                        if (original.id <= 0) {
+                            toastMessage = "Nasa device lang ang participant na ito. Gamitin ang Add participant para ma-save sa Shared Workspace."
+                        } else authScope.launch {
+                            runCatching {
+                                api.updateMember(original.id, changed.name, changed.appointment, changed.service, changed.gender, changed.unbaptized)
+                            }.onSuccess { response ->
+                                val saved = response.toSharedParticipant()
+                                val index = participants.indexOfFirst { it.id == saved.id }
+                                if (index >= 0) {
+                                    participants[index] = saved
+                                    store.saveParticipants(participants.toList())
+                                }
+                                toastMessage = if (saved.unbaptized != changed.unbaptized) {
+                                    "Na-update si ${saved.name}, pero hindi nabago ang baptism status."
+                                } else "Na-update si ${saved.name}"
+                            }.onFailure { toastMessage = it.message ?: "Hindi na-update ang participant" }
+                        }
+                    },
                     isAdmin=participantAdmin,
                     canEdit=canEdit(Screen.PARTICIPANTS) && participantCanEdit,
                     onRefresh={participantsLoadError=null;participantsLoaded=false},
@@ -3826,8 +3856,8 @@ private fun buildOfficialScheduleHtml(context: Context, weekStart:String,bible:S
 
 @Composable
 private fun ParticipantsScreen(
-    modifier: Modifier, participants: List<Participant>, onAdd: (String) -> Unit,
-    onToggle: (Int) -> Unit, onEdit: (Participant, Participant) -> Unit,
+    modifier: Modifier, participants: List<Participant>, onAdd: suspend (String) -> Unit,
+    onEdit: (Participant, Participant) -> Unit,
     isAdmin: Boolean, canEdit: Boolean, loading: Boolean, loadError: String?, onRefresh: () -> Unit,
     onSetActive: (Participant, Boolean) -> Unit, onDelete: (Participant) -> Unit,
     showRefresh: Boolean = true,
@@ -3842,8 +3872,11 @@ private fun ParticipantsScreen(
     var statusFilter by rememberSaveable { mutableStateOf("active") }
     var sortBy by rememberSaveable { mutableStateOf("name") }
     var showFilters by remember { mutableStateOf(false) }
-    var showAdd by remember { mutableStateOf(false) }
-    var newName by remember { mutableStateOf("") }
+    val addScope = rememberCoroutineScope()
+    var showAdd by rememberSaveable { mutableStateOf(false) }
+    var newName by rememberSaveable { mutableStateOf("") }
+    var adding by remember { mutableStateOf(false) }
+    var addError by remember { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf<Participant?>(null) }
     var deleteTarget by remember { mutableStateOf<Participant?>(null) }
     var editName by remember { mutableStateOf("") }
@@ -3876,7 +3909,7 @@ private fun ParticipantsScreen(
                 if (showRefresh) IconButton(onClick = onRefresh) {
                     Icon(SproutIcons.Refresh, contentDescription = "Refresh participants", tint = Forest)
                 }
-                if (canEdit) IconButton(onClick = { showAdd = true }) {
+                if (canEdit) IconButton(onClick = { showAdd = true }, enabled = !loading) {
                     Icon(SproutIcons.PersonAdd, contentDescription = "Add participant", tint = Forest)
                 }
             }
@@ -3899,8 +3932,8 @@ private fun ParticipantsScreen(
                         IconButton(onClick={showFilters=true},modifier=Modifier.sizeIn(minWidth=48.dp,minHeight=48.dp)){Icon(SproutIcons.Sort,contentDescription="Filter and sort participants",tint=Forest,modifier=Modifier.size(22.dp))}
                     }
                     LazyColumn(Modifier.weight(1f).fillMaxWidth(),contentPadding=PaddingValues(top=6.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
-                        itemsIndexed(filtered.take(visibleCount),key={_,entry->if(entry.value.id>0)entry.value.id.toLong() else entry.index.toLong()}) { _,entry ->
-                            val (index,p)=entry
+                        itemsIndexed(filtered.take(visibleCount), key = { _, entry -> if (entry.value.id > 0) entry.value.id.toLong() else -1L - entry.index }) { _, entry ->
+                            val p = entry.value
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             Row(Modifier.fillMaxWidth().heightIn(min=52.dp).semantics { if (canEdit) role = Role.Button }.then(if(canEdit) Modifier.clickable { beginEdit(p) } else Modifier).padding(vertical=7.dp),verticalAlignment=Alignment.CenterVertically) {
                                 Box(Modifier.size(38.dp).background(ForestContainer,CircleShape),contentAlignment=Alignment.Center){Text(p.name.split(" ").take(2).mapNotNull{it.firstOrNull()}.joinToString("").uppercase(),color=Forest,fontWeight=FontWeight.Bold,fontSize = 12.sp)}
@@ -3913,7 +3946,7 @@ private fun ParticipantsScreen(
                                     )
                                 }
                                 if(canEdit) IconButton(onClick={beginEdit(p)},modifier=Modifier.size(48.dp)){Icon(SproutIcons.Edit,contentDescription="Edit participant",tint=Forest,modifier=Modifier.size(20.dp))}
-                                if(isAdmin) {
+                                if (isAdmin && p.id > 0) {
                                     var menu by remember(p.id){mutableStateOf(false)}
                                     Box {
                                         IconButton(onClick = { menu = true }) { Icon(SproutIcons.MoreVert, contentDescription = "Participant actions") }
@@ -3945,7 +3978,55 @@ private fun ParticipantsScreen(
             }
         }
     }
-    if(showAdd && canEdit) AlertDialog(onDismissRequest={showAdd=false},containerColor=MaterialTheme.colorScheme.surfaceContainerHigh,shape = MaterialTheme.shapes.extraLarge,title={Text("Add participant")},text={OutlinedTextField(newName,{newName=it},label={Text("Full name")},singleLine=true)},confirmButton={TextButton(onClick={if(newName.isNotBlank())onAdd(newName.trim());newName="";showAdd=false}){Text("Add",color=Forest)}},dismissButton={TextButton(onClick={showAdd=false}){Text("Cancel",color=Forest)}})
+    if (showAdd && canEdit) {
+        fun closeAdd() {
+            showAdd = false
+            newName = ""
+            addError = null
+        }
+        AlertDialog(
+            onDismissRequest = { if (!adding) closeAdd() },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = MaterialTheme.shapes.extraLarge,
+            title = { Text("Add participant") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it; addError = null },
+                        label = { Text("Full name") },
+                        singleLine = true,
+                        enabled = !adding,
+                        isError = addError != null,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    addError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = newName.isNotBlank() && !adding && !loading,
+                    onClick = {
+                        adding = true
+                        addError = null
+                        val name = newName.trim()
+                        addScope.launch {
+                            try {
+                                onAdd(name)
+                                closeAdd()
+                            } catch (error: Exception) {
+                                if (error is kotlinx.coroutines.CancellationException) throw error
+                                addError = error.message ?: "Could not add the participant. Try again."
+                            } finally {
+                                adding = false
+                            }
+                        }
+                    }
+                ) { Text(if (adding) "Adding…" else "Add") }
+            },
+            dismissButton = { TextButton(onClick = ::closeAdd, enabled = !adding) { Text("Cancel") } }
+        )
+    }
     if(editing!=null && canEdit) AlertDialog(
         onDismissRequest={editing=null},containerColor=MaterialTheme.colorScheme.surfaceContainerHigh,shape = MaterialTheme.shapes.extraLarge,title={Text("Edit participant",fontWeight=FontWeight.Bold)},
         text={Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -6012,13 +6093,14 @@ private fun DeviceWorkspaceApp(
                     ParticipantsScreen(
                         modifier = modifier, participants = data.participants,
                         onAdd = { name ->
-                            if (data.participants.any { it.name.equals(name.trim(), true) }) message("A participant already uses that name.")
-                            else savePeople(data.participants + Participant(
-                                name = name.trim(), appointment = "publisher", service = "none", gender = "brother",
+                            check(data.participants.none { it.name.equals(name, ignoreCase = true) }) {
+                                "A participant already uses that name."
+                            }
+                            savePeople(data.participants + Participant(
+                                name = name, appointment = "publisher", service = "none", gender = "brother",
                                 id = (data.participants.maxOfOrNull { it.id } ?: 0) + 1
                             ))
                         },
-                        onToggle = {},
                         onEdit = { old, updated ->
                             if (data.participants.any { it.id != old.id && it.name.equals(updated.name, true) }) {
                                 message("A participant already uses that name.")

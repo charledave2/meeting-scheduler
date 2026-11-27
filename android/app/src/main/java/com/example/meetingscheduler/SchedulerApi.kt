@@ -135,6 +135,12 @@ internal class SchedulerApi(context: Context) {
         request("/api/members${if (includeInactive) "?includeInactive=true" else ""}", "GET", null)
     }
 
+    suspend fun addMember(name: String): JSONObject = withContext(Dispatchers.IO) {
+        request("/api/members", "POST", JSONObject().put("name", name)).optJSONObject("member")
+            ?.takeIf { it.optInt("id") > 0 }
+            ?: throw IllegalStateException("Walang participant ID mula sa website.")
+    }
+
     suspend fun participantRotation(date: String): List<ParticipantRotation> = withContext(Dispatchers.IO) {
         val rows = request("/api/rotation?date=$date", "GET", null).optJSONArray("stats") ?: JSONArray()
         (0 until rows.length()).mapNotNull { index -> rows.optJSONObject(index)?.let { row ->
