@@ -830,6 +830,8 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
     val context = LocalContext.current
     val activity = androidx.activity.compose.LocalActivity.current as MainActivity
     val appLock = activity.appLock
+    var localIntroFinished by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) { delay(1_650); localIntroFinished = true }
     val workspaceState = rememberSaveableStateHolder()
     val store = remember(context) { LocalWorkspaceStore(context) }
     val workspacePreferences = remember(context) { context.getSharedPreferences("meeting_scheduler_workspace_choice", Context.MODE_PRIVATE) }
@@ -865,6 +867,8 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
             Box(Modifier.fillMaxSize()) {
                 if (appLock.state.locked) {
                     AppLockScreen(appLock)
+                } else if (deviceMode && !localIntroFinished) {
+                    MeetingSplashScreen(onOpenLocal = null)
                 } else if (deviceMode) {
                     workspaceState.SaveableStateProvider("deviceWorkspace") {
                         DeviceWorkspaceApp(
@@ -914,7 +918,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
     var loginError by remember { mutableStateOf<String?>(null) }
     var passwordChangeRequired by rememberSaveable { mutableStateOf(false) }
     var splashFinished by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(Unit) { delay(1_050); splashFinished = true }
+    LaunchedEffect(Unit) { delay(1_650); splashFinished = true }
     var identityName by rememberSaveable { mutableStateOf("") }
     var identityUsername by rememberSaveable { mutableStateOf("") }
     var identityRole by rememberSaveable { mutableStateOf("") }
@@ -2100,135 +2104,88 @@ private fun MeetingSplashScreen(onOpenLocal: (() -> Unit)?) {
     }
     val colors = MaterialTheme.colorScheme
     val compact = LocalConfiguration.current.screenHeightDp < 440
-    var reveal by remember { mutableStateOf(false) }
-    val entrance = remember { Animatable(0f) }
-    val orbit = rememberInfiniteTransition(label = "splash orbit")
-    val orbitAngle by orbit.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(8_000, easing = LinearEasing), RepeatMode.Restart),
-        label = "splash orbit angle"
-    )
-    LaunchedEffect(Unit) {
-        reveal = true
-        entrance.animateTo(1f, tween(880, easing = FastOutSlowInEasing))
-    }
-    Box(
-        Modifier.fillMaxSize().background(Brush.verticalGradient(
-            listOf(colors.background, colors.surfaceContainerLow, colors.background)
-        )),
-        contentAlignment = Alignment.Center
-    ) {
+    val reveal = remember { Animatable(0f) }
+    val orbit = rememberInfiniteTransition(label = "calendar orbit")
+    val angle = orbit.animateFloat(0f, 360f,
+        infiniteRepeatable(tween(12_000, easing = LinearEasing)), label = "orbit rotation")
+    LaunchedEffect(Unit) { reveal.animateTo(1f, tween(1_350, easing = LinearEasing)) }
+    Box(Modifier.fillMaxSize().background(colors.background), contentAlignment = Alignment.Center) {
         Column(
-            modifier = Modifier.fillMaxSize().safeDrawingPadding()
-                .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
+            Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Box(
-                Modifier.size(if (compact) 176.dp else 226.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                ComposeCanvas(
-                    Modifier.fillMaxSize().graphicsLayer { rotationZ = orbitAngle }
-                ) {
-                    val inset = size.minDimension * 0.075f
-                    val ringSize = androidx.compose.ui.geometry.Size(
-                        size.width - inset * 2f,
-                        size.height - inset * 2f
-                    )
-                    drawCircle(colors.primaryContainer.copy(alpha = 0.22f), radius = size.minDimension * 0.45f)
-                    drawArc(
-                        color = colors.primary.copy(alpha = 0.9f),
-                        startAngle = -108f, sweepAngle = 126f, useCenter = false,
-                        topLeft = androidx.compose.ui.geometry.Offset(inset, inset), size = ringSize,
-                        style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
-                    )
-                    drawArc(
-                        color = colors.secondary.copy(alpha = 0.48f),
-                        startAngle = 78f, sweepAngle = 78f, useCenter = false,
-                        topLeft = androidx.compose.ui.geometry.Offset(inset, inset), size = ringSize,
-                        style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round)
-                    )
-                    val radians = Math.toRadians(orbitAngle.toDouble())
-                    val orbitRadius = size.minDimension * 0.45f
-                    drawCircle(
-                        color = colors.tertiary,
-                        radius = 3.dp.toPx(),
-                        center = androidx.compose.ui.geometry.Offset(
-                            size.width / 2f + kotlin.math.cos(radians).toFloat() * orbitRadius,
-                            size.height / 2f + kotlin.math.sin(radians).toFloat() * orbitRadius
-                        )
-                    )
+            ComposeCanvas(Modifier.size(if (compact) 168.dp else 224.dp)) {
+                // Read animation state during drawing so frames skip composition and layout.
+                val progress = reveal.value
+                val rotation = angle.value
+                fun phase(start: Float, end: Float): Float =
+                    FastOutSlowInEasing.transform(((progress - start) / (end - start)).coerceIn(0f, 1f))
+                val unit = size.minDimension / 240f
+                val center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
+                fun point(x: Float, y: Float) = center + androidx.compose.ui.geometry.Offset(x * unit, y * unit)
+                val ringReveal = phase(0f, 0.42f)
+                drawCircle(Brush.radialGradient(
+                    listOf(colors.primary.copy(alpha = 0.12f), Color.Transparent),
+                    center = center, radius = 118f * unit
+                ), radius = 118f * unit, center = center)
+                drawCircle(colors.primary.copy(alpha = 0.10f * ringReveal), 94f * unit, center,
+                    style = Stroke(unit))
+                drawArc(colors.primary.copy(alpha = 0.75f * ringReveal), -120f + rotation,
+                    116f * ringReveal, false, point(-94f, -94f),
+                    androidx.compose.ui.geometry.Size(188f * unit, 188f * unit),
+                    style = Stroke(1.6f * unit, cap = StrokeCap.Round))
+                drawArc(colors.secondary.copy(alpha = 0.5f * ringReveal), 60f - rotation * 0.6f,
+                    78f * ringReveal, false, point(-82f, -82f),
+                    androidx.compose.ui.geometry.Size(164f * unit, 164f * unit),
+                    style = Stroke(unit, cap = StrokeCap.Round))
+                val calendar = phase(0.10f, 0.58f)
+                val top = -44f + 8f * (1f - calendar)
+                drawRoundRect(colors.primary.copy(alpha = calendar * 0.06f), point(-45f, top),
+                    androidx.compose.ui.geometry.Size(90f * unit, 82f * unit),
+                    androidx.compose.ui.geometry.CornerRadius(10f * unit))
+                drawRoundRect(colors.primary.copy(alpha = calendar), point(-45f, top),
+                    androidx.compose.ui.geometry.Size(90f * unit, 82f * unit),
+                    androidx.compose.ui.geometry.CornerRadius(10f * unit), style = Stroke(2f * unit))
+                drawLine(colors.primary.copy(alpha = calendar), point(-44f, top + 21f),
+                    point(44f, top + 21f), 1.5f * unit)
+                for (x in listOf(-26f, 26f)) {
+                    drawLine(colors.onSurface.copy(alpha = calendar), point(x, top - 7f),
+                        point(x, top + 5f), 2.5f * unit, StrokeCap.Round)
                 }
-                Surface(
-                    modifier = Modifier.size(if (compact) 112.dp else 138.dp).graphicsLayer {
-                        val scale = 0.76f + 0.24f * entrance.value
-                        scaleX = scale
-                        scaleY = scale
-                        rotationY = (1f - entrance.value) * -22f
-                        translationY = (1f - entrance.value) * 18.dp.toPx()
-                    },
-                    shape = RoundedCornerShape(if (compact) 30.dp else 38.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.48f)),
-                    shadowElevation = 18.dp
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        MeetingSchedulerBrandIcon(Modifier.size(if (compact) 82.dp else 100.dp), "JW Meeting Manager")
-                    }
+                repeat(9) { index ->
+                    val cell = phase(0.32f + index * 0.025f, 0.60f + index * 0.025f)
+                    val x = -25f + (index % 3) * 25f
+                    val y = top + 37f + (index / 3) * 17f
+                    drawRoundRect(colors.primary.copy(alpha = cell * if (index == 4) 0.85f else 0.25f),
+                        point(x - 5f, y - 5f), androidx.compose.ui.geometry.Size(10f * unit, 10f * unit),
+                        androidx.compose.ui.geometry.CornerRadius(2f * unit))
                 }
-                if (reveal) {
-                    Surface(
-                        modifier = Modifier.align(Alignment.BottomEnd).offset(x = (-24).dp, y = (-23).dp)
-                            .graphicsLayer { scaleX = entrance.value; scaleY = entrance.value; alpha = entrance.value },
-                        shape = CircleShape,
-                        color = colors.primaryContainer,
-                        border = BorderStroke(3.dp, colors.primary),
-                        shadowElevation = 6.dp
-                    ) {
-                        Box(Modifier.size(if (compact) 34.dp else 40.dp), contentAlignment = Alignment.Center) {
-                            Icon(SproutIcons.CheckCircle, contentDescription = null,
-                                tint = colors.onPrimaryContainer, modifier = Modifier.size(if (compact) 22.dp else 26.dp))
-                        }
-                    }
+                val check = phase(0.68f, 0.95f)
+                val checkPath = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(point(-4f, top + 54f).x, point(-4f, top + 54f).y)
+                    lineTo(point(-1f, top + 57f).x, point(-1f, top + 57f).y)
+                    lineTo(point(5f, top + 50f).x, point(5f, top + 50f).y)
                 }
+                drawPath(checkPath, colors.onPrimary.copy(alpha = check), style = Stroke(2f * unit, cap = StrokeCap.Round))
             }
-            Spacer(Modifier.height(if (compact) 10.dp else 18.dp))
-            AnimatedVisibility(
-                visible = reveal,
-                enter = fadeIn(tween(380, delayMillis = 170)) +
-                    slideInVertically(tween(440, delayMillis = 170)) { it / 4 }
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        "JW Meeting Manager",
-                        color = colors.onSurface,
-                        fontSize = if (compact) 20.sp else 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "Aayos ang bawat bahagi ng pulong",
-                        color = colors.onSurfaceVariant,
-                        fontSize = if (compact) 11.sp else 13.sp,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                }
-            }
-            Spacer(Modifier.height(if (compact) 18.dp else 26.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                repeat(3) { index ->
-                    Box(
-                        Modifier.size(if (index == 1) 14.dp else 5.dp, 5.dp)
-                            .clip(CircleShape)
-                            .background(if (index == 1) colors.primary else colors.primary.copy(alpha = 0.4f))
-                    )
-                }
+            Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
+            Text("JW Meeting Manager", color = colors.onSurface,
+                fontSize = if (compact) 22.sp else 26.sp, fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.graphicsLayer {
+                    val progress = ((reveal.value - 0.40f) / 0.38f).coerceIn(0f, 1f)
+                    alpha = progress
+                    translationY = (1f - FastOutSlowInEasing.transform(progress)) * 8.dp.toPx()
+                })
+            Spacer(Modifier.height(18.dp))
+            ComposeCanvas(Modifier.size(36.dp, 2.dp)) {
+                drawRoundRect(colors.primary.copy(alpha = reveal.value * 0.5f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height))
             }
             if (showLocalShortcut && onOpenLocal != null) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(24.dp))
                 OutlinedButton(onClick = onOpenLocal) { Text("Open Local Workspace") }
             }
         }
