@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.45.56 — 2026-11-28
+
+- Refresh the Workbook layout in Local and Shared Workspace with clear meeting-week selection, editable meeting details, and a three-step progress indicator.
+- Align capture actions and status, show imported meeting-part counts, and keep the capture log collapsed until opened.
+- Adapt song fields and capture actions to compact screens and larger fonts, with a prominent Continue to assignments button.
+- Add a native calendar splash with gentle orbit rings, staged calendar cells, and a centered app title. The 1.65-second intro follows the selected theme and palette in both workspaces.
+
 ## v0.45.55 — 2026-11-28
 
 - Preserve participant edits on save failures and apply consistent gender and appointment rules.
