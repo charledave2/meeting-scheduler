@@ -830,6 +830,8 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
     val context = LocalContext.current
     val activity = androidx.activity.compose.LocalActivity.current as MainActivity
     val appLock = activity.appLock
+    var localIntroFinished by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) { delay(1_650); localIntroFinished = true }
     val workspaceState = rememberSaveableStateHolder()
     val store = remember(context) { LocalWorkspaceStore(context) }
     val workspacePreferences = remember(context) { context.getSharedPreferences("meeting_scheduler_workspace_choice", Context.MODE_PRIVATE) }
@@ -865,6 +867,8 @@ private fun MeetingSchedulerRoot(window: android.view.Window) {
             Box(Modifier.fillMaxSize()) {
                 if (appLock.state.locked) {
                     AppLockScreen(appLock)
+                } else if (deviceMode && !localIntroFinished) {
+                    MeetingSplashScreen(onOpenLocal = null)
                 } else if (deviceMode) {
                     workspaceState.SaveableStateProvider("deviceWorkspace") {
                         DeviceWorkspaceApp(
@@ -914,7 +918,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
     var loginError by remember { mutableStateOf<String?>(null) }
     var passwordChangeRequired by rememberSaveable { mutableStateOf(false) }
     var splashFinished by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(Unit) { delay(1_050); splashFinished = true }
+    LaunchedEffect(Unit) { delay(1_650); splashFinished = true }
     var identityName by rememberSaveable { mutableStateOf("") }
     var identityUsername by rememberSaveable { mutableStateOf("") }
     var identityRole by rememberSaveable { mutableStateOf("") }
@@ -1641,7 +1645,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
             Screen.DETAILS -> DetailsScreen(
                 modifier = scroll, weekLabel = weekLabel, bible = bible, onBible = { bible = it; persistDetails() },
                 openingSong = openingSong, onOpeningSong = { openingSong = it; persistDetails() }, closingSong = closingSong,
-                onClosingSong = { closingSong = it; persistDetails() },
+                onClosingSong = { closingSong = it; persistDetails() }, partCount = parts.size,
                 onPickDate = { datePicker = true }, onImport = { accountScope.launch { fetchWorkbookForSelectedWeek() } },
                 workbookStatus = workbookStatus,
                 workbookBusy = workbookBusy, workbookCaptureLog = workbookCaptureLog,
@@ -2100,135 +2104,88 @@ private fun MeetingSplashScreen(onOpenLocal: (() -> Unit)?) {
     }
     val colors = MaterialTheme.colorScheme
     val compact = LocalConfiguration.current.screenHeightDp < 440
-    var reveal by remember { mutableStateOf(false) }
-    val entrance = remember { Animatable(0f) }
-    val orbit = rememberInfiniteTransition(label = "splash orbit")
-    val orbitAngle by orbit.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(8_000, easing = LinearEasing), RepeatMode.Restart),
-        label = "splash orbit angle"
-    )
-    LaunchedEffect(Unit) {
-        reveal = true
-        entrance.animateTo(1f, tween(880, easing = FastOutSlowInEasing))
-    }
-    Box(
-        Modifier.fillMaxSize().background(Brush.verticalGradient(
-            listOf(colors.background, colors.surfaceContainerLow, colors.background)
-        )),
-        contentAlignment = Alignment.Center
-    ) {
+    val reveal = remember { Animatable(0f) }
+    val orbit = rememberInfiniteTransition(label = "calendar orbit")
+    val angle = orbit.animateFloat(0f, 360f,
+        infiniteRepeatable(tween(12_000, easing = LinearEasing)), label = "orbit rotation")
+    LaunchedEffect(Unit) { reveal.animateTo(1f, tween(1_350, easing = LinearEasing)) }
+    Box(Modifier.fillMaxSize().background(colors.background), contentAlignment = Alignment.Center) {
         Column(
-            modifier = Modifier.fillMaxSize().safeDrawingPadding()
-                .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
+            Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Box(
-                Modifier.size(if (compact) 176.dp else 226.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                ComposeCanvas(
-                    Modifier.fillMaxSize().graphicsLayer { rotationZ = orbitAngle }
-                ) {
-                    val inset = size.minDimension * 0.075f
-                    val ringSize = androidx.compose.ui.geometry.Size(
-                        size.width - inset * 2f,
-                        size.height - inset * 2f
-                    )
-                    drawCircle(colors.primaryContainer.copy(alpha = 0.22f), radius = size.minDimension * 0.45f)
-                    drawArc(
-                        color = colors.primary.copy(alpha = 0.9f),
-                        startAngle = -108f, sweepAngle = 126f, useCenter = false,
-                        topLeft = androidx.compose.ui.geometry.Offset(inset, inset), size = ringSize,
-                        style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
-                    )
-                    drawArc(
-                        color = colors.secondary.copy(alpha = 0.48f),
-                        startAngle = 78f, sweepAngle = 78f, useCenter = false,
-                        topLeft = androidx.compose.ui.geometry.Offset(inset, inset), size = ringSize,
-                        style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round)
-                    )
-                    val radians = Math.toRadians(orbitAngle.toDouble())
-                    val orbitRadius = size.minDimension * 0.45f
-                    drawCircle(
-                        color = colors.tertiary,
-                        radius = 3.dp.toPx(),
-                        center = androidx.compose.ui.geometry.Offset(
-                            size.width / 2f + kotlin.math.cos(radians).toFloat() * orbitRadius,
-                            size.height / 2f + kotlin.math.sin(radians).toFloat() * orbitRadius
-                        )
-                    )
+            ComposeCanvas(Modifier.size(if (compact) 168.dp else 224.dp)) {
+                // Read animation state during drawing so frames skip composition and layout.
+                val progress = reveal.value
+                val rotation = angle.value
+                fun phase(start: Float, end: Float): Float =
+                    FastOutSlowInEasing.transform(((progress - start) / (end - start)).coerceIn(0f, 1f))
+                val unit = size.minDimension / 240f
+                val center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
+                fun point(x: Float, y: Float) = center + androidx.compose.ui.geometry.Offset(x * unit, y * unit)
+                val ringReveal = phase(0f, 0.42f)
+                drawCircle(Brush.radialGradient(
+                    listOf(colors.primary.copy(alpha = 0.12f), Color.Transparent),
+                    center = center, radius = 118f * unit
+                ), radius = 118f * unit, center = center)
+                drawCircle(colors.primary.copy(alpha = 0.10f * ringReveal), 94f * unit, center,
+                    style = Stroke(unit))
+                drawArc(colors.primary.copy(alpha = 0.75f * ringReveal), -120f + rotation,
+                    116f * ringReveal, false, point(-94f, -94f),
+                    androidx.compose.ui.geometry.Size(188f * unit, 188f * unit),
+                    style = Stroke(1.6f * unit, cap = StrokeCap.Round))
+                drawArc(colors.secondary.copy(alpha = 0.5f * ringReveal), 60f - rotation * 0.6f,
+                    78f * ringReveal, false, point(-82f, -82f),
+                    androidx.compose.ui.geometry.Size(164f * unit, 164f * unit),
+                    style = Stroke(unit, cap = StrokeCap.Round))
+                val calendar = phase(0.10f, 0.58f)
+                val top = -44f + 8f * (1f - calendar)
+                drawRoundRect(colors.primary.copy(alpha = calendar * 0.06f), point(-45f, top),
+                    androidx.compose.ui.geometry.Size(90f * unit, 82f * unit),
+                    androidx.compose.ui.geometry.CornerRadius(10f * unit))
+                drawRoundRect(colors.primary.copy(alpha = calendar), point(-45f, top),
+                    androidx.compose.ui.geometry.Size(90f * unit, 82f * unit),
+                    androidx.compose.ui.geometry.CornerRadius(10f * unit), style = Stroke(2f * unit))
+                drawLine(colors.primary.copy(alpha = calendar), point(-44f, top + 21f),
+                    point(44f, top + 21f), 1.5f * unit)
+                for (x in listOf(-26f, 26f)) {
+                    drawLine(colors.onSurface.copy(alpha = calendar), point(x, top - 7f),
+                        point(x, top + 5f), 2.5f * unit, StrokeCap.Round)
                 }
-                Surface(
-                    modifier = Modifier.size(if (compact) 112.dp else 138.dp).graphicsLayer {
-                        val scale = 0.76f + 0.24f * entrance.value
-                        scaleX = scale
-                        scaleY = scale
-                        rotationY = (1f - entrance.value) * -22f
-                        translationY = (1f - entrance.value) * 18.dp.toPx()
-                    },
-                    shape = RoundedCornerShape(if (compact) 30.dp else 38.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.48f)),
-                    shadowElevation = 18.dp
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        MeetingSchedulerBrandIcon(Modifier.size(if (compact) 82.dp else 100.dp), "JW Meeting Manager")
-                    }
+                repeat(9) { index ->
+                    val cell = phase(0.32f + index * 0.025f, 0.60f + index * 0.025f)
+                    val x = -25f + (index % 3) * 25f
+                    val y = top + 37f + (index / 3) * 17f
+                    drawRoundRect(colors.primary.copy(alpha = cell * if (index == 4) 0.85f else 0.25f),
+                        point(x - 5f, y - 5f), androidx.compose.ui.geometry.Size(10f * unit, 10f * unit),
+                        androidx.compose.ui.geometry.CornerRadius(2f * unit))
                 }
-                if (reveal) {
-                    Surface(
-                        modifier = Modifier.align(Alignment.BottomEnd).offset(x = (-24).dp, y = (-23).dp)
-                            .graphicsLayer { scaleX = entrance.value; scaleY = entrance.value; alpha = entrance.value },
-                        shape = CircleShape,
-                        color = colors.primaryContainer,
-                        border = BorderStroke(3.dp, colors.primary),
-                        shadowElevation = 6.dp
-                    ) {
-                        Box(Modifier.size(if (compact) 34.dp else 40.dp), contentAlignment = Alignment.Center) {
-                            Icon(SproutIcons.CheckCircle, contentDescription = null,
-                                tint = colors.onPrimaryContainer, modifier = Modifier.size(if (compact) 22.dp else 26.dp))
-                        }
-                    }
+                val check = phase(0.68f, 0.95f)
+                val checkPath = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(point(-4f, top + 54f).x, point(-4f, top + 54f).y)
+                    lineTo(point(-1f, top + 57f).x, point(-1f, top + 57f).y)
+                    lineTo(point(5f, top + 50f).x, point(5f, top + 50f).y)
                 }
+                drawPath(checkPath, colors.onPrimary.copy(alpha = check), style = Stroke(2f * unit, cap = StrokeCap.Round))
             }
-            Spacer(Modifier.height(if (compact) 10.dp else 18.dp))
-            AnimatedVisibility(
-                visible = reveal,
-                enter = fadeIn(tween(380, delayMillis = 170)) +
-                    slideInVertically(tween(440, delayMillis = 170)) { it / 4 }
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        "JW Meeting Manager",
-                        color = colors.onSurface,
-                        fontSize = if (compact) 20.sp else 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "Aayos ang bawat bahagi ng pulong",
-                        color = colors.onSurfaceVariant,
-                        fontSize = if (compact) 11.sp else 13.sp,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                }
-            }
-            Spacer(Modifier.height(if (compact) 18.dp else 26.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                repeat(3) { index ->
-                    Box(
-                        Modifier.size(if (index == 1) 14.dp else 5.dp, 5.dp)
-                            .clip(CircleShape)
-                            .background(if (index == 1) colors.primary else colors.primary.copy(alpha = 0.4f))
-                    )
-                }
+            Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
+            Text("JW Meeting Manager", color = colors.onSurface,
+                fontSize = if (compact) 22.sp else 26.sp, fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.graphicsLayer {
+                    val progress = ((reveal.value - 0.40f) / 0.38f).coerceIn(0f, 1f)
+                    alpha = progress
+                    translationY = (1f - FastOutSlowInEasing.transform(progress)) * 8.dp.toPx()
+                })
+            Spacer(Modifier.height(18.dp))
+            ComposeCanvas(Modifier.size(36.dp, 2.dp)) {
+                drawRoundRect(colors.primary.copy(alpha = reveal.value * 0.5f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height))
             }
             if (showLocalShortcut && onOpenLocal != null) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(24.dp))
                 OutlinedButton(onClick = onOpenLocal) { Text("Open Local Workspace") }
             }
         }
@@ -2863,14 +2820,27 @@ private fun WorkbookContinueButton(onNext: () -> Unit, canContinue: Boolean, lab
     Button(
         onClick = onNext,
         enabled = canContinue,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
         shape = MaterialTheme.shapes.medium,
         colors = ButtonDefaults.buttonColors(containerColor = Forest),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
     ) {
-        Text(label, modifier = Modifier.weight(1f, fill = false))
+        Text(label, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.width(9.dp))
         Icon(SproutIcons.ArrowForward, contentDescription = null, modifier = Modifier.size(21.dp))
+    }
+}
+
+@Composable
+private fun WorkbookHeading(canContinue: Boolean = true) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        PageHeading("Workbook", if (canContinue) "Step 1 of 3 · Choose a meeting week" else "Select a week to view its meeting program.")
+        if (canContinue) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            repeat(3) { index ->
+                Box(Modifier.weight(1f).height(4.dp).clip(CircleShape)
+                    .background(if (index == 0) Forest else MaterialTheme.colorScheme.surfaceContainerHighest))
+            }
+        }
     }
 }
 
@@ -2887,29 +2857,43 @@ private fun WorkbookMeetingDetails(
     onThisWeek: (() -> Unit)?,
     onPickDate: () -> Unit
 ) {
-    M3Card {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(38.dp).background(ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) { Icon(SproutIcons.CalendarMonth, contentDescription = null, tint = Forest, modifier = Modifier.size(21.dp)) }
-            Column(Modifier.weight(1f).padding(start = 11.dp)) {
-                Label("MEETING WEEK")
-                Text("Meeting details", style = MaterialTheme.typography.titleMedium)
-            }
-            if (onThisWeek != null) {
-                TextButton(onClick = onThisWeek, enabled = !readOnly, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
-                    Text("This Week", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Meeting week", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            if (onThisWeek != null) TextButton(onClick = onThisWeek, enabled = !readOnly) { Text("This week") }
+        }
+        Surface(
+            onClick = onPickDate, enabled = !readOnly, modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Icon(SproutIcons.CalendarMonth, null, tint = Forest, modifier = Modifier.size(28.dp))
+                Text(weekLabel, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                if (!readOnly) Text("Change", color = Forest, style = MaterialTheme.typography.labelLarge)
             }
         }
-        OutlinedButton(onClick = onPickDate, enabled=!readOnly, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), shape = MaterialTheme.shapes.medium, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)) {
-            Text(weekLabel, modifier = Modifier.weight(1f), color = Ink, fontWeight = FontWeight.SemiBold)
-            Text("Change", color = Forest, fontSize = 12.sp)
-        }
-        OutlinedTextField(bible, onBible, enabled=!readOnly, label = { Text("Bible reading") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+        Text("Meeting details", modifier = Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        OutlinedTextField(
+            value = bible, onValueChange = onBible, enabled = !readOnly,
+            label = { Text("Bible reading") }, modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            textStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            trailingIcon = { if (!readOnly) Icon(SproutIcons.Edit, null, modifier = Modifier.size(20.dp)) }
+        )
         AdaptivePair(
             { field -> OutlinedTextField(openingSong, onOpeningSong, enabled = !readOnly,
-                label = { Text("Opening song") }, singleLine = true, modifier = field) },
+                label = { Text("Opening song") }, singleLine = true, modifier = field,
+                shape = MaterialTheme.shapes.large,
+                textStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                trailingIcon = { if (!readOnly) Icon(SproutIcons.Edit, null, modifier = Modifier.size(20.dp)) }) },
             { field -> OutlinedTextField(closingSong, onClosingSong, enabled = !readOnly,
-                label = { Text("Closing song") }, singleLine = true, modifier = field) }
+                label = { Text("Closing song") }, singleLine = true, modifier = field,
+                shape = MaterialTheme.shapes.large,
+                textStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                trailingIcon = { if (!readOnly) Icon(SproutIcons.Edit, null, modifier = Modifier.size(20.dp)) }) }
         )
     }
 }
@@ -2922,11 +2906,12 @@ private fun WorkbookProgramCard(
     fetchError: Boolean,
     captureSucceeded: Boolean,
     canImport: Boolean,
-    actionLabel: String,
     onImport: () -> Unit,
     showCaptureLog: Boolean,
     onToggleLog: () -> Unit,
     primaryActionLabel: String? = null,
+    partCount: Int = 0,
+    successLabel: String = "Imported",
     extraActions: @Composable () -> Unit = {}
 ) {
     M3Card {
@@ -2935,10 +2920,9 @@ private fun WorkbookProgramCard(
                 Icon(if (workbookBusy) SproutIcons.Refresh else if (captureSucceeded) SproutIcons.CheckCircle else SproutIcons.AutoStories, contentDescription = null, tint = if (fetchError) MaterialTheme.colorScheme.error else Forest, modifier = Modifier.size(22.dp))
             }
             Column(Modifier.weight(1f).padding(start = 11.dp)) {
-                Label("JW.ORG WORKBOOK")
-                Text("Weekly program", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text("Weekly program", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text("From JW.ORG", style = MaterialTheme.typography.bodySmall, color = Muted)
             }
-            if (primaryActionLabel == null) IconButton(onClick = onImport, enabled = canImport && !workbookBusy, modifier = Modifier.size(48.dp)) { if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest) else Icon(SproutIcons.Refresh, contentDescription = actionLabel, tint = Forest, modifier = Modifier.size(23.dp)) }
         }
         if (workbookBusy) {
             LinearProgressIndicator(
@@ -2953,16 +2937,29 @@ private fun WorkbookProgramCard(
             style = MaterialTheme.typography.bodyMedium,
             color = if (fetchError) MaterialTheme.colorScheme.error else Muted
         )
-        if (primaryActionLabel != null) FilledTonalButton(
-            onClick = onImport, enabled = canImport && !workbookBusy, modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium
-        ) { Text(primaryActionLabel) }
-        extraActions()
-        if (workbookCaptureLog.isNotEmpty()) {
-            TextButton(onClick = onToggleLog) {
-                Text(if (showCaptureLog) "Hide capture log" else "Show capture log")
+        if (captureSucceeded && !workbookBusy && !fetchError) {
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(SproutIcons.Check, null, modifier = Modifier.size(16.dp))
+                    Text(if (partCount > 0) "$partCount meeting parts · $successLabel" else successLabel,
+                        style = MaterialTheme.typography.labelMedium)
+                }
             }
         }
+        AdaptivePair(
+            { field -> OutlinedButton(onClick = onImport, enabled = canImport && !workbookBusy,
+                modifier = field, shape = MaterialTheme.shapes.medium) {
+                if (workbookBusy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                else Icon(SproutIcons.Refresh, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(primaryActionLabel ?: if (fetchError) "Retry" else "Refresh")
+            } },
+            { field -> if (workbookCaptureLog.isNotEmpty()) TextButton(onClick = onToggleLog, modifier = field) {
+                Text(if (showCaptureLog) "Hide capture log" else "Capture log")
+            } }
+        )
+        extraActions()
         if (showCaptureLog && workbookCaptureLog.isNotEmpty()) Surface(
             color = if (IsDarkPalette) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerLow,
             shape = MaterialTheme.shapes.medium,
@@ -2988,7 +2985,7 @@ private fun WorkbookProgramCard(
 }
 
 @Composable
-private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, participantsLoadFailed: Boolean, rosterEmpty: Boolean, onRetryParticipants: () -> Unit, canContinueToAssignments:Boolean, readOnly:Boolean, isCurrentWeek:Boolean, onThisWeek: () -> Unit, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
+private fun DetailsScreen(modifier: Modifier, partCount: Int, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, participantsLoadFailed: Boolean, rosterEmpty: Boolean, onRetryParticipants: () -> Unit, canContinueToAssignments:Boolean, readOnly:Boolean, isCurrentWeek:Boolean, onThisWeek: () -> Unit, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
     var showCaptureLog by rememberSaveable(weekLabel) { mutableStateOf(false) }
     val workbookActions: (@Composable ColumnScope.() -> Unit)? = if (canContinueToAssignments) {
         {
@@ -3005,20 +3002,20 @@ private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, 
         }
     } else null
     WorkflowPage(modifier, actions = workbookActions) {
-        PageHeading("Workbook", if (canContinueToAssignments) "Step 1 of 3 · Choose a meeting week" else "Select a week to load its meeting program.")
+        WorkbookHeading(canContinueToAssignments)
         WorkbookMeetingDetails(
             weekLabel, bible, onBible, openingSong, onOpeningSong, closingSong, onClosingSong,
             readOnly, if (isCurrentWeek) null else onThisWeek, onPickDate
         )
         val fetchError = !workbookBusy && (workbookCaptureLog.lastOrNull()?.startsWith("ERROR") == true || workbookStatus.contains("hindi", ignoreCase = true) || workbookStatus.contains("wala", ignoreCase = true) || workbookStatus.contains("permission", ignoreCase = true))
         WorkbookProgramCard(
+            partCount = partCount,
             workbookStatus = workbookStatus.removePrefix("✓ "),
             workbookBusy = workbookBusy,
             workbookCaptureLog = workbookCaptureLog,
             fetchError = fetchError,
             captureSucceeded = workbookStatus.startsWith("✓"),
             canImport = !readOnly,
-            actionLabel = "Refresh weekly program",
             onImport = onImport,
             showCaptureLog = showCaptureLog,
             onToggleLog = { showCaptureLog = !showCaptureLog }
@@ -6636,7 +6633,7 @@ private fun DeviceWorkbook(
         if (draft.assignments.isEmpty()) Text("Load the weekly program to continue.", color = Muted, style = MaterialTheme.typography.bodySmall)
         WorkbookContinueButton(onNext = onNext, canContinue = draft.assignments.isNotEmpty())
     }) {
-        PageHeading("Workbook", "Step 1 of 3 · Local Workspace")
+        WorkbookHeading()
         MeetingScheduleContext(draft.localMeetingLabel())
         WorkbookMeetingDetails(
             weekLabel = weekLabel,
@@ -6662,13 +6659,14 @@ private fun DeviceWorkbook(
             else -> "Capture this week’s meeting parts while online."
         }
         WorkbookProgramCard(
+            partCount = if (applied) draft.assignments.size else template?.assignments?.size ?: 0,
+            successLabel = if (applied) "Imported" else "Captured",
             workbookStatus = status,
             workbookBusy = capturingSelectedWeek,
             workbookCaptureLog = captureLog,
             fetchError = captureResult?.second == false,
             captureSucceeded = template != null || captureResult?.second == true,
             canImport = !captureBusy,
-            actionLabel = "Capture workbook",
             onImport = onCapture,
             showCaptureLog = showCaptureLog,
             onToggleLog = { showCaptureLog = !showCaptureLog },
