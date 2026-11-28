@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.45.57 — 2026-11-28
+
+- Show Export text and Share assignment slip images immediately below Share PNG, with matching icons on all three actions.
+- Add consistent step indicators to Assignments (step 2) and Preview & Export (step 3).
+- Remove the required-slots summary panel and footer count from Assignments.
+- Correct Pahayag/Talk roles in Android and server workbook capture so both halls use speakers without assistants. Correct old saved talk assignments when loaded.
+
 ## v0.45.56 — 2026-11-28
 
 - Refresh the Workbook layout in Local and Shared Workspace with clear meeting-week selection, editable meeting details, and a three-step progress indicator.

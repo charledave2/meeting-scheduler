@@ -60,7 +60,8 @@ export async function POST(request: Request) {
       const isCongregationBibleStudy = part.title.toLocaleLowerCase("tl").includes("pag-aaral ng kongregasyon sa bibliya");
       const isWhatWouldYouSay = part.title.toLocaleLowerCase("tl").includes("ano ang sasabihin mo");
       const hasHalls = (part.section === "ministry" && !isWhatWouldYouSay) || isBibleReading;
-      const hasAssistant = part.section === "ministry" && !isWhatWouldYouSay;
+      const isTalk = /^\s*(?:\d+[.)]\s*)?(?:pahayag|talk)(?=\s|$|[:—–-])/i.test(part.title);
+      const hasAssistant = part.section === "ministry" && !isWhatWouldYouSay && !isTalk;
       parts.push({ id: part.id, time: clock(currentMinutes), section: part.section, title: part.title, duration: part.durationMinutes ? `${part.durationMinutes} min.` : "", detail: part.detail, assignee: "", ...(hasHalls ? { secondaryAssignee: "" } : {}), ...(hasAssistant ? { assistant: "", secondaryAssistant: "" } : {}), ...(isCongregationBibleStudy ? { assistant: "" } : {}) });
       currentMinutes += part.durationMinutes + (part.id >= 3 ? 1 : 0);
       if (part.id === lastMinistryId) currentMinutes += 5;

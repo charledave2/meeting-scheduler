@@ -334,13 +334,14 @@ internal class SchedulerApi(private val context: Context) {
             val details = durationPattern.matchEntire(paragraph)
             val minutes = details?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(0, 180) ?: 0
             val ministry = group == "ministry" && !heading.contains("ano ang sasabihin mo", true)
+            val assistant = ministry && !isSoloTalk(heading)
             val bibleReading = heading.contains("pagbabasa ng bibliya", true)
             val bibleStudy = heading.contains("pag-aaral ng kongregasyon sa bibliya", true)
             entries += JSONObject().put("id", number).put("title", heading).put("section", group)
                 .put("detail", details?.groupValues?.get(2).orEmpty())
                 .put("duration", if (minutes > 0) "$minutes min." else "")
-                .put("hasAssistant", ministry || bibleStudy).put("hasSecondary", ministry || bibleReading)
-                .put("hasSecondaryAssistant", ministry) to minutes
+                .put("hasAssistant", assistant || bibleStudy).put("hasSecondary", ministry || bibleReading)
+                .put("hasSecondaryAssistant", assistant) to minutes
         }
         if (entries.isEmpty()) return null
 

@@ -667,7 +667,11 @@ private fun JSONObject.toAssignment() = Assignment(
     assistant=optString("assistant"), secondaryAssignee=optString("secondaryAssignee"), secondaryAssistant=optString("secondaryAssistant"),
     hasAssistant=optBoolean("hasAssistant", has("assistant")), hasSecondary=optBoolean("hasSecondary", has("secondaryAssignee")),
     hasSecondaryAssistant=optBoolean("hasSecondaryAssistant", has("secondaryAssistant"))
-)
+).withoutTalkAssistants()
+private fun Assignment.withoutTalkAssistants(): Assignment =
+    if (isSoloTalk(title)) copy(assistant = "", secondaryAssistant = "", hasAssistant = false, hasSecondaryAssistant = false)
+    else this
+
 private fun Assignment.toJson() = JSONObject().put("title",title).put("detail",detail).put("person",person).put("assignee",person).put("id",id)
     .put("time",time).put("section",section).put("duration",duration).put("assistant",assistant)
     .put("secondaryAssignee",secondaryAssignee).put("secondaryAssistant",secondaryAssistant)
@@ -1295,12 +1299,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
                 closingSong = result.meta.optString("closingSong", closingSong)
                 parts.clear()
                 result.parts.forEach { part ->
-                    parts.add(Assignment(
-                        title=part.optString("title"), detail=part.optString("detail"), person=part.optString("assignee"),
-                        id=part.optInt("id"), time=part.optString("time"), section=part.optString("section"), duration=part.optString("duration"),
-                        assistant=part.optString("assistant"), secondaryAssignee=part.optString("secondaryAssignee"), secondaryAssistant=part.optString("secondaryAssistant"),
-                        hasAssistant=part.has("assistant"), hasSecondary=part.has("secondaryAssignee"), hasSecondaryAssistant=part.has("secondaryAssistant")
-                    ))
+                    parts.add(part.toAssignment())
                 }
                 val unique = deduplicateAssignmentParticipants(parts.toList())
                 parts.clear(); parts.addAll(unique)
@@ -2832,13 +2831,13 @@ private fun WorkbookContinueButton(onNext: () -> Unit, canContinue: Boolean, lab
 }
 
 @Composable
-private fun WorkbookHeading(canContinue: Boolean = true) {
+private fun WorkflowHeading(title: String, subtitle: String, step: Int, showProgress: Boolean = true) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        PageHeading("Workbook", if (canContinue) "Step 1 of 3 · Choose a meeting week" else "Select a week to view its meeting program.")
-        if (canContinue) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        PageHeading(title, subtitle)
+        if (showProgress) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             repeat(3) { index ->
                 Box(Modifier.weight(1f).height(4.dp).clip(CircleShape)
-                    .background(if (index == 0) Forest else MaterialTheme.colorScheme.surfaceContainerHighest))
+                    .background(if (index < step) Forest else MaterialTheme.colorScheme.surfaceContainerHighest))
             }
         }
     }
@@ -3002,7 +3001,7 @@ private fun DetailsScreen(modifier: Modifier, partCount: Int, weekLabel: String,
         }
     } else null
     WorkflowPage(modifier, actions = workbookActions) {
-        WorkbookHeading(canContinueToAssignments)
+        WorkflowHeading("Workbook", if (canContinueToAssignments) "Step 1 of 3 · Choose a meeting week" else "Select a week to view its meeting program.", 1, canContinueToAssignments)
         WorkbookMeetingDetails(
             weekLabel, bible, onBible, openingSong, onOpeningSong, closingSong, onClosingSong,
             readOnly, if (isCurrentWeek) null else onThisWeek, onPickDate
@@ -3049,10 +3048,6 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, parti
             }
         }
     }
-    val jumpScope = rememberCoroutineScope()
-    val totalRequiredSlots = 3 + parts.sumOf { 1 + (if (it.hasAssistant) 1 else 0) + (if (it.hasSecondary) 1 else 0) + (if (it.hasSecondaryAssistant) 1 else 0) }
-    val completedRequiredSlots = (totalRequiredSlots - missingSlots.size).coerceAtLeast(0)
-    val completionProgress = if (totalRequiredSlots == 0) 1f else completedRequiredSlots.toFloat() / totalRequiredSlots
     val selectedNames = buildSet {
         listOf(chairman, openingPrayer, adviser).forEach { name ->
             name.trim().takeIf { it.isNotEmpty() }?.let { add(it.lowercase(Locale.ROOT)) }
@@ -3063,12 +3058,9 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, parti
             }
         }
     }
-    var showAllMissing by rememberSaveable { mutableStateOf(false) }
     val assignmentActions: (@Composable ColumnScope.() -> Unit)? = if ((isAdmin && !readOnly) || canContinueExport) {
         {
             if (isAdmin && !readOnly) {
-                if (missingSlots.isNotEmpty()) Text("Fill ${missingSlots.size} required slots to save.",
-                    color = Muted, style = MaterialTheme.typography.bodySmall)
                 OutlinedButton(
                     onClick = onSaveCloud,
                     enabled = !cloudSaveBusy && missingSlots.isEmpty() && (!saveToDevice || parts.isNotEmpty()),
@@ -3118,73 +3110,8 @@ private fun AssignmentsScreen(modifier: Modifier, parts: List<Assignment>, parti
         }
     } else null
     WorkflowPage(modifier, actions = assignmentActions) {
-        PageHeading("Assignments", if (canContinueExport) "Step 2 of 3 · Review meeting roles and parts" else null)
+        WorkflowHeading("Assignments", "Step 2 of 3 · Review meeting roles and parts", 2)
         meetingLabel?.let { MeetingScheduleContext(it) }
-        Card(
-            shape = MaterialTheme.shapes.medium,
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-        ) {
-            Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                    Icon(
-                        if (missingSlots.isEmpty()) SproutIcons.CheckCircle else SproutIcons.ErrorOutline,
-                        contentDescription = null,
-                        tint = if (missingSlots.isEmpty()) Forest else MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(21.dp)
-                    )
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            if (missingSlots.isEmpty()) "Assignments complete" else "${missingSlots.size} required slots remaining",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text("$completedRequiredSlots of $totalRequiredSlots required slots filled · Group is optional", color = Muted, fontSize = 11.sp, lineHeight = 15.sp)
-                    }
-                }
-                LinearProgressIndicator(
-                    progress = { completionProgress.coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth(),
-                    color = if (missingSlots.isEmpty()) Forest else MaterialTheme.colorScheme.error,
-                    trackColor = MaterialTheme.colorScheme.outlineVariant
-                )
-                if (missingSlots.isNotEmpty()) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = if (IsDarkPalette) .30f else .52f),
-                        shape = MaterialTheme.shapes.small,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = .28f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                            Text(
-                                if (showAllMissing) "Still needed" else "Next unfilled slot",
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            (if (showAllMissing) missingSlots else missingSlots.take(1)).forEach { slot ->
-                                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Icon(SproutIcons.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(15.dp).padding(top = 1.dp))
-                                    val target = jumpTargets[slot.key]
-                                    if (target == null) Text(slot.label, style = MaterialTheme.typography.bodySmall)
-                                    else TextButton(
-                                        onClick = { jumpScope.launch { target.bringIntoView() } },
-                                        contentPadding = PaddingValues(horizontal = 4.dp),
-                                        modifier = Modifier.weight(1f)
-                                    ) { Text(slot.label, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Start) }
-                                }
-                            }
-                            if (missingSlots.size > 1) {
-                                TextButton(onClick = { showAllMissing = !showAllMissing }) {
-                                    Text(if (showAllMissing) "Show fewer slots" else "Show all ${missingSlots.size} unfilled slots")
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
         if (rotationBusy || rotationError != null) {
             Text(
                 if (rotationBusy) "Loading participant rotation for this week…" else "Could not load participant rotation: $rotationError",
@@ -3492,7 +3419,7 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
     }
     val pageAspect = SCHEDULE_EXPORT_WIDTH_PX.toFloat() / SCHEDULE_EXPORT_HEIGHT_PX
     PageColumn(modifier) {
-        PageHeading("Preview & Export", if (allowExport) "Step 3 of 3 · Review and share the schedule" else null)
+        WorkflowHeading("Preview & Export", "Step 3 of 3 · Review and share the schedule", 3)
         meetingLabel?.let { MeetingScheduleContext(it) }
         if (exportBusyType != null || (!previewReady && !previewFailed)) {
             Surface(
@@ -3540,17 +3467,25 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
             }
         }
         if (allowExport) {
-            var more by rememberSaveable { mutableStateOf(false) }
             Button(onClick = onPng, enabled = previewReady && !previewFailed && exportBusyType == null,
-                modifier = Modifier.fillMaxWidth()) { Text("Share PNG") }
-            TextButton(onClick = { more = !more }) { Text(if (more) "Fewer export options" else "More export options") }
-            if (more) {
-                OutlinedButton(onClick = onExportText, enabled = exportBusyType == null,
-                    modifier = Modifier.fillMaxWidth()) { Text("Export text") }
-                val hasAssignmentSlips = parts.any { it.person.isNotBlank() || it.secondaryAssignee.isNotBlank() } ||
-                    chairman.isNotBlank() || openingPrayer.isNotBlank() || adviser.isNotBlank()
-                OutlinedButton(onClick = onAssignmentSlipImages, enabled = exportBusyType == null && hasAssignmentSlips,
-                    modifier = Modifier.fillMaxWidth()) { Text("Share assignment slip images") }
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Icon(SproutIcons.Share, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Share PNG", modifier = Modifier.weight(1f, fill = false), textAlign = TextAlign.Center)
+            }
+            OutlinedButton(onClick = onExportText, enabled = exportBusyType == null,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Icon(SproutIcons.Description, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Export text", modifier = Modifier.weight(1f, fill = false), textAlign = TextAlign.Center)
+            }
+            val hasAssignmentSlips = parts.any { it.person.isNotBlank() || it.secondaryAssignee.isNotBlank() } ||
+                chairman.isNotBlank() || openingPrayer.isNotBlank() || adviser.isNotBlank()
+            OutlinedButton(onClick = onAssignmentSlipImages, enabled = exportBusyType == null && hasAssignmentSlips,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Icon(SproutIcons.Assignment, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Share assignment slip images", modifier = Modifier.weight(1f, fill = false), textAlign = TextAlign.Center)
             }
         }
     }
@@ -6633,7 +6568,7 @@ private fun DeviceWorkbook(
         if (draft.assignments.isEmpty()) Text("Load the weekly program to continue.", color = Muted, style = MaterialTheme.typography.bodySmall)
         WorkbookContinueButton(onNext = onNext, canContinue = draft.assignments.isNotEmpty())
     }) {
-        WorkbookHeading()
+        WorkflowHeading("Workbook", "Step 1 of 3 · Choose a meeting week", 1)
         MeetingScheduleContext(draft.localMeetingLabel())
         WorkbookMeetingDetails(
             weekLabel = weekLabel,
