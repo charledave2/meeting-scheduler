@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.45.58 — 2026-11-29
+
+- Open About this App directly from its settings card in both workspaces, with the duplicate App header removed.
+- Keep Workbook capture logs expanded, including a ready state before capturing, and wrap long log messages fully.
+- Use a book icon for Weekly program and move the icon-only refresh action to the upper right.
+- Show one program status summary and remove the duplicate imported-parts badge.
+
 ## v0.45.57 — 2026-11-28
 
 - Show Export text and Share assignment slip images immediately below Share PNG, with matching icons on all three actions.

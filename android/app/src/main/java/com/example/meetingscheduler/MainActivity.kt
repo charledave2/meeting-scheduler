@@ -1644,7 +1644,7 @@ private fun MeetingSchedulerApp(themeMode: AppThemeMode, onThemeModeChange: (App
             Screen.DETAILS -> DetailsScreen(
                 modifier = scroll, weekLabel = weekLabel, bible = bible, onBible = { bible = it; persistDetails() },
                 openingSong = openingSong, onOpeningSong = { openingSong = it; persistDetails() }, closingSong = closingSong,
-                onClosingSong = { closingSong = it; persistDetails() }, partCount = parts.size,
+                onClosingSong = { closingSong = it; persistDetails() },
                 onPickDate = { datePicker = true }, onImport = { accountScope.launch { fetchWorkbookForSelectedWeek() } },
                 workbookStatus = workbookStatus,
                 workbookBusy = workbookBusy, workbookCaptureLog = workbookCaptureLog,
@@ -2903,24 +2903,25 @@ private fun WorkbookProgramCard(
     workbookBusy: Boolean,
     workbookCaptureLog: List<String>,
     fetchError: Boolean,
-    captureSucceeded: Boolean,
     canImport: Boolean,
     onImport: () -> Unit,
-    showCaptureLog: Boolean,
-    onToggleLog: () -> Unit,
     primaryActionLabel: String? = null,
-    partCount: Int = 0,
-    successLabel: String = "Imported",
     extraActions: @Composable () -> Unit = {}
 ) {
     M3Card {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(38.dp).background(if (fetchError) MaterialTheme.colorScheme.error.copy(alpha = .12f) else ForestContainer, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
-                Icon(if (workbookBusy) SproutIcons.Refresh else if (captureSucceeded) SproutIcons.CheckCircle else SproutIcons.AutoStories, contentDescription = null, tint = if (fetchError) MaterialTheme.colorScheme.error else Forest, modifier = Modifier.size(22.dp))
+                Icon(SproutIcons.AutoStories, contentDescription = null, tint = if (fetchError) MaterialTheme.colorScheme.error else Forest, modifier = Modifier.size(22.dp))
             }
             Column(Modifier.weight(1f).padding(start = 11.dp)) {
                 Text("Weekly program", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text("From JW.ORG", style = MaterialTheme.typography.bodySmall, color = Muted)
+            }
+            IconButton(onClick = onImport, enabled = canImport && !workbookBusy,
+                modifier = Modifier.size(48.dp)) {
+                if (workbookBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Forest)
+                else Icon(SproutIcons.Refresh, contentDescription = primaryActionLabel ?: if (fetchError) "Retry capture" else "Refresh weekly program",
+                    tint = if (canImport) Forest else Muted, modifier = Modifier.size(23.dp))
             }
         }
         if (workbookBusy) {
@@ -2936,30 +2937,8 @@ private fun WorkbookProgramCard(
             style = MaterialTheme.typography.bodyMedium,
             color = if (fetchError) MaterialTheme.colorScheme.error else Muted
         )
-        if (captureSucceeded && !workbookBusy && !fetchError) {
-            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer) {
-                Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(SproutIcons.Check, null, modifier = Modifier.size(16.dp))
-                    Text(if (partCount > 0) "$partCount meeting parts · $successLabel" else successLabel,
-                        style = MaterialTheme.typography.labelMedium)
-                }
-            }
-        }
-        AdaptivePair(
-            { field -> OutlinedButton(onClick = onImport, enabled = canImport && !workbookBusy,
-                modifier = field, shape = MaterialTheme.shapes.medium) {
-                if (workbookBusy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                else Icon(SproutIcons.Refresh, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(primaryActionLabel ?: if (fetchError) "Retry" else "Refresh")
-            } },
-            { field -> if (workbookCaptureLog.isNotEmpty()) TextButton(onClick = onToggleLog, modifier = field) {
-                Text(if (showCaptureLog) "Hide capture log" else "Capture log")
-            } }
-        )
         extraActions()
-        if (showCaptureLog && workbookCaptureLog.isNotEmpty()) Surface(
+        Surface(
             color = if (IsDarkPalette) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerLow,
             shape = MaterialTheme.shapes.medium,
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
@@ -2969,13 +2948,17 @@ private fun WorkbookProgramCard(
                     Text(if (workbookBusy) "CAPTURE LOG · RUNNING" else "CAPTURE LOG", color = Forest, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.1.sp)
                     if (workbookBusy) CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 1.5.dp, color = Forest)
                 }
+                if (workbookCaptureLog.isEmpty()) Text(
+                    "Ready to capture the selected meeting week.",
+                    color = Muted, style = MaterialTheme.typography.bodySmall
+                )
                 workbookCaptureLog.takeLast(6).forEach { line ->
                     Text(
                         "› $line",
                         color = if (line.startsWith("ERROR")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         lineHeight = 16.sp,
-                        maxLines = 2
+                        maxLines = Int.MAX_VALUE
                     )
                 }
             }
@@ -2984,8 +2967,7 @@ private fun WorkbookProgramCard(
 }
 
 @Composable
-private fun DetailsScreen(modifier: Modifier, partCount: Int, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, participantsLoadFailed: Boolean, rosterEmpty: Boolean, onRetryParticipants: () -> Unit, canContinueToAssignments:Boolean, readOnly:Boolean, isCurrentWeek:Boolean, onThisWeek: () -> Unit, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
-    var showCaptureLog by rememberSaveable(weekLabel) { mutableStateOf(false) }
+private fun DetailsScreen(modifier: Modifier, weekLabel: String, bible: String, onBible: (String) -> Unit, openingSong: String, onOpeningSong: (String) -> Unit, closingSong: String, onClosingSong: (String) -> Unit, workbookStatus: String, workbookBusy: Boolean, workbookCaptureLog: List<String>, canContinue:Boolean, participantsLoadFailed: Boolean, rosterEmpty: Boolean, onRetryParticipants: () -> Unit, canContinueToAssignments:Boolean, readOnly:Boolean, isCurrentWeek:Boolean, onThisWeek: () -> Unit, onPickDate: () -> Unit, onImport: () -> Unit, onNext: () -> Unit) {
     val workbookActions: (@Composable ColumnScope.() -> Unit)? = if (canContinueToAssignments) {
         {
             WorkbookContinueButton(
@@ -3008,16 +2990,12 @@ private fun DetailsScreen(modifier: Modifier, partCount: Int, weekLabel: String,
         )
         val fetchError = !workbookBusy && (workbookCaptureLog.lastOrNull()?.startsWith("ERROR") == true || workbookStatus.contains("hindi", ignoreCase = true) || workbookStatus.contains("wala", ignoreCase = true) || workbookStatus.contains("permission", ignoreCase = true))
         WorkbookProgramCard(
-            partCount = partCount,
             workbookStatus = workbookStatus.removePrefix("✓ "),
             workbookBusy = workbookBusy,
             workbookCaptureLog = workbookCaptureLog,
             fetchError = fetchError,
-            captureSucceeded = workbookStatus.startsWith("✓"),
             canImport = !readOnly,
-            onImport = onImport,
-            showCaptureLog = showCaptureLog,
-            onToggleLog = { showCaptureLog = !showCaptureLog }
+            onImport = onImport
         )
         if (canContinueToAssignments && (participantsLoadFailed || rosterEmpty)) {
             M3Card {
@@ -4833,7 +4811,6 @@ private fun AppAboutSettingsCard(localWorkspace: Boolean = false) {
     val context = LocalContext.current
     var aboutOpen by rememberSaveable { mutableStateOf(false) }
     M3Card {
-        SettingsCardHeader("App", SproutIcons.Description)
         AboutRow(
             title = "About this App",
             description = "Version, changelog, links and privacy",
@@ -6557,7 +6534,6 @@ private fun DeviceWorkbook(
     val applied = template?.let { draft.matchesWorkbook(it) } == true
     var pickDate by remember { mutableStateOf(false) }
     var useDownload by remember(draft.weekStart) { mutableStateOf(false) }
-    var showCaptureLog by rememberSaveable(draft.weekStart) { mutableStateOf(false) }
     var showParts by rememberSaveable(draft.weekStart) { mutableStateOf(false) }
     val currentWeek = localWeek(LocalDate.now())
     val weekLabel = remember(date) {
@@ -6594,17 +6570,12 @@ private fun DeviceWorkbook(
             else -> "Capture this week’s meeting parts while online."
         }
         WorkbookProgramCard(
-            partCount = if (applied) draft.assignments.size else template?.assignments?.size ?: 0,
-            successLabel = if (applied) "Imported" else "Captured",
             workbookStatus = status,
             workbookBusy = capturingSelectedWeek,
             workbookCaptureLog = captureLog,
             fetchError = captureResult?.second == false,
-            captureSucceeded = template != null || captureResult?.second == true,
             canImport = !captureBusy,
             onImport = onCapture,
-            showCaptureLog = showCaptureLog,
-            onToggleLog = { showCaptureLog = !showCaptureLog },
             primaryActionLabel = if (template == null) {
                 when {
                     capturingSelectedWeek -> "Capturing workbook…"
