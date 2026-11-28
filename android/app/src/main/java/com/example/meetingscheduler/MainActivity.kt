@@ -3468,13 +3468,25 @@ private fun PreviewScreen(modifier: Modifier, weekStart:String, bible:String, op
         }
         if (allowExport) {
             Button(onClick = onPng, enabled = previewReady && !previewFailed && exportBusyType == null,
-                modifier = Modifier.fillMaxWidth()) { Text("Share PNG") }
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Icon(SproutIcons.Share, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Share PNG", modifier = Modifier.weight(1f, fill = false), textAlign = TextAlign.Center)
+            }
             OutlinedButton(onClick = onExportText, enabled = exportBusyType == null,
-                modifier = Modifier.fillMaxWidth()) { Text("Export text") }
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Icon(SproutIcons.Description, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Export text", modifier = Modifier.weight(1f, fill = false), textAlign = TextAlign.Center)
+            }
             val hasAssignmentSlips = parts.any { it.person.isNotBlank() || it.secondaryAssignee.isNotBlank() } ||
                 chairman.isNotBlank() || openingPrayer.isNotBlank() || adviser.isNotBlank()
             OutlinedButton(onClick = onAssignmentSlipImages, enabled = exportBusyType == null && hasAssignmentSlips,
-                modifier = Modifier.fillMaxWidth()) { Text("Share assignment slip images") }
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Icon(SproutIcons.Assignment, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Share assignment slip images", modifier = Modifier.weight(1f, fill = false), textAlign = TextAlign.Center)
+            }
         }
     }
 }
